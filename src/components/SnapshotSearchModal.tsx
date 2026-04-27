@@ -9,12 +9,11 @@ type SnapshotSearchModalProps = {
 };
 
 export function SnapshotSearchModal({ onClose }: SnapshotSearchModalProps) {
-  const { activePaneId, settings, showToast } = useAppState();
+  const { settings, showToast } = useAppState();
   const [query, setQuery] = useState("");
   const [rows, setRows] = useState<SnapshotSearchRow[]>([]);
   const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [currentPaneOnly, setCurrentPaneOnly] = useState(false);
 
   async function runSearch(nextOffset: number) {
     const trimmedQuery = query.trim();
@@ -30,7 +29,6 @@ export function SnapshotSearchModal({ onClose }: SnapshotSearchModalProps) {
         trimmedQuery,
         settings.snapshotSearchPageSize,
         nextOffset,
-        currentPaneOnly ? activePaneId : undefined,
       );
       setRows((current) => (nextOffset === 0 ? result.rows : [...current, ...result.rows]));
       setHasMore(result.hasMore);
@@ -71,14 +69,6 @@ export function SnapshotSearchModal({ onClose }: SnapshotSearchModalProps) {
             }}
           />
         </div>
-        <label className="checkboxRow">
-          <input
-            type="checkbox"
-            checked={currentPaneOnly}
-            onChange={(event) => setCurrentPaneOnly(event.target.checked)}
-          />
-          <span>Current pane only</span>
-        </label>
       </div>
       <div className="snapshotResults">
         {rows.length === 0 ? (
@@ -87,8 +77,7 @@ export function SnapshotSearchModal({ onClose }: SnapshotSearchModalProps) {
           rows.map((row) => (
             <article className="snapshotResult" key={row.id}>
               <header>
-                <span>{row.createdAtUtc}</span>
-                <span>{row.paneId}</span>
+                <span>{formatSnapshotTimestamp(row.createdAtUtc)}</span>
               </header>
               <pre>{row.content}</pre>
             </article>
@@ -102,4 +91,31 @@ export function SnapshotSearchModal({ onClose }: SnapshotSearchModalProps) {
       </div>
     </ModalBase>
   );
+}
+
+// Snapshot ids encode the UTC instant as "YYYYMMDD-HHMMSS-utc"; format that
+// into a human-readable local time, falling back to the raw value if parsing
+// fails.
+function formatSnapshotTimestamp(rawUtc: string): string {
+  const match = /^(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})-utc$/i.exec(rawUtc);
+  if (!match) {
+    return rawUtc;
+  }
+
+  const [, y, mo, d, h, mi, s] = match;
+  const date = new Date(Date.UTC(
+    Number(y), Number(mo) - 1, Number(d),
+    Number(h), Number(mi), Number(s),
+  ));
+  if (Number.isNaN(date.getTime())) {
+    return rawUtc;
+  }
+
+  return date.toLocaleString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
 }

@@ -13,6 +13,7 @@ import { createDefaultPane, defaultSettings } from "./defaults";
 import { randomPaneColor } from "../utils/paneColors";
 import {
   buildSessionState,
+  countSnapshots,
   createSnapshot,
   createSnapshots,
   loadAppData,
@@ -38,6 +39,8 @@ type AppStateContextValue = {
   toasts: Toast[];
   blockingError: BlockingError | null;
   dataDir: string;
+  snapshotCount: number;
+  snapshotJustSavedAt: number | null;
   setActivePaneId: (paneId: string) => void;
   updatePaneTitle: (paneId: string, title: string) => void;
   updatePaneContent: (paneId: string, content: string) => void;
@@ -66,6 +69,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const [blockingError, setBlockingError] = useState<BlockingError | null>(null);
   const [dataDir, setDataDir] = useState("Loading...");
   const [loaded, setLoaded] = useState(false);
+  const [snapshotCount, setSnapshotCount] = useState(0);
+  const [snapshotJustSavedAt, setSnapshotJustSavedAt] = useState<number | null>(null);
   const panesRef = useRef(panes);
 
   useEffect(() => {
@@ -111,6 +116,15 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
 
         setDataDir(data.dataDir);
         setSettings(normalizeSettings(data.config));
+
+        try {
+          const initialCount = await countSnapshots();
+          if (!canceled) {
+            setSnapshotCount(initialCount);
+          }
+        } catch {
+          // Snapshot count is informational only; ignore failures.
+        }
 
         const loadedPanes = normalizePanes(data.session?.panes);
         if (loadedPanes.length > 0) {
@@ -163,8 +177,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
 
   const addPane = useCallback(() => {
     setPanes((current) => {
-      const previousColor = current.length > 0 ? current[current.length - 1].headerColor : null;
-      const pane = createDefaultPane(nanoid(), previousColor);
+      const existingHeaders = current.map((pane) => pane.headerColor);
+      const pane = createDefaultPane(nanoid(), existingHeaders);
       setActivePaneId(pane.id);
       return [...current, pane];
     });
@@ -229,9 +243,16 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      void createSnapshot({ paneId, trigger, content }).catch((error) => {
-        showToast("warning", `Snapshot was not saved: ${String(error)}`);
-      });
+      void createSnapshot({ paneId, trigger, content })
+        .then((result) => {
+          if (result.inserted) {
+            setSnapshotCount((current) => current + 1);
+            setSnapshotJustSavedAt(Date.now());
+          }
+        })
+        .catch((error) => {
+          showToast("warning", `Snapshot was not saved: ${String(error)}`);
+        });
     },
     [showToast],
   );
@@ -250,7 +271,12 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      await createSnapshots(snapshots);
+      const results = await createSnapshots(snapshots);
+      const insertedCount = results.filter((result) => result.inserted).length;
+      if (insertedCount > 0) {
+        setSnapshotCount((current) => current + insertedCount);
+        setSnapshotJustSavedAt(Date.now());
+      }
     },
     [],
   );
@@ -300,6 +326,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       toasts,
       blockingError,
       dataDir,
+      snapshotCount,
+      snapshotJustSavedAt,
       setActivePaneId,
       updatePaneTitle,
       updatePaneContent,
@@ -333,6 +361,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       showBlockingError,
       showToast,
       snapshotAllPanes,
+      snapshotCount,
+      snapshotJustSavedAt,
       toasts,
       updatePaneContent,
       updatePaneTitle,
@@ -375,7 +405,7 @@ function normalizePanes(panes: Pane[] | undefined): Pane[] {
     return [];
   }
 
-  let previousHeader: string | null = null;
+  const accumulatedHeaders: string[] = [];
 
   return panes
     .filter((pane) => typeof pane.id === "string" && pane.id.length > 0)
@@ -388,9 +418,9 @@ function normalizePanes(panes: Pane[] | undefined): Pane[] {
 
       const colors = hasColors
         ? { header: pane.headerColor, background: pane.backgroundColor }
-        : randomPaneColor(previousHeader);
+        : randomPaneColor(accumulatedHeaders);
 
-      previousHeader = colors.header;
+      accumulatedHeaders.push(colors.header);
 
       return {
         id: pane.id,

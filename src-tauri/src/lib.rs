@@ -48,9 +48,15 @@ fn search_snapshots(
     storage::search_snapshots(&app, query, limit, offset, pane_id)
 }
 
+#[tauri::command]
+fn count_snapshots(app: AppHandle) -> Result<u64, String> {
+    storage::count_snapshots(&app)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             load_app_data,
             save_config,
@@ -58,6 +64,7 @@ pub fn run() {
             create_snapshot,
             create_snapshots,
             search_snapshots,
+            count_snapshots,
         ])
         .run(tauri::generate_context!())
         .expect("error while running QuickDeck");

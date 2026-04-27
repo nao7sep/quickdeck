@@ -94,7 +94,6 @@ export async function searchSnapshots(
   query: string,
   limit: number,
   offset: number,
-  paneId?: string,
 ): Promise<SnapshotSearchResult> {
   if (!isTauri()) {
     return { rows: [], hasMore: false };
@@ -104,6 +103,14 @@ export async function searchSnapshots(
     query,
     limit,
     offset,
-    paneId: paneId ?? null,
+    paneId: null,
   });
+}
+
+export async function countSnapshots(): Promise<number> {
+  if (!isTauri()) {
+    return 0;
+  }
+
+  return invoke<number>("count_snapshots");
 }

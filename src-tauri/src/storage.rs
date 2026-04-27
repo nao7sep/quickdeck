@@ -11,6 +11,8 @@ use serde_json::Value as JsonValue;
 use sha2::{Digest, Sha256};
 use tauri::{AppHandle, Manager};
 
+const DATA_DIR_NAME: &str = ".quickdeck";
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LoadedAppData {
@@ -239,9 +241,19 @@ fn create_snapshot_with_connection(
 }
 
 fn app_data_dir(app: &AppHandle) -> Result<PathBuf, String> {
-    let data_dir = app.path().app_data_dir().map_err(to_string_error)?;
+    let home = app.path().home_dir().map_err(to_string_error)?;
+    let data_dir = home.join(DATA_DIR_NAME);
     fs::create_dir_all(&data_dir).map_err(to_string_error)?;
     Ok(data_dir)
+}
+
+pub fn count_snapshots(app: &AppHandle) -> Result<u64, String> {
+    let data_dir = app_data_dir(app)?;
+    let conn = open_snapshot_db(&data_dir)?;
+    let count: i64 = conn
+        .query_row("select count(*) from snapshots", [], |row| row.get(0))
+        .map_err(to_string_error)?;
+    Ok(count.max(0) as u64)
 }
 
 fn read_json_optional(path: &Path) -> Result<Option<JsonValue>, String> {

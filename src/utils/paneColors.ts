@@ -1,34 +1,108 @@
-// Random, vivid header colors for panes.
-// Saturation/lightness are kept in a band that yields readable white text on
-// the header while still feeling colorful. Background is a very light tint
-// derived from the same hue.
+// Pane color generation.
+//
+// Goals:
+//   1. Header colors must read white text comfortably — every color is dark
+//      enough that its WCAG relative luminance stays well below white.
+//   2. When adding a pane, the new header should be visibly distinct from
+//      ALL existing pane headers, not just the most recent one.
+//
+// The algorithm samples N candidate hues evenly around the wheel, jitters
+// each, and picks the one whose minimum hue distance to any existing pane
+// header is largest. Lightness is capped so light hues (yellow, lime, cyan)
+// don't drift toward white at high saturation.
 
-const SATURATION = 0.68;
-const LIGHTNESS = 0.48;
-const MIN_HUE_DISTANCE_DEG = 90;
+const SATURATION = 0.7;
+// Per-hue lightness target. Hues that read perceptually bright at a given
+// lightness (yellow ~60°, green ~120°, cyan ~180°) get pushed darker so the
+// header stays distinguishable from white text.
+const HUE_LIGHTNESS: Array<{ centerDeg: number; lightness: number }> = [
+  { centerDeg: 0, lightness: 0.46 },   // red
+  { centerDeg: 30, lightness: 0.44 },  // orange
+  { centerDeg: 60, lightness: 0.36 },  // yellow
+  { centerDeg: 90, lightness: 0.36 },  // yellow-green
+  { centerDeg: 120, lightness: 0.36 }, // green
+  { centerDeg: 150, lightness: 0.36 }, // teal-green
+  { centerDeg: 180, lightness: 0.38 }, // cyan
+  { centerDeg: 210, lightness: 0.46 }, // azure
+  { centerDeg: 240, lightness: 0.5 },  // blue
+  { centerDeg: 270, lightness: 0.5 },  // violet
+  { centerDeg: 300, lightness: 0.46 }, // magenta
+  { centerDeg: 330, lightness: 0.44 }, // pink
+];
+const CANDIDATE_COUNT = 24;
+const MIN_HUE_DISTANCE_FOR_DISTINCT = 25; // degrees
 
 export type PaneColor = {
   header: string;
   background: string;
 };
 
-export function randomPaneColor(previousHeader?: string | null): PaneColor {
-  const previousHue = previousHeader ? hueFromHex(previousHeader) : null;
-  const hue = pickHue(previousHue);
+export function randomPaneColor(existingHeaders: ReadonlyArray<string> = []): PaneColor {
+  const usedHues = existingHeaders
+    .map((hex) => hueFromHex(hex))
+    .filter((hue): hue is number => hue !== null);
+
+  const hue = pickHue(usedHues);
+  const lightness = lightnessForHue(hue);
   return {
-    header: hslToHex(hue, SATURATION, LIGHTNESS),
+    header: hslToHex(hue, SATURATION, lightness),
     background: hslToHex(hue, 0.55, 0.95),
   };
 }
 
-function pickHue(previousHue: number | null): number {
-  if (previousHue === null) {
+function pickHue(usedHues: number[]): number {
+  if (usedHues.length === 0) {
     return Math.random() * 360;
   }
 
-  // Pick a random hue from the half of the wheel that is far from the previous one.
-  const offset = MIN_HUE_DISTANCE_DEG + Math.random() * (360 - 2 * MIN_HUE_DISTANCE_DEG);
-  return (previousHue + offset) % 360;
+  let bestHue = Math.random() * 360;
+  let bestScore = -1;
+
+  for (let i = 0; i < CANDIDATE_COUNT; i += 1) {
+    // Evenly spaced base + jitter so two consecutive calls aren't identical.
+    const base = (i / CANDIDATE_COUNT) * 360;
+    const jitter = (Math.random() - 0.5) * (360 / CANDIDATE_COUNT);
+    const candidate = (base + jitter + 360) % 360;
+    const minDistance = minHueDistance(candidate, usedHues);
+
+    if (minDistance > bestScore) {
+      bestScore = minDistance;
+      bestHue = candidate;
+    }
+  }
+
+  // If even the best is uncomfortably close (very crowded wheel), nudge it.
+  if (bestScore < MIN_HUE_DISTANCE_FOR_DISTINCT && usedHues.length < 12) {
+    bestHue = (bestHue + 180) % 360;
+  }
+
+  return bestHue;
+}
+
+function minHueDistance(hue: number, others: number[]): number {
+  let min = 360;
+  for (const other of others) {
+    const diff = Math.abs(hue - other) % 360;
+    const distance = Math.min(diff, 360 - diff);
+    if (distance < min) {
+      min = distance;
+    }
+  }
+  return min;
+}
+
+function lightnessForHue(hue: number): number {
+  let bestEntry = HUE_LIGHTNESS[0];
+  let bestDistance = 360;
+  for (const entry of HUE_LIGHTNESS) {
+    const diff = Math.abs(hue - entry.centerDeg) % 360;
+    const distance = Math.min(diff, 360 - diff);
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      bestEntry = entry;
+    }
+  }
+  return bestEntry.lightness;
 }
 
 function hslToHex(hueDeg: number, saturation: number, lightness: number): string {

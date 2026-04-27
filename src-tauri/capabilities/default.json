@@ -6,6 +6,8 @@
   "permissions": [
     "core:default",
     "core:window:allow-destroy",
-    "core:window:allow-set-always-on-top"
+    "core:window:allow-set-always-on-top",
+    "opener:default",
+    "opener:allow-open-url"
   ]
 }

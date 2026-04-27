@@ -17,6 +17,11 @@ export type ShortcutDefinition = {
 
 export const shortcutDefinitions: ShortcutDefinition[] = [
   {
+    id: "toggleTopmost",
+    keys: "Cmd/Ctrl + Shift + T",
+    description: "Toggle always on top",
+  },
+  {
     id: "addPane",
     keys: "Cmd/Ctrl + N",
     description: "Add pane",
@@ -50,11 +55,6 @@ export const shortcutDefinitions: ShortcutDefinition[] = [
     id: "openShortcuts",
     keys: "Cmd/Ctrl + /",
     description: "Open shortcuts",
-  },
-  {
-    id: "toggleTopmost",
-    keys: "Cmd/Ctrl + Shift + T",
-    description: "Toggle always on top",
   },
   {
     id: "closeModal",

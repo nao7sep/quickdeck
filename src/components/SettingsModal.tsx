@@ -55,8 +55,35 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
         }
       >
         <div className="formGrid">
+          <label className="checkboxRow">
+            <input
+              type="checkbox"
+              checked={draft.topmost}
+              onChange={(event) => setField("topmost", event.target.checked)}
+            />
+            <span>Keep window on top of other windows</span>
+          </label>
           <label>
-            <span>Autosave delay</span>
+            <span>Editor font family</span>
+            <input
+              type="text"
+              value={draft.editorFontFamily}
+              onChange={(event) => setField("editorFontFamily", event.target.value)}
+              placeholder="monospace"
+            />
+          </label>
+          <label>
+            <span>Editor font size (px)</span>
+            <input
+              type="number"
+              min={10}
+              max={32}
+              value={draft.editorFontSize}
+              onChange={(event) => setField("editorFontSize", Number(event.target.value))}
+            />
+          </label>
+          <label>
+            <span>Autosave delay after edits (seconds)</span>
             <input
               type="number"
               min={1}
@@ -66,7 +93,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
             />
           </label>
           <label>
-            <span>Snapshot search page size</span>
+            <span>Snapshot search results per page</span>
             <input
               type="number"
               min={5}
@@ -74,32 +101,6 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
               value={draft.snapshotSearchPageSize}
               onChange={(event) => setField("snapshotSearchPageSize", Number(event.target.value))}
             />
-          </label>
-          <label>
-            <span>Editor font family</span>
-            <input
-              type="text"
-              value={draft.editorFontFamily}
-              onChange={(event) => setField("editorFontFamily", event.target.value)}
-            />
-          </label>
-          <label>
-            <span>Editor font size</span>
-            <input
-              type="number"
-              min={10}
-              max={32}
-              value={draft.editorFontSize}
-              onChange={(event) => setField("editorFontSize", Number(event.target.value))}
-            />
-          </label>
-          <label className="checkboxRow">
-            <input
-              type="checkbox"
-              checked={draft.topmost}
-              onChange={(event) => setField("topmost", event.target.checked)}
-            />
-            <span>Keep window on top</span>
           </label>
         </div>
       </ModalBase>

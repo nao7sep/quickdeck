@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
+  Camera,
   History,
   Info,
   Keyboard,
@@ -36,11 +37,24 @@ export function App() {
     saveNow,
     showToast,
     snapshotAllPanes,
+    snapshotCount,
+    snapshotJustSavedAt,
     updateSettings,
   } = useAppState();
   const [menuOpen, setMenuOpen] = useState(false);
   const [openModal, setOpenModal] = useState<OpenModal>(null);
+  const [snapshotPulse, setSnapshotPulse] = useState(false);
   const menuWrapRef = useRef<HTMLDivElement | null>(null);
+
+  // Brief "snapshot saved" flash whenever the timestamp updates.
+  useEffect(() => {
+    if (snapshotJustSavedAt === null) {
+      return undefined;
+    }
+    setSnapshotPulse(true);
+    const timeoutId = window.setTimeout(() => setSnapshotPulse(false), 1600);
+    return () => window.clearTimeout(timeoutId);
+  }, [snapshotJustSavedAt]);
 
   const openMenuModal = useCallback((modal: OpenModal) => {
     setOpenModal(modal);
@@ -214,6 +228,16 @@ export function App() {
       <footer className="appStatusBar">
         <span className="appTitle">QuickDeck</span>
         <div className="statusBarRight">
+          <span className="statusBadge statusBadge-info">
+            {panes.length} {panes.length === 1 ? "pane" : "panes"}
+          </span>
+          <span className="statusBadge statusBadge-info">
+            <Camera size={11} />
+            {snapshotCount.toLocaleString()}
+          </span>
+          {snapshotPulse ? (
+            <span className="statusBadge statusBadge-snapshot">Snapshot saved</span>
+          ) : null}
           {settings.topmost ? (
             <span className="statusBadge statusBadge-topmost">
               <Pin size={11} />
@@ -223,7 +247,7 @@ export function App() {
           <span className={`statusBadge saveState saveState-${saveState}`}>{saveState}</span>
           <div className="menuWrap" ref={menuWrapRef}>
             <button className="statusMenuButton" type="button" aria-label="Open menu" onClick={() => setMenuOpen((open) => !open)}>
-              <Menu size={15} />
+              <Menu size={18} />
             </button>
             {menuOpen ? (
               <div className="menuPanel menuPanelUp">

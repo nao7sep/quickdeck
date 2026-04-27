@@ -50,11 +50,12 @@ export function PaneView({ pane }: PaneViewProps) {
           aria-label="Pane title"
           className="paneTitleInput"
           value={pane.title}
+          spellCheck={false}
           onChange={(event) => updatePaneTitle(pane.id, event.target.value)}
           onFocus={() => setActivePaneId(pane.id)}
         />
         <button
-          className="iconButton"
+          className="iconButton paneDeleteButton"
           type="button"
           aria-label="Delete pane"
           onClick={(event) => {

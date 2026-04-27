@@ -5,13 +5,12 @@ export const defaultSettings: AppSettings = {
   autosaveDelaySeconds: 3,
   snapshotSearchPageSize: 25,
   topmost: false,
-  editorFontFamily:
-    'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+  editorFontFamily: "monospace",
   editorFontSize: 14,
 };
 
-export function createDefaultPane(id: string, previousHeaderColor?: string | null): Pane {
-  const colors = randomPaneColor(previousHeaderColor);
+export function createDefaultPane(id: string, existingHeaders: ReadonlyArray<string> = []): Pane {
+  const colors = randomPaneColor(existingHeaders);
   return {
     id,
     title: "New Buffer",

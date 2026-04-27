@@ -11,8 +11,8 @@ export function ShortcutsModal({ onClose }: ShortcutsModalProps) {
       <div className="shortcutList">
         {shortcutDefinitions.map((shortcut) => (
           <div className="shortcutRow" key={shortcut.id}>
-            <kbd>{shortcut.keys}</kbd>
             <span>{shortcut.description}</span>
+            <kbd>{shortcut.keys}</kbd>
           </div>
         ))}
       </div>
