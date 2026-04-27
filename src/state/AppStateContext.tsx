@@ -10,6 +10,7 @@ import {
 } from "react";
 import { nanoid } from "nanoid";
 import { createDefaultPane, defaultSettings } from "./defaults";
+import { randomPaneColor } from "../utils/paneColors";
 import {
   buildSessionState,
   createSnapshot,
@@ -42,7 +43,7 @@ type AppStateContextValue = {
   updatePaneContent: (paneId: string, content: string) => void;
   addPane: () => void;
   deletePane: (paneId: string) => void;
-  reorderPane: (draggedPaneId: string, targetPaneId: string) => void;
+  movePane: (paneId: string, direction: -1 | 1) => void;
   updateSettings: (settings: AppSettings) => void;
   saveNow: () => Promise<void>;
   recordSnapshot: (paneId: string, trigger: SnapshotTrigger, content: string) => void;
@@ -161,13 +162,12 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   );
 
   const addPane = useCallback(() => {
-    const pane: Pane = {
-      id: nanoid(),
-      title: "new buffer",
-      content: "",
-    };
-    setPanes((current) => [...current, pane]);
-    setActivePaneId(pane.id);
+    setPanes((current) => {
+      const previousColor = current.length > 0 ? current[current.length - 1].headerColor : null;
+      const pane = createDefaultPane(nanoid(), previousColor);
+      setActivePaneId(pane.id);
+      return [...current, pane];
+    });
     markUnsaved();
   }, [markUnsaved]);
 
@@ -201,26 +201,24 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     [activePaneId, markUnsaved, panes, showToast],
   );
 
-  const reorderPane = useCallback(
-    (draggedPaneId: string, targetPaneId: string) => {
-      if (draggedPaneId === targetPaneId) {
-        return;
-      }
-
+  const movePane = useCallback(
+    (paneId: string, direction: -1 | 1) => {
       setPanes((current) => {
-        const fromIndex = current.findIndex((pane) => pane.id === draggedPaneId);
-        const toIndex = current.findIndex((pane) => pane.id === targetPaneId);
-        if (fromIndex < 0 || toIndex < 0) {
+        const fromIndex = current.findIndex((pane) => pane.id === paneId);
+        if (fromIndex < 0) {
+          return current;
+        }
+        const toIndex = fromIndex + direction;
+        if (toIndex < 0 || toIndex >= current.length) {
           return current;
         }
 
         const next = [...current];
-        const [draggedPane] = next.splice(fromIndex, 1);
-        next.splice(toIndex, 0, draggedPane);
+        const [moved] = next.splice(fromIndex, 1);
+        next.splice(toIndex, 0, moved);
         markUnsaved();
         return next;
       });
-      setActivePaneId(draggedPaneId);
     },
     [markUnsaved],
   );
@@ -307,7 +305,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       updatePaneContent,
       addPane,
       deletePane,
-      reorderPane,
+      movePane,
       updateSettings,
       saveNow,
       recordSnapshot,
@@ -326,9 +324,9 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       deletePane,
       dismissBlockingError,
       dismissToast,
+      movePane,
       panes,
       recordSnapshot,
-      reorderPane,
       saveNow,
       saveState,
       settings,
@@ -368,7 +366,6 @@ function normalizeSettings(settings: AppSettings | null): AppSettings {
       200,
       defaultSettings.snapshotSearchPageSize,
     ),
-    opacity: clampNumber(settings.opacity, 0.45, 1, defaultSettings.opacity),
     editorFontSize: clampNumber(settings.editorFontSize, 10, 32, defaultSettings.editorFontSize),
   };
 }
@@ -378,13 +375,31 @@ function normalizePanes(panes: Pane[] | undefined): Pane[] {
     return [];
   }
 
+  let previousHeader: string | null = null;
+
   return panes
     .filter((pane) => typeof pane.id === "string" && pane.id.length > 0)
-    .map((pane, index) => ({
-      id: pane.id,
-      title: typeof pane.title === "string" && pane.title.length > 0 ? pane.title : "new buffer",
-      content: typeof pane.content === "string" ? pane.content : "",
-    }));
+    .map((pane) => {
+      const hasColors =
+        typeof pane.headerColor === "string" &&
+        /^#[0-9a-f]{6}$/i.test(pane.headerColor) &&
+        typeof pane.backgroundColor === "string" &&
+        /^#[0-9a-f]{6}$/i.test(pane.backgroundColor);
+
+      const colors = hasColors
+        ? { header: pane.headerColor, background: pane.backgroundColor }
+        : randomPaneColor(previousHeader);
+
+      previousHeader = colors.header;
+
+      return {
+        id: pane.id,
+        title: typeof pane.title === "string" && pane.title.length > 0 ? pane.title : "New Buffer",
+        content: typeof pane.content === "string" ? pane.content : "",
+        headerColor: colors.header,
+        backgroundColor: colors.background,
+      };
+    });
 }
 
 function clampNumber(value: number, min: number, max: number, fallback: number): number {

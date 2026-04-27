@@ -1,3 +1,4 @@
+import { useEffect, useRef, type CSSProperties } from "react";
 import { Trash2 } from "lucide-react";
 import type { Pane } from "../types";
 import { useAppState } from "../state/AppStateContext";
@@ -15,36 +16,36 @@ export function PaneView({ pane }: PaneViewProps) {
     updatePaneTitle,
     updatePaneContent,
     deletePane,
-    reorderPane,
     recordSnapshot,
   } = useAppState();
+  const editorRef = useRef<HTMLTextAreaElement | null>(null);
   const active = pane.id === activePaneId;
   const counts = getTextCounts(pane.content);
+
+  useEffect(() => {
+    if (active && editorRef.current && document.activeElement !== editorRef.current) {
+      const titleInputFocused = document.activeElement?.classList.contains("paneTitleInput");
+      if (!titleInputFocused) {
+        editorRef.current.focus();
+      }
+    }
+  }, [active]);
 
   return (
     <section
       className={`pane ${active ? "pane-active" : ""}`}
-      onDragOver={(event) => event.preventDefault()}
-      onDrop={(event) => {
-        event.preventDefault();
-        const draggedPaneId = event.dataTransfer.getData("text/plain");
-        reorderPane(draggedPaneId, pane.id);
-      }}
+      style={
+        {
+          "--pane-color": pane.headerColor,
+          "--pane-bg": pane.backgroundColor,
+        } as CSSProperties
+      }
       onMouseDown={() => setActivePaneId(pane.id)}
     >
-      <header
-        className="paneHeader"
-        draggable
-        onDragStart={(event) => {
-          event.dataTransfer.effectAllowed = "move";
-          event.dataTransfer.setData("text/plain", pane.id);
-          setActivePaneId(pane.id);
-        }}
-      >
+      <header className="paneHeader">
         <input
           aria-label="Pane title"
           className="paneTitleInput"
-          draggable={false}
           value={pane.title}
           onChange={(event) => updatePaneTitle(pane.id, event.target.value)}
           onFocus={() => setActivePaneId(pane.id)}
@@ -62,6 +63,7 @@ export function PaneView({ pane }: PaneViewProps) {
         </button>
       </header>
       <textarea
+        ref={editorRef}
         className="paneEditor"
         value={pane.content}
         onChange={(event) => updatePaneContent(pane.id, event.target.value)}
@@ -69,7 +71,7 @@ export function PaneView({ pane }: PaneViewProps) {
         onCut={() => recordSnapshot(pane.id, "cut", pane.content)}
         onPaste={() => recordSnapshot(pane.id, "paste", pane.content)}
         onFocus={() => setActivePaneId(pane.id)}
-        spellCheck={false}
+        spellCheck
         style={{
           fontFamily: settings.editorFontFamily,
           fontSize: `${settings.editorFontSize}px`,

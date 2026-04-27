@@ -2,11 +2,11 @@ export type ShortcutId =
   | "addPane"
   | "focusPreviousPane"
   | "focusNextPane"
+  | "movePaneLeft"
+  | "movePaneRight"
   | "openSettings"
   | "openShortcuts"
   | "toggleTopmost"
-  | "increaseOpacity"
-  | "decreaseOpacity"
   | "closeModal";
 
 export type ShortcutDefinition = {
@@ -32,6 +32,16 @@ export const shortcutDefinitions: ShortcutDefinition[] = [
     description: "Focus next pane",
   },
   {
+    id: "movePaneLeft",
+    keys: "Cmd/Ctrl + Shift + Left",
+    description: "Move active pane left",
+  },
+  {
+    id: "movePaneRight",
+    keys: "Cmd/Ctrl + Shift + Right",
+    description: "Move active pane right",
+  },
+  {
     id: "openSettings",
     keys: "Cmd/Ctrl + ,",
     description: "Open settings",
@@ -45,16 +55,6 @@ export const shortcutDefinitions: ShortcutDefinition[] = [
     id: "toggleTopmost",
     keys: "Cmd/Ctrl + Shift + T",
     description: "Toggle always on top",
-  },
-  {
-    id: "increaseOpacity",
-    keys: "Cmd/Ctrl + Shift + Up",
-    description: "Increase opacity",
-  },
-  {
-    id: "decreaseOpacity",
-    keys: "Cmd/Ctrl + Shift + Down",
-    description: "Decrease opacity",
   },
   {
     id: "closeModal",
@@ -78,6 +78,14 @@ export function matchesShortcut(event: KeyboardEvent, id: ShortcutId): boolean {
     return commandOrControl && !event.shiftKey && event.key === "ArrowRight";
   }
 
+  if (id === "movePaneLeft") {
+    return commandOrControl && event.shiftKey && event.key === "ArrowLeft";
+  }
+
+  if (id === "movePaneRight") {
+    return commandOrControl && event.shiftKey && event.key === "ArrowRight";
+  }
+
   if (id === "openSettings") {
     return commandOrControl && !event.shiftKey && event.key === ",";
   }
@@ -88,14 +96,6 @@ export function matchesShortcut(event: KeyboardEvent, id: ShortcutId): boolean {
 
   if (id === "toggleTopmost") {
     return commandOrControl && event.shiftKey && event.key.toLowerCase() === "t";
-  }
-
-  if (id === "increaseOpacity") {
-    return commandOrControl && event.shiftKey && event.key === "ArrowUp";
-  }
-
-  if (id === "decreaseOpacity") {
-    return commandOrControl && event.shiftKey && event.key === "ArrowDown";
   }
 
   return id === "closeModal" && event.key === "Escape";

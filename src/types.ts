@@ -4,6 +4,8 @@ export type Pane = {
   id: string;
   title: string;
   content: string;
+  headerColor: string;
+  backgroundColor: string;
 };
 
 export type SaveState = "saved" | "saving" | "unsaved" | "error";
@@ -12,7 +14,6 @@ export type AppSettings = {
   autosaveDelaySeconds: number;
   snapshotSearchPageSize: number;
   topmost: boolean;
-  opacity: number;
   editorFontFamily: string;
   editorFontSize: number;
 };

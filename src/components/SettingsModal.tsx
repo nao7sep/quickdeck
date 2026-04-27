@@ -101,17 +101,6 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
             />
             <span>Keep window on top</span>
           </label>
-          <label>
-            <span>Opacity</span>
-            <input
-              type="range"
-              min={0.45}
-              max={1}
-              step={0.05}
-              value={draft.opacity}
-              onChange={(event) => setField("opacity", Number(event.target.value))}
-            />
-          </label>
         </div>
       </ModalBase>
       {confirmingClose ? (
@@ -126,7 +115,6 @@ function normalizeDraft(settings: AppSettings): AppSettings {
     ...settings,
     autosaveDelaySeconds: clamp(settings.autosaveDelaySeconds, 1, 60),
     snapshotSearchPageSize: clamp(settings.snapshotSearchPageSize, 5, 200),
-    opacity: clamp(settings.opacity, 0.45, 1),
     editorFontFamily: settings.editorFontFamily.trim() || "monospace",
     editorFontSize: clamp(settings.editorFontSize, 10, 32),
   };

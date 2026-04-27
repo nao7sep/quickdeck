@@ -1,19 +1,27 @@
+/* ================================================================
+   QuickDeck — styles.css
+   ================================================================ */
+
 :root {
-  color: #17202a;
+  color: #1e1e2e;
   background: transparent;
   font-family:
-    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+    "Segoe UI", sans-serif;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
-  --accent: #176c75;
-  --accent-strong: #0c4b52;
-  --border: #c7c9be;
-  --surface: #fffef9;
-  --surface-strong: #eef4ee;
-  --text-muted: #5c6670;
-  --danger: #a43c2b;
-  --warning: #8a650f;
+
+  --border: #e5e7f0;
+  --surface: #ffffff;
+  --surface-muted: #f8f9fc;
+  --text-muted: #6b7280;
+  --danger: #ef4444;
+  --warning: #f59e0b;
+
+  /* Per-pane CSS custom properties (set inline per pane) */
+  --pane-color: #7c3aed;
+  --pane-bg: #f5f3ff;
 }
 
 * {
@@ -39,150 +47,181 @@ button {
   cursor: pointer;
 }
 
+/* ── App Shell ───────────────────────────────────────────────── */
+
 .appShell {
   display: grid;
   grid-template-rows: auto 1fr;
   width: 100%;
   height: 100%;
-  min-width: 680px;
-  background: #f6f7f2;
-  transition: opacity 120ms ease;
+  background: #ecedf5;
 }
+
+/* ── Header ──────────────────────────────────────────────────── */
 
 .appHeader {
   display: grid;
   grid-template-columns: 1fr auto auto;
   align-items: center;
   gap: 16px;
-  height: 46px;
-  padding: 6px 10px;
-  border-bottom: 1px solid var(--border);
-  background: var(--surface);
+  height: 50px;
+  padding: 8px 12px;
+  background: linear-gradient(135deg, #1e1b4b 0%, #312e81 50%, #4c1d95 100%);
 }
 
 .appTitle {
   margin: 0;
-  font-size: 16px;
-  font-weight: 700;
-  letter-spacing: 0;
-}
-
-.menuWrap {
-  position: relative;
-}
-
-.iconTextButton,
-.iconButton,
-.menuPanel button,
-.primaryButton,
-.secondaryButton,
-.dangerButton {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  min-height: 32px;
-  border: 1px solid var(--border);
-  border-radius: 7px;
-  background: #ffffff;
-  color: #17202a;
-}
-
-.iconTextButton {
-  padding: 0 10px;
-}
-
-.iconButton {
-  width: 32px;
-  padding: 0;
-}
-
-.iconButton:disabled {
-  cursor: default;
-  opacity: 0.42;
-}
-
-.menuPanel {
-  position: absolute;
-  z-index: 20;
-  top: 38px;
-  right: 0;
-  display: grid;
-  width: 220px;
-  padding: 6px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--surface);
-  box-shadow: 0 12px 24px rgba(23, 32, 42, 0.16);
-}
-
-.menuPanel button {
-  justify-content: flex-start;
-  border-color: transparent;
-  background: transparent;
-  padding: 8px;
-}
-
-.menuPanel button:hover,
-.iconTextButton:hover,
-.iconButton:hover,
-.secondaryButton:hover {
-  background: var(--surface-strong);
+  font-size: 18px;
+  font-weight: 900;
+  letter-spacing: -0.3px;
+  color: #ffffff;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.35), 0 0 16px rgba(165, 180, 252, 0.55);
 }
 
 .headerStatus {
   display: flex;
   align-items: center;
-  gap: 10px;
-  color: var(--text-muted);
-  font-size: 12px;
+  gap: 8px;
+  font-size: 11px;
+  font-weight: 600;
 }
+
+.headerStatus span {
+  padding: 3px 9px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.14);
+  color: rgba(255, 255, 255, 0.82);
+  letter-spacing: 0.3px;
+}
+
+/* ── Save State ──────────────────────────────────────────────── */
 
 .saveState {
   text-transform: capitalize;
 }
 
 .saveState-error {
-  color: var(--danger);
+  color: #fca5a5 !important;
+  background: rgba(239, 68, 68, 0.22) !important;
 }
 
 .saveState-unsaved,
 .saveState-saving {
-  color: var(--warning);
+  color: #fde68a !important;
+  background: rgba(245, 158, 11, 0.22) !important;
 }
 
-.paneDeck {
-  display: grid;
-  grid-auto-columns: minmax(260px, 1fr);
-  grid-auto-flow: column;
-  height: 100%;
-  overflow-x: auto;
+@keyframes savePulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.5; }
 }
+
+.saveState-saving {
+  animation: savePulse 1s ease-in-out infinite;
+}
+
+/* ── Icon Button (used in header and modal header — dark context) */
+
+.iconButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.9);
+  transition: background 120ms;
+}
+
+.iconButton:hover {
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.iconButton:disabled {
+  cursor: default;
+  opacity: 0.4;
+}
+
+/* ── Menu ────────────────────────────────────────────────────── */
+
+.menuWrap {
+  position: relative;
+}
+
+.menuPanel {
+  position: absolute;
+  z-index: 20;
+  top: 42px;
+  right: 0;
+  display: grid;
+  width: 210px;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: #ffffff;
+  box-shadow:
+    0 20px 40px rgba(30, 27, 75, 0.18),
+    0 4px 12px rgba(30, 27, 75, 0.1);
+}
+
+.menuPanel button {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 38px;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #1e1e2e;
+  font-weight: 500;
+  text-align: left;
+}
+
+.menuPanel button:hover {
+  background: #f0f0f8;
+  color: #312e81;
+}
+
+/* ── Pane Deck ───────────────────────────────────────────────── */
+
+.paneDeck {
+  display: flex;
+  flex-direction: row;
+  height: 100%;
+  min-width: 0;
+  overflow: hidden;
+  gap: 2px;
+  background: #c8cadf;
+}
+
+/* ── Individual Pane ─────────────────────────────────────────── */
 
 .pane {
   display: grid;
   grid-template-rows: auto 1fr auto;
-  min-width: 260px;
-  border-right: 1px solid var(--border);
-  background: #fbfbf7;
+  flex: 1 1 0;
+  min-width: 0;
+  background: var(--pane-bg, #f5f3ff);
+  transition: box-shadow 150ms ease;
 }
 
 .pane-active {
   background: #ffffff;
-  box-shadow: inset 0 0 0 2px var(--accent);
+  box-shadow: inset 0 0 0 2px var(--pane-color, #7c3aed);
+  z-index: 1;
 }
+
+/* ── Pane Header ─────────────────────────────────────────────── */
 
 .paneHeader {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px;
-  border-bottom: 1px solid var(--border);
-  cursor: grab;
-}
-
-.paneHeader:active {
-  cursor: grabbing;
+  padding: 10px 8px 8px;
+  background: var(--pane-color, #7c3aed);
 }
 
 .paneTitleInput {
@@ -190,17 +229,37 @@ button {
   min-width: 0;
   border: 1px solid transparent;
   border-radius: 6px;
-  background: transparent;
-  color: #17202a;
-  font-weight: 650;
-  padding: 5px 6px;
+  background: rgba(255, 255, 255, 0.2);
+  color: #ffffff;
+  font-weight: 700;
+  font-size: 13px;
+  padding: 5px 8px;
+}
+
+.paneTitleInput::placeholder {
+  color: rgba(255, 255, 255, 0.55);
 }
 
 .paneTitleInput:focus {
-  border-color: var(--accent);
-  background: #ffffff;
   outline: none;
+  background: rgba(255, 255, 255, 0.28);
+  border-color: rgba(255, 255, 255, 0.5);
 }
+
+.paneHeader .iconButton {
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border-color: rgba(255, 255, 255, 0.3);
+  background: rgba(255, 255, 255, 0.15);
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.paneHeader .iconButton:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+/* ── Pane Editor ─────────────────────────────────────────────── */
 
 .paneEditor {
   width: 100%;
@@ -209,28 +268,40 @@ button {
   resize: none;
   border: 0;
   background: transparent;
-  color: #17202a;
-  line-height: 1.5;
-  padding: 12px;
+  color: #1e1e2e;
+  line-height: 1.6;
+  padding: 14px;
   outline: none;
   white-space: pre-wrap;
 }
+
+/* ── Pane Footer ─────────────────────────────────────────────── */
 
 .paneFooter {
   display: flex;
   align-items: center;
   gap: 10px;
+  min-width: 0;
   min-height: 28px;
-  padding: 4px 8px;
-  border-top: 1px solid var(--border);
+  padding: 4px 10px;
+  border-top: 1px solid rgba(0, 0, 0, 0.07);
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+  overflow: hidden;
+}
+
+.paneFooter span {
+  white-space: nowrap;
 }
 
 .countOverLimit {
   color: var(--danger);
-  font-weight: 650;
+  font-weight: 700;
 }
+
+/* ── Modal ───────────────────────────────────────────────────── */
 
 .modalOverlay {
   position: fixed;
@@ -239,7 +310,8 @@ button {
   display: grid;
   place-items: center;
   padding: 24px;
-  background: rgba(23, 32, 42, 0.36);
+  background: rgba(30, 27, 75, 0.52);
+  backdrop-filter: blur(4px);
 }
 
 .modalSurface {
@@ -248,95 +320,198 @@ button {
   width: min(680px, 100%);
   max-height: min(760px, calc(100vh - 48px));
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 16px;
   background: var(--surface);
-  box-shadow: 0 20px 60px rgba(23, 32, 42, 0.28);
+  box-shadow: 0 32px 80px rgba(30, 27, 75, 0.32);
+  overflow: hidden;
 }
 
 .modalHeader,
 .modalFooter {
   display: flex;
   align-items: center;
-  padding: 12px;
+  padding: 14px 16px;
 }
 
 .modalHeader {
   justify-content: space-between;
-  border-bottom: 1px solid var(--border);
+  background: linear-gradient(135deg, #1e1b4b 0%, #4c1d95 100%);
 }
 
 .modalHeader h2 {
   margin: 0;
-  font-size: 16px;
+  font-size: 15px;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.modalHeader .iconButton {
+  width: 30px;
+  height: 30px;
+  border-color: rgba(255, 255, 255, 0.28);
+  background: rgba(255, 255, 255, 0.14);
+  color: #ffffff;
+}
+
+.modalHeader .iconButton:hover {
+  background: rgba(255, 255, 255, 0.24);
 }
 
 .modalContent {
   min-height: 0;
   overflow: auto;
-  padding: 16px;
+  padding: 20px;
 }
 
 .modalFooter {
   justify-content: flex-end;
   gap: 8px;
   border-top: 1px solid var(--border);
+  background: var(--surface-muted);
 }
 
+/* ── Action Buttons ──────────────────────────────────────────── */
+
+.iconTextButton,
 .primaryButton,
 .secondaryButton,
 .dangerButton {
-  min-width: 104px;
-  padding: 0 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 34px;
+  border-radius: 9px;
+  font-weight: 600;
 }
 
 .primaryButton {
-  border-color: var(--accent-strong);
-  background: var(--accent);
+  min-width: 104px;
+  padding: 0 16px;
+  border: none;
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
   color: #ffffff;
+  box-shadow: 0 2px 10px rgba(99, 102, 241, 0.38);
+  transition: filter 120ms, transform 80ms, box-shadow 120ms;
+}
+
+.primaryButton:hover {
+  filter: brightness(1.1);
+  box-shadow: 0 4px 16px rgba(99, 102, 241, 0.5);
+}
+
+.primaryButton:active {
+  transform: scale(0.97);
 }
 
 .primaryButton:disabled {
   cursor: not-allowed;
-  opacity: 0.56;
+  opacity: 0.55;
+  filter: none;
+  transform: none;
+  box-shadow: none;
+}
+
+.secondaryButton {
+  min-width: 104px;
+  padding: 0 16px;
+  border: 1.5px solid var(--border);
+  background: #ffffff;
+  color: #374151;
+  transition: background 120ms, border-color 120ms;
+}
+
+.secondaryButton:hover {
+  background: var(--surface-muted);
+  border-color: #c0c4d6;
 }
 
 .dangerButton {
-  border-color: var(--danger);
-  background: var(--danger);
+  min-width: 104px;
+  padding: 0 16px;
+  border: none;
+  background: linear-gradient(135deg, #ef4444, #dc2626);
   color: #ffffff;
+  box-shadow: 0 2px 10px rgba(239, 68, 68, 0.32);
+  transition: filter 120ms, transform 80ms;
 }
+
+.dangerButton:hover {
+  filter: brightness(1.1);
+}
+
+.dangerButton:active {
+  transform: scale(0.97);
+}
+
+.iconTextButton {
+  padding: 0 12px;
+  border: 1.5px solid var(--border);
+  background: #ffffff;
+  color: #374151;
+  transition: background 120ms;
+}
+
+.iconTextButton:hover {
+  background: var(--surface-muted);
+}
+
+/* ── Forms ───────────────────────────────────────────────────── */
 
 .formGrid {
   display: grid;
-  gap: 14px;
+  gap: 16px;
 }
 
 .formGrid label {
   display: grid;
   gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #374151;
 }
 
 .formGrid input[type="text"],
 .formGrid input[type="number"],
 .searchBox input {
   width: 100%;
-  min-height: 34px;
-  border: 1px solid var(--border);
-  border-radius: 7px;
+  min-height: 36px;
+  border: 1.5px solid var(--border);
+  border-radius: 8px;
   background: #ffffff;
   padding: 0 10px;
+  transition: border-color 120ms, box-shadow 120ms;
+}
+
+.formGrid input[type="text"]:focus,
+.formGrid input[type="number"]:focus {
+  outline: none;
+  border-color: #8b5cf6;
+  box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.15);
+}
+
+.formGrid input[type="range"] {
+  width: 100%;
+  accent-color: #7c3aed;
 }
 
 .checkboxRow {
   display: flex !important;
-  grid-template-columns: auto 1fr;
   align-items: center;
-  gap: 8px !important;
+  gap: 10px !important;
 }
+
+.checkboxRow input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: #7c3aed;
+}
+
+/* ── Shortcuts ───────────────────────────────────────────────── */
 
 .shortcutList {
   display: grid;
-  gap: 8px;
+  gap: 6px;
 }
 
 .shortcutRow {
@@ -344,45 +519,67 @@ button {
   grid-template-columns: minmax(150px, auto) 1fr;
   align-items: center;
   gap: 12px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #f5f3ff;
 }
 
 kbd {
   display: inline-flex;
   justify-content: center;
-  border: 1px solid var(--border);
-  border-radius: 6px;
+  border: 1.5px solid #c4b5fd;
+  border-radius: 7px;
   background: #ffffff;
-  padding: 4px 8px;
+  padding: 4px 10px;
   font-size: 12px;
+  font-weight: 700;
+  color: #4c1d95;
+  box-shadow: 0 2px 0 #c4b5fd;
+  white-space: nowrap;
 }
+
+/* ── About ───────────────────────────────────────────────────── */
 
 .aboutText {
   display: grid;
-  gap: 8px;
+  gap: 10px;
+  font-size: 14px;
+  color: #374151;
+  line-height: 1.6;
 }
 
 .aboutText p {
   margin: 0;
 }
 
+/* ── Snapshot Search ─────────────────────────────────────────── */
+
 .searchBox {
   display: flex;
   align-items: center;
   gap: 8px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
+  border: 1.5px solid var(--border);
+  border-radius: 10px;
   background: #ffffff;
-  padding: 0 10px;
+  padding: 0 12px;
+  transition: border-color 120ms, box-shadow 120ms;
+}
+
+.searchBox:focus-within {
+  border-color: #8b5cf6;
+  box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.15);
 }
 
 .searchBox input {
   border: 0;
   padding-left: 0;
   outline: none;
+  font-size: 14px;
 }
 
 .mutedText {
   color: var(--text-muted);
+  font-size: 13px;
 }
 
 .errorText {
@@ -406,10 +603,16 @@ kbd {
 .snapshotResult {
   display: grid;
   gap: 8px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
+  border: 1.5px solid var(--border);
+  border-radius: 10px;
   background: #ffffff;
-  padding: 10px;
+  padding: 12px;
+  transition: border-color 160ms, box-shadow 160ms;
+}
+
+.snapshotResult:hover {
+  border-color: #a78bfa;
+  box-shadow: 0 2px 8px rgba(124, 58, 237, 0.1);
 }
 
 .snapshotResult header {
@@ -417,7 +620,8 @@ kbd {
   justify-content: space-between;
   gap: 12px;
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: 11px;
+  font-weight: 500;
 }
 
 .snapshotResult pre {
@@ -427,12 +631,15 @@ kbd {
   white-space: pre-wrap;
   word-break: break-word;
   font-family: inherit;
-  line-height: 1.45;
+  font-size: 13px;
+  line-height: 1.5;
 }
 
 .loadMoreButton {
   justify-self: end;
 }
+
+/* ── Toasts ──────────────────────────────────────────────────── */
 
 .toastViewport {
   position: fixed;
@@ -449,21 +656,25 @@ kbd {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
+  border: 1.5px solid var(--border);
+  border-radius: 12px;
   background: #ffffff;
-  padding: 10px 12px;
-  box-shadow: 0 10px 24px rgba(23, 32, 42, 0.18);
+  padding: 10px 14px;
+  box-shadow:
+    0 8px 24px rgba(30, 27, 75, 0.14),
+    0 2px 6px rgba(30, 27, 75, 0.08);
+  font-size: 13px;
+  font-weight: 500;
 }
 
 .toast-warning {
-  border-color: #d3b35a;
-  background: #fff8df;
+  border-color: #fde68a;
+  background: linear-gradient(135deg, #fffbeb, #fef9e7);
 }
 
 .toast-error {
-  border-color: #ce8a7d;
-  background: #fff0ed;
+  border-color: #fca5a5;
+  background: linear-gradient(135deg, #fef2f2, #fff5f5);
 }
 
 .toastClose {
@@ -473,5 +684,12 @@ kbd {
   width: 24px;
   height: 24px;
   border: 0;
+  border-radius: 6px;
   background: transparent;
+  flex-shrink: 0;
+  transition: background 120ms;
+}
+
+.toastClose:hover {
+  background: rgba(0, 0, 0, 0.08);
 }

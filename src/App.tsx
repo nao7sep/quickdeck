@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
+  History,
   Info,
   Keyboard,
   Menu,
@@ -9,6 +10,7 @@ import {
   Settings,
 } from "lucide-react";
 import { AboutModal } from "./components/AboutModal";
+import { SnapshotSearchModal } from "./components/SnapshotSearchModal";
 import { ErrorModal } from "./components/ErrorModal";
 import { PaneView } from "./components/PaneView";
 import { SettingsModal } from "./components/SettingsModal";
@@ -17,7 +19,7 @@ import { ToastViewport } from "./components/ToastViewport";
 import { matchesShortcut } from "./shortcuts";
 import { useAppState } from "./state/AppStateContext";
 
-type OpenModal = "settings" | "shortcuts" | "about" | null;
+type OpenModal = "settings" | "shortcuts" | "about" | "snapshots" | null;
 
 export function App() {
   const {
@@ -29,6 +31,7 @@ export function App() {
     settings,
     setActivePaneId,
     addPane,
+    movePane,
     saveNow,
     showToast,
     snapshotAllPanes,
@@ -45,16 +48,6 @@ export function App() {
   const toggleTopmost = useCallback(() => {
     updateSettings({ ...settings, topmost: !settings.topmost });
   }, [settings, updateSettings]);
-
-  const adjustOpacity = useCallback(
-    (delta: number) => {
-      updateSettings({
-        ...settings,
-        opacity: Math.min(1, Math.max(0.45, Number((settings.opacity + delta).toFixed(2)))),
-      });
-    },
-    [settings, updateSettings],
-  );
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
@@ -81,6 +74,16 @@ export function App() {
         setActivePaneId(next.id);
       }
 
+      if (matchesShortcut(event, "movePaneLeft")) {
+        event.preventDefault();
+        movePane(activePaneId, -1);
+      }
+
+      if (matchesShortcut(event, "movePaneRight")) {
+        event.preventDefault();
+        movePane(activePaneId, 1);
+      }
+
       if (matchesShortcut(event, "openSettings")) {
         event.preventDefault();
         openMenuModal("settings");
@@ -95,16 +98,6 @@ export function App() {
         event.preventDefault();
         toggleTopmost();
       }
-
-      if (matchesShortcut(event, "increaseOpacity")) {
-        event.preventDefault();
-        adjustOpacity(0.05);
-      }
-
-      if (matchesShortcut(event, "decreaseOpacity")) {
-        event.preventDefault();
-        adjustOpacity(-0.05);
-      }
     }
 
     window.addEventListener("keydown", handleKeyDown);
@@ -112,8 +105,8 @@ export function App() {
   }, [
     activePaneId,
     addPane,
-    adjustOpacity,
     blockingError,
+    movePane,
     openMenuModal,
     openModal,
     panes,
@@ -184,12 +177,11 @@ export function App() {
   }, [saveNow, showToast, snapshotAllPanes]);
 
   return (
-    <main className="appShell" style={{ opacity: settings.opacity }}>
+    <main className="appShell">
       <header className="appHeader">
         <h1 className="appTitle">QuickDeck</h1>
         <div className="headerStatus">
           <span>{settings.topmost ? "Topmost" : "Normal"}</span>
-          <span>{Math.round(settings.opacity * 100)}%</span>
           <span className={`saveState saveState-${saveState}`}>{saveState}</span>
         </div>
         <div className="menuWrap">
@@ -210,6 +202,10 @@ export function App() {
                 <Keyboard size={16} />
                 Shortcuts
               </button>
+              <button type="button" onClick={() => openMenuModal("snapshots")}>
+                <History size={16} />
+                Snapshot Search
+              </button>
               <button type="button" onClick={() => openMenuModal("about")}>
                 <Info size={16} />
                 About
@@ -226,6 +222,7 @@ export function App() {
       {openModal === "settings" ? <SettingsModal onClose={() => setOpenModal(null)} /> : null}
       {openModal === "shortcuts" ? <ShortcutsModal onClose={() => setOpenModal(null)} /> : null}
       {openModal === "about" ? <AboutModal onClose={() => setOpenModal(null)} /> : null}
+      {openModal === "snapshots" ? <SnapshotSearchModal onClose={() => setOpenModal(null)} /> : null}
       {blockingError ? <ErrorModal error={blockingError} onClose={dismissBlockingError} /> : null}
       <ToastViewport />
     </main>
