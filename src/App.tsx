@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
@@ -6,6 +6,7 @@ import {
   Info,
   Keyboard,
   Menu,
+  Pin,
   Plus,
   Settings,
 } from "lucide-react";
@@ -39,6 +40,7 @@ export function App() {
   } = useAppState();
   const [menuOpen, setMenuOpen] = useState(false);
   const [openModal, setOpenModal] = useState<OpenModal>(null);
+  const menuWrapRef = useRef<HTMLDivElement | null>(null);
 
   const openMenuModal = useCallback((modal: OpenModal) => {
     setOpenModal(modal);
@@ -48,6 +50,32 @@ export function App() {
   const toggleTopmost = useCallback(() => {
     updateSettings({ ...settings, topmost: !settings.topmost });
   }, [settings, updateSettings]);
+
+  // Close the hamburger menu on outside click or Escape.
+  useEffect(() => {
+    if (!menuOpen) {
+      return undefined;
+    }
+
+    function handleClickOutside(event: MouseEvent) {
+      if (menuWrapRef.current && !menuWrapRef.current.contains(event.target as Node)) {
+        setMenuOpen(false);
+      }
+    }
+
+    function handleEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setMenuOpen(false);
+      }
+    }
+
+    document.addEventListener("mousedown", handleClickOutside);
+    document.addEventListener("keydown", handleEscape);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("keydown", handleEscape);
+    };
+  }, [menuOpen]);
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
@@ -178,47 +206,52 @@ export function App() {
 
   return (
     <main className="appShell">
-      <header className="appHeader">
-        <h1 className="appTitle">QuickDeck</h1>
-        <div className="headerStatus">
-          <span>{settings.topmost ? "Topmost" : "Normal"}</span>
-          <span className={`saveState saveState-${saveState}`}>{saveState}</span>
-        </div>
-        <div className="menuWrap">
-          <button className="iconButton" type="button" aria-label="Open menu" onClick={() => setMenuOpen((open) => !open)}>
-            <Menu size={18} />
-          </button>
-          {menuOpen ? (
-            <div className="menuPanel">
-              <button type="button" onClick={addPane}>
-                <Plus size={16} />
-                Add Pane
-              </button>
-              <button type="button" onClick={() => openMenuModal("settings")}>
-                <Settings size={16} />
-                Settings
-              </button>
-              <button type="button" onClick={() => openMenuModal("shortcuts")}>
-                <Keyboard size={16} />
-                Shortcuts
-              </button>
-              <button type="button" onClick={() => openMenuModal("snapshots")}>
-                <History size={16} />
-                Snapshot Search
-              </button>
-              <button type="button" onClick={() => openMenuModal("about")}>
-                <Info size={16} />
-                About
-              </button>
-            </div>
-          ) : null}
-        </div>
-      </header>
       <div className="paneDeck">
         {panes.map((pane) => (
           <PaneView pane={pane} key={pane.id} />
         ))}
       </div>
+      <footer className="appStatusBar">
+        <span className="appTitle">QuickDeck</span>
+        <div className="statusBarRight">
+          {settings.topmost ? (
+            <span className="statusBadge statusBadge-topmost">
+              <Pin size={11} />
+              Topmost
+            </span>
+          ) : null}
+          <span className={`statusBadge saveState saveState-${saveState}`}>{saveState}</span>
+          <div className="menuWrap" ref={menuWrapRef}>
+            <button className="statusMenuButton" type="button" aria-label="Open menu" onClick={() => setMenuOpen((open) => !open)}>
+              <Menu size={15} />
+            </button>
+            {menuOpen ? (
+              <div className="menuPanel menuPanelUp">
+                <button type="button" onClick={addPane}>
+                  <Plus size={16} />
+                  Add Pane
+                </button>
+                <button type="button" onClick={() => openMenuModal("settings")}>
+                  <Settings size={16} />
+                  Settings
+                </button>
+                <button type="button" onClick={() => openMenuModal("shortcuts")}>
+                  <Keyboard size={16} />
+                  Shortcuts
+                </button>
+                <button type="button" onClick={() => openMenuModal("snapshots")}>
+                  <History size={16} />
+                  Snapshot Search
+                </button>
+                <button type="button" onClick={() => openMenuModal("about")}>
+                  <Info size={16} />
+                  About
+                </button>
+              </div>
+            ) : null}
+          </div>
+        </div>
+      </footer>
       {openModal === "settings" ? <SettingsModal onClose={() => setOpenModal(null)} /> : null}
       {openModal === "shortcuts" ? <ShortcutsModal onClose={() => setOpenModal(null)} /> : null}
       {openModal === "about" ? <AboutModal onClose={() => setOpenModal(null)} /> : null}

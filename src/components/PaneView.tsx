@@ -19,13 +19,15 @@ export function PaneView({ pane }: PaneViewProps) {
     recordSnapshot,
   } = useAppState();
   const editorRef = useRef<HTMLTextAreaElement | null>(null);
+  const titleRef = useRef<HTMLInputElement | null>(null);
   const active = pane.id === activePaneId;
   const counts = getTextCounts(pane.content);
 
+  // When this pane becomes active, focus the textarea unless the user clicked
+  // into this pane's own title input (in which case leave it alone).
   useEffect(() => {
     if (active && editorRef.current && document.activeElement !== editorRef.current) {
-      const titleInputFocused = document.activeElement?.classList.contains("paneTitleInput");
-      if (!titleInputFocused) {
+      if (document.activeElement !== titleRef.current) {
         editorRef.current.focus();
       }
     }
@@ -44,6 +46,7 @@ export function PaneView({ pane }: PaneViewProps) {
     >
       <header className="paneHeader">
         <input
+          ref={titleRef}
           aria-label="Pane title"
           className="paneTitleInput"
           value={pane.title}

@@ -51,47 +51,76 @@ button {
 
 .appShell {
   display: grid;
-  grid-template-rows: auto 1fr;
+  grid-template-rows: 1fr auto;
   width: 100%;
   height: 100%;
   background: #ecedf5;
 }
 
-/* ── Header ──────────────────────────────────────────────────── */
+/* ── Status Bar ──────────────────────────────────────────────── */
 
-.appHeader {
-  display: grid;
-  grid-template-columns: 1fr auto auto;
+.appStatusBar {
+  display: flex;
   align-items: center;
-  gap: 16px;
-  height: 50px;
-  padding: 8px 12px;
+  justify-content: space-between;
+  gap: 10px;
+  height: 32px;
+  padding: 0 10px;
   background: linear-gradient(135deg, #1e1b4b 0%, #312e81 50%, #4c1d95 100%);
 }
 
 .appTitle {
-  margin: 0;
-  font-size: 18px;
-  font-weight: 900;
-  letter-spacing: -0.3px;
-  color: #ffffff;
-  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.35), 0 0 16px rgba(165, 180, 252, 0.55);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.4px;
+  color: rgba(255, 255, 255, 0.6);
+  text-transform: uppercase;
 }
 
-.headerStatus {
+.statusBarRight {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: 11px;
-  font-weight: 600;
+  gap: 6px;
 }
 
-.headerStatus span {
-  padding: 3px 9px;
+.statusBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
   border-radius: 20px;
   background: rgba(255, 255, 255, 0.14);
   color: rgba(255, 255, 255, 0.82);
+  font-size: 11px;
+  font-weight: 600;
   letter-spacing: 0.3px;
+}
+
+.statusBadge-topmost {
+  background: rgba(99, 102, 241, 0.42);
+  color: #c7d2fe;
+}
+
+.statusMenuButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.9);
+  transition: background 120ms;
+}
+
+.statusMenuButton:hover {
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.menuPanelUp {
+  top: auto;
+  bottom: 34px;
 }
 
 /* ── Save State ──────────────────────────────────────────────── */
@@ -153,7 +182,6 @@ button {
 .menuPanel {
   position: absolute;
   z-index: 20;
-  top: 42px;
   right: 0;
   display: grid;
   width: 210px;
