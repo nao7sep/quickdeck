@@ -362,6 +362,48 @@ kbd {
   color: var(--text-muted);
 }
 
+.snapshotSearchControls {
+  display: grid;
+  gap: 12px;
+}
+
+.snapshotResults {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.snapshotResult {
+  display: grid;
+  gap: 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 10px;
+}
+
+.snapshotResult header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.snapshotResult pre {
+  max-height: 220px;
+  margin: 0;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: inherit;
+  line-height: 1.45;
+}
+
+.loadMoreButton {
+  justify-self: end;
+}
+
 .toastViewport {
   position: fixed;
   right: 16px;

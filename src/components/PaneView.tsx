@@ -15,6 +15,7 @@ export function PaneView({ pane }: PaneViewProps) {
     updatePaneTitle,
     updatePaneContent,
     deleteActivePane,
+    recordSnapshot,
   } = useAppState();
   const active = pane.id === activePaneId;
   const counts = getTextCounts(pane.content);
@@ -37,6 +38,9 @@ export function PaneView({ pane }: PaneViewProps) {
         className="paneEditor"
         value={pane.content}
         onChange={(event) => updatePaneContent(pane.id, event.target.value)}
+        onCopy={() => recordSnapshot(pane.id, "copy", pane.content)}
+        onCut={() => recordSnapshot(pane.id, "cut", pane.content)}
+        onPaste={() => recordSnapshot(pane.id, "paste", pane.content)}
         onFocus={() => setActivePaneId(pane.id)}
         spellCheck={false}
         style={{

@@ -3,12 +3,22 @@ import {
   type ReactNode,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import { nanoid } from "nanoid";
 import { createDefaultPane, defaultSettings } from "./defaults";
-import type { AppSettings, Pane, SaveState, Toast, ToastKind } from "../types";
+import {
+  buildSessionState,
+  createSnapshot,
+  createSnapshots,
+  loadAppData,
+  saveConfig,
+  saveSession,
+} from "../services/persistence";
+import type { AppSettings, Pane, SaveState, SnapshotTrigger, Toast, ToastKind } from "../types";
 
 type AppStateContextValue = {
   panes: Pane[];
@@ -17,6 +27,7 @@ type AppStateContextValue = {
   settings: AppSettings;
   saveState: SaveState;
   toasts: Toast[];
+  dataDir: string;
   setActivePaneId: (paneId: string) => void;
   updatePaneTitle: (paneId: string, title: string) => void;
   updatePaneContent: (paneId: string, content: string) => void;
@@ -24,7 +35,11 @@ type AppStateContextValue = {
   duplicateActivePane: () => void;
   moveActivePane: (direction: -1 | 1) => void;
   deleteActivePane: () => void;
+  clearActivePane: () => void;
   updateSettings: (settings: AppSettings) => void;
+  saveNow: () => Promise<void>;
+  recordSnapshot: (paneId: string, trigger: SnapshotTrigger, content: string) => void;
+  snapshotAllPanes: (trigger: SnapshotTrigger) => Promise<void>;
   showToast: (kind: ToastKind, message: string) => void;
   dismissToast: (toastId: string) => void;
 };
@@ -38,6 +53,13 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const [settings, setSettings] = useState(defaultSettings);
   const [saveState, setSaveState] = useState<SaveState>("saved");
   const [toasts, setToasts] = useState<Toast[]>([]);
+  const [dataDir, setDataDir] = useState("Loading...");
+  const [loaded, setLoaded] = useState(false);
+  const panesRef = useRef(panes);
+
+  useEffect(() => {
+    panesRef.current = panes;
+  }, [panes]);
 
   const markUnsaved = useCallback(() => setSaveState("unsaved"), []);
 
@@ -56,6 +78,49 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const dismissToast = useCallback((toastId: string) => {
     setToasts((current) => current.filter((toast) => toast.id !== toastId));
   }, []);
+
+  useEffect(() => {
+    let canceled = false;
+
+    async function loadPersistedState() {
+      setSaveState("saving");
+      try {
+        const data = await loadAppData();
+        if (canceled) {
+          return;
+        }
+
+        setDataDir(data.dataDir);
+        setSettings(normalizeSettings(data.config));
+
+        const loadedPanes = normalizePanes(data.session?.panes);
+        if (loadedPanes.length > 0) {
+          setPanes(loadedPanes);
+          const loadedActivePane = loadedPanes.some((pane) => pane.id === data.session?.activePaneId)
+            ? data.session?.activePaneId
+            : loadedPanes[0].id;
+          setActivePaneId(loadedActivePane ?? loadedPanes[0].id);
+        }
+
+        setSaveState("saved");
+      } catch (error) {
+        if (!canceled) {
+          setSaveState("error");
+          showToast("error", `Could not load app data: ${String(error)}`);
+        }
+      } finally {
+        if (!canceled) {
+          setLoaded(true);
+        }
+      }
+    }
+
+    void loadPersistedState();
+
+    return () => {
+      canceled = true;
+    };
+  }, [showToast]);
 
   const updatePaneTitle = useCallback(
     (paneId: string, title: string) => {
@@ -141,10 +206,84 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     markUnsaved();
   }, [activePane, markUnsaved, panes, showToast]);
 
+  const recordSnapshot = useCallback(
+    (paneId: string, trigger: SnapshotTrigger, content: string) => {
+      if (content.length === 0) {
+        return;
+      }
+
+      void createSnapshot({ paneId, trigger, content }).catch((error) => {
+        showToast("warning", `Snapshot was not saved: ${String(error)}`);
+      });
+    },
+    [showToast],
+  );
+
+  const snapshotAllPanes = useCallback(
+    async (trigger: SnapshotTrigger) => {
+      const snapshots = panesRef.current
+        .filter((pane) => pane.content.length > 0)
+        .map((pane) => ({
+          paneId: pane.id,
+          trigger,
+          content: pane.content,
+        }));
+
+      if (snapshots.length === 0) {
+        return;
+      }
+
+      await createSnapshots(snapshots);
+    },
+    [],
+  );
+
+  const clearActivePane = useCallback(() => {
+    if (activePane.content.length === 0) {
+      return;
+    }
+
+    recordSnapshot(activePane.id, "clear", activePane.content);
+    setPanes((current) =>
+      current.map((pane) => (pane.id === activePane.id ? { ...pane, content: "" } : pane)),
+    );
+    markUnsaved();
+  }, [activePane, markUnsaved, recordSnapshot]);
+
   const updateSettings = useCallback((nextSettings: AppSettings) => {
     setSettings(nextSettings);
     setSaveState("unsaved");
   }, []);
+
+  const saveNow = useCallback(async () => {
+    if (!loaded) {
+      return;
+    }
+
+    setSaveState("saving");
+    try {
+      await Promise.all([
+        saveConfig(settings),
+        saveSession(buildSessionState(panes, activePaneId)),
+      ]);
+      setSaveState("saved");
+    } catch (error) {
+      setSaveState("error");
+      showToast("error", `Could not save app data: ${String(error)}`);
+    }
+  }, [activePaneId, loaded, panes, settings, showToast]);
+
+  useEffect(() => {
+    if (!loaded || saveState !== "unsaved") {
+      return undefined;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      void saveNow();
+    }, Math.max(1, settings.autosaveDelaySeconds) * 1000);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [loaded, saveNow, saveState, settings.autosaveDelaySeconds]);
 
   const value = useMemo<AppStateContextValue>(
     () => ({
@@ -154,6 +293,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       settings,
       saveState,
       toasts,
+      dataDir,
       setActivePaneId,
       updatePaneTitle,
       updatePaneContent,
@@ -161,7 +301,11 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       duplicateActivePane,
       moveActivePane,
       deleteActivePane,
+      clearActivePane,
       updateSettings,
+      saveNow,
+      recordSnapshot,
+      snapshotAllPanes,
       showToast,
       dismissToast,
     }),
@@ -169,14 +313,19 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       activePane,
       activePaneId,
       addPane,
+      clearActivePane,
+      dataDir,
       deleteActivePane,
       dismissToast,
       duplicateActivePane,
       moveActivePane,
       panes,
+      recordSnapshot,
+      saveNow,
       saveState,
       settings,
       showToast,
+      snapshotAllPanes,
       toasts,
       updatePaneContent,
       updatePaneTitle,
@@ -193,4 +342,46 @@ export function useAppState() {
     throw new Error("useAppState must be used within AppStateProvider");
   }
   return value;
+}
+
+function normalizeSettings(settings: AppSettings | null): AppSettings {
+  if (!settings) {
+    return defaultSettings;
+  }
+
+  return {
+    ...defaultSettings,
+    ...settings,
+    autosaveDelaySeconds: clampNumber(settings.autosaveDelaySeconds, 1, 60, defaultSettings.autosaveDelaySeconds),
+    snapshotSearchPageSize: clampNumber(
+      settings.snapshotSearchPageSize,
+      5,
+      200,
+      defaultSettings.snapshotSearchPageSize,
+    ),
+    opacity: clampNumber(settings.opacity, 0.45, 1, defaultSettings.opacity),
+    editorFontSize: clampNumber(settings.editorFontSize, 10, 32, defaultSettings.editorFontSize),
+  };
+}
+
+function normalizePanes(panes: Pane[] | undefined): Pane[] {
+  if (!Array.isArray(panes)) {
+    return [];
+  }
+
+  return panes
+    .filter((pane) => typeof pane.id === "string" && pane.id.length > 0)
+    .map((pane, index) => ({
+      id: pane.id,
+      title: typeof pane.title === "string" && pane.title.length > 0 ? pane.title : `Buffer ${index + 1}`,
+      content: typeof pane.content === "string" ? pane.content : "",
+    }));
+}
+
+function clampNumber(value: number, min: number, max: number, fallback: number): number {
+  if (!Number.isFinite(value)) {
+    return fallback;
+  }
+
+  return Math.min(max, Math.max(min, value));
 }

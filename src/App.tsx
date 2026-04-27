@@ -1,8 +1,11 @@
 import { useEffect, useState } from "react";
+import { isTauri } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
   ChevronsLeft,
   ChevronsRight,
   CopyPlus,
+  Eraser,
   Info,
   Keyboard,
   Menu,
@@ -28,8 +31,11 @@ export function App() {
     settings,
     setActivePaneId,
     addPane,
+    clearActivePane,
     duplicateActivePane,
     moveActivePane,
+    saveNow,
+    snapshotAllPanes,
     updateSettings,
   } = useAppState();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -76,6 +82,51 @@ export function App() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [activePaneId, panes, setActivePaneId, settings, updateSettings]);
 
+  useEffect(() => {
+    const appWindow = isTauri() ? getCurrentWindow() : null;
+    let closeUnlisten: (() => void) | undefined;
+    let closing = false;
+
+    async function persistCloseState() {
+      try {
+        await snapshotAllPanes("app_close");
+      } catch {
+        // Session save still matters if insurance snapshots fail during shutdown.
+      }
+      await saveNow();
+    }
+
+    function handleBeforeUnload() {
+      void persistCloseState();
+    }
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+
+    if (appWindow) {
+      void appWindow.onCloseRequested(async (event) => {
+        if (closing) {
+          return;
+        }
+
+        closing = true;
+        event.preventDefault();
+
+        try {
+          await persistCloseState();
+        } finally {
+          await appWindow.destroy();
+        }
+      }).then((unlisten) => {
+        closeUnlisten = unlisten;
+      });
+    }
+
+    return () => {
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+      closeUnlisten?.();
+    };
+  }, [saveNow, snapshotAllPanes]);
+
   function openMenuModal(modal: OpenModal) {
     setOpenModal(modal);
     setMenuOpen(false);
@@ -98,6 +149,10 @@ export function App() {
               <button type="button" onClick={duplicateActivePane}>
                 <CopyPlus size={16} />
                 Duplicate Pane
+              </button>
+              <button type="button" onClick={clearActivePane}>
+                <Eraser size={16} />
+                Clear Pane
               </button>
               <button type="button" onClick={() => moveActivePane(-1)}>
                 <ChevronsLeft size={16} />
