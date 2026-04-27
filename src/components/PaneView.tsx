@@ -51,7 +51,9 @@ export function PaneView({ pane }: PaneViewProps) {
       <footer className="paneFooter">
         <span>Words {counts.words}</span>
         <span>Chars {counts.chars}</span>
-        <span>X {counts.xWeightedChars}/{counts.xLimit}</span>
+        <span className={counts.xValid ? undefined : "countOverLimit"}>
+          X {counts.xWeightedChars}/{counts.xLimit}
+        </span>
       </footer>
     </section>
   );

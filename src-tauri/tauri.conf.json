@@ -17,6 +17,7 @@
         "height": 760,
         "minWidth": 680,
         "minHeight": 420,
+        "transparent": true,
         "visible": true
       }
     ],

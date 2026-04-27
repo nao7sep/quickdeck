@@ -35,4 +35,5 @@ export type TextCounts = {
   chars: number;
   xWeightedChars: number;
   xLimit: number;
+  xValid: boolean;
 };
