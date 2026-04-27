@@ -43,9 +43,8 @@ fn search_snapshots(
     query: String,
     limit: u32,
     offset: u32,
-    pane_id: Option<String>,
 ) -> Result<SnapshotSearchResult, String> {
-    storage::search_snapshots(&app, query, limit, offset, pane_id)
+    storage::search_snapshots(&app, query, limit, offset)
 }
 
 #[tauri::command]

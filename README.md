@@ -6,18 +6,19 @@ It is built with Tauri, React, and TypeScript. Current workspace state is autosa
 
 ## Features
 
-- Multiple equal-width text panes
+- Multiple equal-width text panes with vivid, auto-distinct header colors
 - Editable pane titles
-- Drag-and-drop pane reordering
+- Pane reordering and focus via keyboard shortcuts (Cmd/Ctrl+Arrow, Cmd/Ctrl+Shift+Arrow)
 - Empty-only single-pane deletion
 - At least one pane always remains
 - Configurable autosave delay
-- Local SQLite snapshots on copy, paste, cut, and app close
-- Snapshot search
+- Local SQLite snapshots on copy, paste, cut, and app close (whitespace-trimmed and deduped per pane)
+- Snapshot search with local-time timestamps
 - Configurable editor font family and size
 - Word, character, and X/Twitter weighted character counts
-- Always-on-top and opacity controls through shortcuts
-- Settings, shortcuts, and about modals
+- Always-on-top toggle through settings or shortcut
+- Status bar showing pane count, snapshot count, save state, and recent snapshot activity
+- Settings, shortcuts, snapshot search, and about modals (all closable with Escape or outside click)
 
 ## Requirements
 
@@ -77,7 +78,7 @@ npm run tauri build
 
 ## Local Data
 
-QuickDeck stores data locally in the app data directory shown in the About modal.
+QuickDeck stores data locally in `~/.quickdeck`.
 
 The data files are:
 

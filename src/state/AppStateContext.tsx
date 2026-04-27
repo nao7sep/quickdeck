@@ -73,12 +73,19 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const [snapshotCount, setSnapshotCount] = useState(0);
   const [snapshotJustSavedAt, setSnapshotJustSavedAt] = useState<number | null>(null);
   const panesRef = useRef(panes);
+  // Monotonic counter bumped on every edit. saveNow snapshots the value at the
+  // start of a save and only flips back to "saved" when the counter has not
+  // moved during the save — keeps an edit from being lost in a save race.
+  const dirtyCounterRef = useRef(0);
 
   useEffect(() => {
     panesRef.current = panes;
   }, [panes]);
 
-  const markUnsaved = useCallback(() => setSaveState("unsaved"), []);
+  const markUnsaved = useCallback(() => {
+    dirtyCounterRef.current += 1;
+    setSaveState("unsaved");
+  }, []);
 
   const activePane = useMemo(() => {
     return panes.find((pane) => pane.id === activePaneId) ?? panes[0];
@@ -198,7 +205,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      if (pane.content.length > 0) {
+      if (trimSnapshotContent(pane.content).length > 0) {
         showToast("warning", "Only empty panes can be deleted.");
         return;
       }
@@ -285,6 +292,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
 
   const updateSettings = useCallback((nextSettings: AppSettings) => {
     setSettings(nextSettings);
+    dirtyCounterRef.current += 1;
     setSaveState("unsaved");
   }, []);
 
@@ -293,13 +301,19 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       return;
     }
 
+    const dirtyAtStart = dirtyCounterRef.current;
     setSaveState("saving");
     try {
       await Promise.all([
         saveConfig(settings),
         saveSession(buildSessionState(panes, activePaneId)),
       ]);
-      setSaveState("saved");
+      // Only flag as saved if no edit landed during the write.
+      if (dirtyCounterRef.current === dirtyAtStart) {
+        setSaveState("saved");
+      } else {
+        setSaveState("unsaved");
+      }
     } catch (error) {
       setSaveState("error");
       showBlockingError("Could Not Save Data", String(error));
@@ -391,6 +405,7 @@ function normalizeSettings(settings: AppSettings | null): AppSettings {
   return {
     ...defaultSettings,
     ...settings,
+    editorFontSize: clampNumber(settings.editorFontSize, 10, 32, defaultSettings.editorFontSize),
     autosaveDelaySeconds: clampNumber(settings.autosaveDelaySeconds, 1, 60, defaultSettings.autosaveDelaySeconds),
     snapshotSearchPageSize: clampNumber(
       settings.snapshotSearchPageSize,
@@ -398,7 +413,6 @@ function normalizeSettings(settings: AppSettings | null): AppSettings {
       200,
       defaultSettings.snapshotSearchPageSize,
     ),
-    editorFontSize: clampNumber(settings.editorFontSize, 10, 32, defaultSettings.editorFontSize),
   };
 }
 

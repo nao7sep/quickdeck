@@ -170,6 +170,24 @@ export function App() {
     return undefined;
   }, [settings.topmost, showToast]);
 
+  // Keep latest persistence callbacks in refs so the close handler can be
+  // registered exactly once on mount without re-attaching on every keystroke.
+  const saveNowRef = useRef(saveNow);
+  const snapshotAllPanesRef = useRef(snapshotAllPanes);
+  const showToastRef = useRef(showToast);
+
+  useEffect(() => {
+    saveNowRef.current = saveNow;
+  }, [saveNow]);
+
+  useEffect(() => {
+    snapshotAllPanesRef.current = snapshotAllPanes;
+  }, [snapshotAllPanes]);
+
+  useEffect(() => {
+    showToastRef.current = showToast;
+  }, [showToast]);
+
   useEffect(() => {
     const appWindow = isTauri() ? getCurrentWindow() : null;
     let closeUnlisten: (() => void) | undefined;
@@ -177,11 +195,15 @@ export function App() {
 
     async function persistCloseState() {
       try {
-        await snapshotAllPanes("app_close");
+        await snapshotAllPanesRef.current("app_close");
       } catch {
         // Session save still matters if insurance snapshots fail during shutdown.
       }
-      await saveNow();
+      try {
+        await saveNowRef.current();
+      } catch {
+        // saveNow surfaces its own blocking error; swallow here so shutdown proceeds.
+      }
     }
 
     function handleBeforeUnload() {
@@ -202,12 +224,17 @@ export function App() {
         try {
           await persistCloseState();
         } finally {
-          await appWindow.destroy();
+          try {
+            await appWindow.destroy();
+          } catch (error) {
+            showToastRef.current("error", `Could not close window: ${String(error)}`);
+            closing = false;
+          }
         }
       }).then((unlisten) => {
         closeUnlisten = unlisten;
       }).catch((error) => {
-        showToast("warning", `Could not register close handler: ${String(error)}`);
+        showToastRef.current("warning", `Could not register close handler: ${String(error)}`);
       });
     }
 
@@ -215,7 +242,7 @@ export function App() {
       window.removeEventListener("beforeunload", handleBeforeUnload);
       closeUnlisten?.();
     };
-  }, [saveNow, showToast, snapshotAllPanes]);
+  }, []);
 
   return (
     <main className="appShell">

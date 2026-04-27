@@ -40,7 +40,6 @@ pub struct SnapshotInput {
 #[serde(rename_all = "camelCase")]
 pub struct SnapshotSearchRow {
     pub id: String,
-    pub pane_id: String,
     pub created_at_utc: String,
     pub content: String,
 }
@@ -111,7 +110,6 @@ pub fn search_snapshots(
     query: String,
     limit: u32,
     offset: u32,
-    pane_id: Option<String>,
 ) -> Result<SnapshotSearchResult, String> {
     let data_dir = app_data_dir(app)?;
     let conn = open_snapshot_db(&data_dir)?;
@@ -131,13 +129,8 @@ pub fn search_snapshots(
     let bounded_limit = limit.clamp(1, 200);
     let fetch_limit = bounded_limit + 1;
     let mut sql =
-        String::from("select id, pane_id, created_at_utc, content from snapshots where 1 = 1");
+        String::from("select id, created_at_utc, content from snapshots where 1 = 1");
     let mut values: Vec<Value> = Vec::new();
-
-    if let Some(pane_id) = pane_id.filter(|value| !value.is_empty()) {
-        sql.push_str(" and pane_id = ?");
-        values.push(Value::Text(pane_id));
-    }
 
     for term in terms {
         sql.push_str(" and lower(content) like ? escape '\\'");
@@ -153,9 +146,8 @@ pub fn search_snapshots(
         .query_map(params_from_iter(values.iter()), |row| {
             Ok(SnapshotSearchRow {
                 id: row.get(0)?,
-                pane_id: row.get(1)?,
-                created_at_utc: row.get(2)?,
-                content: row.get(3)?,
+                created_at_utc: row.get(1)?,
+                content: row.get(2)?,
             })
         })
         .map_err(to_string_error)?

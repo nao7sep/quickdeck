@@ -114,10 +114,10 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
 function normalizeDraft(settings: AppSettings): AppSettings {
   return {
     ...settings,
-    autosaveDelaySeconds: clamp(settings.autosaveDelaySeconds, 1, 60),
-    snapshotSearchPageSize: clamp(settings.snapshotSearchPageSize, 5, 200),
     editorFontFamily: settings.editorFontFamily.trim() || "monospace",
     editorFontSize: clamp(settings.editorFontSize, 10, 32),
+    autosaveDelaySeconds: clamp(settings.autosaveDelaySeconds, 1, 60),
+    snapshotSearchPageSize: clamp(settings.snapshotSearchPageSize, 5, 200),
   };
 }
 

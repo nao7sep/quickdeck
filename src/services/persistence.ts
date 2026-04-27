@@ -27,7 +27,6 @@ export type SnapshotWriteResult = {
 
 export type SnapshotSearchRow = {
   id: string;
-  paneId: string;
   createdAtUtc: string;
   content: string;
 };
@@ -103,7 +102,6 @@ export async function searchSnapshots(
     query,
     limit,
     offset,
-    paneId: null,
   });
 }
 

@@ -11,11 +11,11 @@ export type Pane = {
 export type SaveState = "saved" | "saving" | "unsaved" | "error";
 
 export type AppSettings = {
-  autosaveDelaySeconds: number;
-  snapshotSearchPageSize: number;
   topmost: boolean;
   editorFontFamily: string;
   editorFontSize: number;
+  autosaveDelaySeconds: number;
+  snapshotSearchPageSize: number;
 };
 
 export type ToastKind = "info" | "warning" | "error";
