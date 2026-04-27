@@ -16,6 +16,9 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
   const isDirty = useMemo(() => JSON.stringify(draft) !== JSON.stringify(settings), [draft, settings]);
 
   function requestClose() {
+    if (confirmingClose) {
+      return;
+    }
     if (isDirty) {
       setConfirmingClose(true);
       return;
@@ -31,6 +34,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
     <>
       <ModalBase
         title="Settings"
+        closeDisabled={confirmingClose}
         onRequestClose={requestClose}
         footer={
           <>
@@ -41,7 +45,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
               className="primaryButton"
               type="button"
               onClick={() => {
-                updateSettings(draft);
+                updateSettings(normalizeDraft(draft));
                 onClose();
               }}
             >
@@ -115,4 +119,23 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
       ) : null}
     </>
   );
+}
+
+function normalizeDraft(settings: AppSettings): AppSettings {
+  return {
+    ...settings,
+    autosaveDelaySeconds: clamp(settings.autosaveDelaySeconds, 1, 60),
+    snapshotSearchPageSize: clamp(settings.snapshotSearchPageSize, 5, 200),
+    opacity: clamp(settings.opacity, 0.45, 1),
+    editorFontFamily: settings.editorFontFamily.trim() || "monospace",
+    editorFontSize: clamp(settings.editorFontSize, 10, 32),
+  };
+}
+
+function clamp(value: number, min: number, max: number): number {
+  if (!Number.isFinite(value)) {
+    return min;
+  }
+
+  return Math.min(max, Math.max(min, value));
 }

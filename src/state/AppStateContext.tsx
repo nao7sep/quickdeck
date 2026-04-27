@@ -18,7 +18,15 @@ import {
   saveConfig,
   saveSession,
 } from "../services/persistence";
-import type { AppSettings, Pane, SaveState, SnapshotTrigger, Toast, ToastKind } from "../types";
+import type {
+  AppSettings,
+  BlockingError,
+  Pane,
+  SaveState,
+  SnapshotTrigger,
+  Toast,
+  ToastKind,
+} from "../types";
 
 type AppStateContextValue = {
   panes: Pane[];
@@ -27,6 +35,7 @@ type AppStateContextValue = {
   settings: AppSettings;
   saveState: SaveState;
   toasts: Toast[];
+  blockingError: BlockingError | null;
   dataDir: string;
   setActivePaneId: (paneId: string) => void;
   updatePaneTitle: (paneId: string, title: string) => void;
@@ -42,6 +51,8 @@ type AppStateContextValue = {
   snapshotAllPanes: (trigger: SnapshotTrigger) => Promise<void>;
   showToast: (kind: ToastKind, message: string) => void;
   dismissToast: (toastId: string) => void;
+  showBlockingError: (title: string, message: string) => void;
+  dismissBlockingError: () => void;
 };
 
 const AppStateContext = createContext<AppStateContextValue | undefined>(undefined);
@@ -53,6 +64,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const [settings, setSettings] = useState(defaultSettings);
   const [saveState, setSaveState] = useState<SaveState>("saved");
   const [toasts, setToasts] = useState<Toast[]>([]);
+  const [blockingError, setBlockingError] = useState<BlockingError | null>(null);
   const [dataDir, setDataDir] = useState("Loading...");
   const [loaded, setLoaded] = useState(false);
   const panesRef = useRef(panes);
@@ -77,6 +89,14 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
 
   const dismissToast = useCallback((toastId: string) => {
     setToasts((current) => current.filter((toast) => toast.id !== toastId));
+  }, []);
+
+  const showBlockingError = useCallback((title: string, message: string) => {
+    setBlockingError({ title, message });
+  }, []);
+
+  const dismissBlockingError = useCallback(() => {
+    setBlockingError(null);
   }, []);
 
   useEffect(() => {
@@ -106,7 +126,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       } catch (error) {
         if (!canceled) {
           setSaveState("error");
-          showToast("error", `Could not load app data: ${String(error)}`);
+          showBlockingError("Could Not Load Data", String(error));
         }
       } finally {
         if (!canceled) {
@@ -120,7 +140,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     return () => {
       canceled = true;
     };
-  }, [showToast]);
+  }, [showBlockingError]);
 
   const updatePaneTitle = useCallback(
     (paneId: string, title: string) => {
@@ -269,9 +289,9 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       setSaveState("saved");
     } catch (error) {
       setSaveState("error");
-      showToast("error", `Could not save app data: ${String(error)}`);
+      showBlockingError("Could Not Save Data", String(error));
     }
-  }, [activePaneId, loaded, panes, settings, showToast]);
+  }, [activePaneId, loaded, panes, settings, showBlockingError]);
 
   useEffect(() => {
     if (!loaded || saveState !== "unsaved") {
@@ -293,6 +313,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       settings,
       saveState,
       toasts,
+      blockingError,
       dataDir,
       setActivePaneId,
       updatePaneTitle,
@@ -308,14 +329,18 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       snapshotAllPanes,
       showToast,
       dismissToast,
+      showBlockingError,
+      dismissBlockingError,
     }),
     [
       activePane,
       activePaneId,
       addPane,
+      blockingError,
       clearActivePane,
       dataDir,
       deleteActivePane,
+      dismissBlockingError,
       dismissToast,
       duplicateActivePane,
       moveActivePane,
@@ -324,6 +349,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       saveNow,
       saveState,
       settings,
+      showBlockingError,
       showToast,
       snapshotAllPanes,
       toasts,

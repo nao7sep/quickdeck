@@ -14,11 +14,13 @@ import {
   Settings,
 } from "lucide-react";
 import { AboutModal } from "./components/AboutModal";
+import { ErrorModal } from "./components/ErrorModal";
 import { PaneView } from "./components/PaneView";
 import { SettingsModal } from "./components/SettingsModal";
 import { ShortcutsModal } from "./components/ShortcutsModal";
 import { SnapshotSearchModal } from "./components/SnapshotSearchModal";
 import { ToastViewport } from "./components/ToastViewport";
+import { matchesShortcut } from "./shortcuts";
 import { useAppState } from "./state/AppStateContext";
 
 type OpenModal = "settings" | "shortcuts" | "about" | "snapshots" | null;
@@ -27,6 +29,8 @@ export function App() {
   const {
     panes,
     activePaneId,
+    blockingError,
+    dismissBlockingError,
     saveState,
     settings,
     setActivePaneId,
@@ -43,36 +47,35 @@ export function App() {
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
-      const commandOrControl = event.metaKey || event.ctrlKey;
-      if (!commandOrControl) {
+      if (openModal || blockingError) {
         return;
       }
 
-      if (event.key === "ArrowLeft") {
+      if (matchesShortcut(event, "focusPreviousPane")) {
         event.preventDefault();
         const index = panes.findIndex((pane) => pane.id === activePaneId);
         const previous = panes[Math.max(0, index - 1)];
         setActivePaneId(previous.id);
       }
 
-      if (event.key === "ArrowRight") {
+      if (matchesShortcut(event, "focusNextPane")) {
         event.preventDefault();
         const index = panes.findIndex((pane) => pane.id === activePaneId);
         const next = panes[Math.min(panes.length - 1, index + 1)];
         setActivePaneId(next.id);
       }
 
-      if (event.shiftKey && event.key.toLowerCase() === "t") {
+      if (matchesShortcut(event, "toggleTopmost")) {
         event.preventDefault();
         updateSettings({ ...settings, topmost: !settings.topmost });
       }
 
-      if (event.shiftKey && event.key === "ArrowUp") {
+      if (matchesShortcut(event, "increaseOpacity")) {
         event.preventDefault();
         updateSettings({ ...settings, opacity: Math.min(1, Number((settings.opacity + 0.05).toFixed(2))) });
       }
 
-      if (event.shiftKey && event.key === "ArrowDown") {
+      if (matchesShortcut(event, "decreaseOpacity")) {
         event.preventDefault();
         updateSettings({ ...settings, opacity: Math.max(0.45, Number((settings.opacity - 0.05).toFixed(2))) });
       }
@@ -80,7 +83,7 @@ export function App() {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [activePaneId, panes, setActivePaneId, settings, updateSettings]);
+  }, [activePaneId, blockingError, openModal, panes, setActivePaneId, settings, updateSettings]);
 
   useEffect(() => {
     const appWindow = isTauri() ? getCurrentWindow() : null;
@@ -196,6 +199,7 @@ export function App() {
       {openModal === "shortcuts" ? <ShortcutsModal onClose={() => setOpenModal(null)} /> : null}
       {openModal === "about" ? <AboutModal onClose={() => setOpenModal(null)} /> : null}
       {openModal === "snapshots" ? <SnapshotSearchModal onClose={() => setOpenModal(null)} /> : null}
+      {blockingError ? <ErrorModal error={blockingError} onClose={dismissBlockingError} /> : null}
       <ToastViewport />
     </main>
   );

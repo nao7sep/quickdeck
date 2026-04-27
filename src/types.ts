@@ -25,6 +25,11 @@ export type Toast = {
   message: string;
 };
 
+export type BlockingError = {
+  title: string;
+  message: string;
+};
+
 export type TextCounts = {
   words: number;
   chars: number;

@@ -88,6 +88,11 @@ button {
   padding: 0;
 }
 
+.iconButton:disabled {
+  cursor: default;
+  opacity: 0.42;
+}
+
 .menuPanel {
   position: absolute;
   z-index: 20;
@@ -360,6 +365,13 @@ kbd {
 
 .mutedText {
   color: var(--text-muted);
+}
+
+.errorText {
+  margin: 0;
+  color: var(--danger);
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .snapshotSearchControls {

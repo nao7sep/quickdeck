@@ -14,6 +14,7 @@ export function AboutModal({ onClose }: AboutModalProps) {
         <p>QuickDeck is a local-first multi-pane plain text workspace.</p>
         <p>Version 0.1.0</p>
         <p>Data path: {dataDir}</p>
+        <p>All workspace data stays local. QuickDeck does not include telemetry or remote sync.</p>
         <p>License: MIT</p>
       </div>
     </ModalBase>
