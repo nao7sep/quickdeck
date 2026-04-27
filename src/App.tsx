@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
-  Camera,
   History,
   Info,
   Keyboard,
@@ -52,7 +51,7 @@ export function App() {
       return undefined;
     }
     setSnapshotPulse(true);
-    const timeoutId = window.setTimeout(() => setSnapshotPulse(false), 1600);
+    const timeoutId = window.setTimeout(() => setSnapshotPulse(false), 3000);
     return () => window.clearTimeout(timeoutId);
   }, [snapshotJustSavedAt]);
 
@@ -232,8 +231,7 @@ export function App() {
             {panes.length} {panes.length === 1 ? "pane" : "panes"}
           </span>
           <span className="statusBadge statusBadge-info">
-            <Camera size={11} />
-            {snapshotCount.toLocaleString()}
+            {snapshotCount.toLocaleString()} snapshots
           </span>
           {snapshotPulse ? (
             <span className="statusBadge statusBadge-snapshot">Snapshot saved</span>
@@ -251,7 +249,7 @@ export function App() {
             </button>
             {menuOpen ? (
               <div className="menuPanel menuPanelUp">
-                <button type="button" onClick={addPane}>
+                <button type="button" onClick={() => { addPane(); setMenuOpen(false); }}>
                   <Plus size={16} />
                   Add Pane
                 </button>

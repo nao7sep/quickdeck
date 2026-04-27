@@ -93,9 +93,9 @@ export function SnapshotSearchModal({ onClose }: SnapshotSearchModalProps) {
   );
 }
 
-// Snapshot ids encode the UTC instant as "YYYYMMDD-HHMMSS-utc"; format that
-// into a human-readable local time, falling back to the raw value if parsing
-// fails.
+// Snapshot ids encode the UTC instant as "YYYYMMDD-HHMMSS-utc". Convert that
+// into a deterministic local-time string ("YYYY-MM-DD HH:mm") so the format
+// stays the same across machine locales.
 function formatSnapshotTimestamp(rawUtc: string): string {
   const match = /^(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})-utc$/i.exec(rawUtc);
   if (!match) {
@@ -111,11 +111,9 @@ function formatSnapshotTimestamp(rawUtc: string): string {
     return rawUtc;
   }
 
-  return date.toLocaleString(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  });
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return (
+    `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ` +
+    `${pad(date.getHours())}:${pad(date.getMinutes())}`
+  );
 }

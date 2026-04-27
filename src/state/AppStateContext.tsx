@@ -11,6 +11,7 @@ import {
 import { nanoid } from "nanoid";
 import { createDefaultPane, defaultSettings } from "./defaults";
 import { randomPaneColor } from "../utils/paneColors";
+import { trimSnapshotContent } from "../utils/snapshotContent";
 import {
   buildSessionState,
   countSnapshots,
@@ -239,11 +240,12 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
 
   const recordSnapshot = useCallback(
     (paneId: string, trigger: SnapshotTrigger, content: string) => {
-      if (content.length === 0) {
+      const trimmed = trimSnapshotContent(content);
+      if (trimmed.length === 0) {
         return;
       }
 
-      void createSnapshot({ paneId, trigger, content })
+      void createSnapshot({ paneId, trigger, content: trimmed })
         .then((result) => {
           if (result.inserted) {
             setSnapshotCount((current) => current + 1);
@@ -260,12 +262,12 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const snapshotAllPanes = useCallback(
     async (trigger: SnapshotTrigger) => {
       const snapshots = panesRef.current
-        .filter((pane) => pane.content.length > 0)
         .map((pane) => ({
           paneId: pane.id,
           trigger,
-          content: pane.content,
-        }));
+          content: trimSnapshotContent(pane.content),
+        }))
+        .filter((snapshot) => snapshot.content.length > 0);
 
       if (snapshots.length === 0) {
         return;
