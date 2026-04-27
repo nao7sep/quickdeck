@@ -14,23 +14,50 @@ export function PaneView({ pane }: PaneViewProps) {
     setActivePaneId,
     updatePaneTitle,
     updatePaneContent,
-    deleteActivePane,
+    deletePane,
+    reorderPane,
     recordSnapshot,
   } = useAppState();
   const active = pane.id === activePaneId;
   const counts = getTextCounts(pane.content);
 
   return (
-    <section className={`pane ${active ? "pane-active" : ""}`} onMouseDown={() => setActivePaneId(pane.id)}>
-      <header className="paneHeader">
+    <section
+      className={`pane ${active ? "pane-active" : ""}`}
+      onDragOver={(event) => event.preventDefault()}
+      onDrop={(event) => {
+        event.preventDefault();
+        const draggedPaneId = event.dataTransfer.getData("text/plain");
+        reorderPane(draggedPaneId, pane.id);
+      }}
+      onMouseDown={() => setActivePaneId(pane.id)}
+    >
+      <header
+        className="paneHeader"
+        draggable
+        onDragStart={(event) => {
+          event.dataTransfer.effectAllowed = "move";
+          event.dataTransfer.setData("text/plain", pane.id);
+          setActivePaneId(pane.id);
+        }}
+      >
         <input
           aria-label="Pane title"
           className="paneTitleInput"
+          draggable={false}
           value={pane.title}
           onChange={(event) => updatePaneTitle(pane.id, event.target.value)}
           onFocus={() => setActivePaneId(pane.id)}
         />
-        <button className="iconButton" type="button" aria-label="Delete empty pane" onClick={deleteActivePane}>
+        <button
+          className="iconButton"
+          type="button"
+          aria-label="Delete pane"
+          onClick={(event) => {
+            event.stopPropagation();
+            deletePane(pane.id);
+          }}
+        >
           <Trash2 size={16} />
         </button>
       </header>

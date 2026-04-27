@@ -13,7 +13,7 @@ export const defaultSettings: AppSettings = {
 export function createDefaultPane(id: string): Pane {
   return {
     id,
-    title: "Buffer 1",
+    title: "new buffer",
     content: "",
   };
 }

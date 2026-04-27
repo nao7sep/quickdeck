@@ -50,14 +50,21 @@ button {
 }
 
 .appHeader {
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr auto auto;
   align-items: center;
-  justify-content: space-between;
   gap: 16px;
   height: 46px;
   padding: 6px 10px;
   border-bottom: 1px solid var(--border);
   background: var(--surface);
+}
+
+.appTitle {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0;
 }
 
 .menuWrap {
@@ -99,7 +106,7 @@ button {
   position: absolute;
   z-index: 20;
   top: 38px;
-  left: 0;
+  right: 0;
   display: grid;
   width: 220px;
   padding: 6px;
@@ -171,6 +178,11 @@ button {
   gap: 8px;
   padding: 8px;
   border-bottom: 1px solid var(--border);
+  cursor: grab;
+}
+
+.paneHeader:active {
+  cursor: grabbing;
 }
 
 .paneTitleInput {

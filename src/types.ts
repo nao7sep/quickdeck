@@ -1,4 +1,4 @@
-export type SnapshotTrigger = "copy" | "paste" | "cut" | "clear" | "app_close";
+export type SnapshotTrigger = "copy" | "paste" | "cut" | "app_close";
 
 export type Pane = {
   id: string;

@@ -41,10 +41,8 @@ type AppStateContextValue = {
   updatePaneTitle: (paneId: string, title: string) => void;
   updatePaneContent: (paneId: string, content: string) => void;
   addPane: () => void;
-  duplicateActivePane: () => void;
-  moveActivePane: (direction: -1 | 1) => void;
-  deleteActivePane: () => void;
-  clearActivePane: () => void;
+  deletePane: (paneId: string) => void;
+  reorderPane: (draggedPaneId: string, targetPaneId: string) => void;
   updateSettings: (settings: AppSettings) => void;
   saveNow: () => Promise<void>;
   recordSnapshot: (paneId: string, trigger: SnapshotTrigger, content: string) => void;
@@ -165,66 +163,67 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const addPane = useCallback(() => {
     const pane: Pane = {
       id: nanoid(),
-      title: `Buffer ${panes.length + 1}`,
+      title: "new buffer",
       content: "",
     };
     setPanes((current) => [...current, pane]);
     setActivePaneId(pane.id);
     markUnsaved();
-  }, [markUnsaved, panes.length]);
+  }, [markUnsaved]);
 
-  const duplicateActivePane = useCallback(() => {
-    const pane: Pane = {
-      id: nanoid(),
-      title: `${activePane.title || "Buffer"} copy`,
-      content: activePane.content,
-    };
-    setPanes((current) => {
-      const activeIndex = current.findIndex((candidate) => candidate.id === activePane.id);
-      const next = [...current];
-      next.splice(activeIndex + 1, 0, pane);
-      return next;
-    });
-    setActivePaneId(pane.id);
-    markUnsaved();
-  }, [activePane, markUnsaved]);
+  const deletePane = useCallback(
+    (paneId: string) => {
+      const pane = panes.find((candidate) => candidate.id === paneId);
+      if (!pane) {
+        return;
+      }
 
-  const moveActivePane = useCallback(
-    (direction: -1 | 1) => {
+      if (panes.length === 1) {
+        showToast("warning", "At least one pane must remain.");
+        return;
+      }
+
+      if (pane.content.length > 0) {
+        showToast("warning", "Only empty panes can be deleted.");
+        return;
+      }
+
+      const deletedIndex = panes.findIndex((candidate) => candidate.id === paneId);
+      const nextPanes = panes.filter((candidate) => candidate.id !== paneId);
+      const fallbackActivePane = nextPanes[Math.max(0, deletedIndex - 1)] ?? nextPanes[0];
+
+      setPanes(nextPanes);
+      if (activePaneId === paneId) {
+        setActivePaneId(fallbackActivePane.id);
+      }
+      markUnsaved();
+    },
+    [activePaneId, markUnsaved, panes, showToast],
+  );
+
+  const reorderPane = useCallback(
+    (draggedPaneId: string, targetPaneId: string) => {
+      if (draggedPaneId === targetPaneId) {
+        return;
+      }
+
       setPanes((current) => {
-        const index = current.findIndex((pane) => pane.id === activePaneId);
-        const nextIndex = index + direction;
-        if (index < 0 || nextIndex < 0 || nextIndex >= current.length) {
+        const fromIndex = current.findIndex((pane) => pane.id === draggedPaneId);
+        const toIndex = current.findIndex((pane) => pane.id === targetPaneId);
+        if (fromIndex < 0 || toIndex < 0) {
           return current;
         }
+
         const next = [...current];
-        const [pane] = next.splice(index, 1);
-        next.splice(nextIndex, 0, pane);
+        const [draggedPane] = next.splice(fromIndex, 1);
+        next.splice(toIndex, 0, draggedPane);
         markUnsaved();
         return next;
       });
+      setActivePaneId(draggedPaneId);
     },
-    [activePaneId, markUnsaved],
+    [markUnsaved],
   );
-
-  const deleteActivePane = useCallback(() => {
-    if (panes.length === 1) {
-      showToast("warning", "At least one pane must remain.");
-      return;
-    }
-    if (activePane.content.length > 0) {
-      showToast("warning", "Only empty panes can be deleted.");
-      return;
-    }
-
-    const activeIndex = panes.findIndex((pane) => pane.id === activePane.id);
-    const nextPanes = panes.filter((pane) => pane.id !== activePane.id);
-    const nextActive = nextPanes[Math.max(0, activeIndex - 1)] ?? nextPanes[0];
-
-    setPanes(nextPanes);
-    setActivePaneId(nextActive.id);
-    markUnsaved();
-  }, [activePane, markUnsaved, panes, showToast]);
 
   const recordSnapshot = useCallback(
     (paneId: string, trigger: SnapshotTrigger, content: string) => {
@@ -257,18 +256,6 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     },
     [],
   );
-
-  const clearActivePane = useCallback(() => {
-    if (activePane.content.length === 0) {
-      return;
-    }
-
-    recordSnapshot(activePane.id, "clear", activePane.content);
-    setPanes((current) =>
-      current.map((pane) => (pane.id === activePane.id ? { ...pane, content: "" } : pane)),
-    );
-    markUnsaved();
-  }, [activePane, markUnsaved, recordSnapshot]);
 
   const updateSettings = useCallback((nextSettings: AppSettings) => {
     setSettings(nextSettings);
@@ -319,10 +306,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       updatePaneTitle,
       updatePaneContent,
       addPane,
-      duplicateActivePane,
-      moveActivePane,
-      deleteActivePane,
-      clearActivePane,
+      deletePane,
+      reorderPane,
       updateSettings,
       saveNow,
       recordSnapshot,
@@ -337,15 +322,13 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       activePaneId,
       addPane,
       blockingError,
-      clearActivePane,
       dataDir,
-      deleteActivePane,
+      deletePane,
       dismissBlockingError,
       dismissToast,
-      duplicateActivePane,
-      moveActivePane,
       panes,
       recordSnapshot,
+      reorderPane,
       saveNow,
       saveState,
       settings,
@@ -399,7 +382,7 @@ function normalizePanes(panes: Pane[] | undefined): Pane[] {
     .filter((pane) => typeof pane.id === "string" && pane.id.length > 0)
     .map((pane, index) => ({
       id: pane.id,
-      title: typeof pane.title === "string" && pane.title.length > 0 ? pane.title : `Buffer ${index + 1}`,
+      title: typeof pane.title === "string" && pane.title.length > 0 ? pane.title : "new buffer",
       content: typeof pane.content === "string" ? pane.content : "",
     }));
 }

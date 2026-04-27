@@ -1,13 +1,7 @@
 export type ShortcutId =
   | "addPane"
-  | "duplicatePane"
-  | "clearPane"
-  | "deletePane"
   | "focusPreviousPane"
   | "focusNextPane"
-  | "movePaneLeft"
-  | "movePaneRight"
-  | "openSnapshotSearch"
   | "openSettings"
   | "openShortcuts"
   | "toggleTopmost"
@@ -28,21 +22,6 @@ export const shortcutDefinitions: ShortcutDefinition[] = [
     description: "Add pane",
   },
   {
-    id: "duplicatePane",
-    keys: "Cmd/Ctrl + Shift + D",
-    description: "Duplicate active pane",
-  },
-  {
-    id: "clearPane",
-    keys: "Cmd/Ctrl + Shift + K",
-    description: "Clear active pane",
-  },
-  {
-    id: "deletePane",
-    keys: "Cmd/Ctrl + Backspace",
-    description: "Delete active pane when empty",
-  },
-  {
     id: "focusPreviousPane",
     keys: "Cmd/Ctrl + Left",
     description: "Focus previous pane",
@@ -51,21 +30,6 @@ export const shortcutDefinitions: ShortcutDefinition[] = [
     id: "focusNextPane",
     keys: "Cmd/Ctrl + Right",
     description: "Focus next pane",
-  },
-  {
-    id: "movePaneLeft",
-    keys: "Cmd/Ctrl + Shift + Left",
-    description: "Move active pane left",
-  },
-  {
-    id: "movePaneRight",
-    keys: "Cmd/Ctrl + Shift + Right",
-    description: "Move active pane right",
-  },
-  {
-    id: "openSnapshotSearch",
-    keys: "Cmd/Ctrl + Shift + F",
-    description: "Open snapshot search",
   },
   {
     id: "openSettings",
@@ -106,36 +70,12 @@ export function matchesShortcut(event: KeyboardEvent, id: ShortcutId): boolean {
     return commandOrControl && !event.shiftKey && event.key.toLowerCase() === "n";
   }
 
-  if (id === "duplicatePane") {
-    return commandOrControl && event.shiftKey && event.key.toLowerCase() === "d";
-  }
-
-  if (id === "clearPane") {
-    return commandOrControl && event.shiftKey && event.key.toLowerCase() === "k";
-  }
-
-  if (id === "deletePane") {
-    return commandOrControl && !event.shiftKey && event.key === "Backspace";
-  }
-
   if (id === "focusPreviousPane") {
     return commandOrControl && !event.shiftKey && event.key === "ArrowLeft";
   }
 
   if (id === "focusNextPane") {
     return commandOrControl && !event.shiftKey && event.key === "ArrowRight";
-  }
-
-  if (id === "movePaneLeft") {
-    return commandOrControl && event.shiftKey && event.key === "ArrowLeft";
-  }
-
-  if (id === "movePaneRight") {
-    return commandOrControl && event.shiftKey && event.key === "ArrowRight";
-  }
-
-  if (id === "openSnapshotSearch") {
-    return commandOrControl && event.shiftKey && event.key.toLowerCase() === "f";
   }
 
   if (id === "openSettings") {

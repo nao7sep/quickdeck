@@ -2,33 +2,22 @@ import { useCallback, useEffect, useState } from "react";
 import { isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
-  ChevronsLeft,
-  ChevronsRight,
-  CopyPlus,
-  Eraser,
-  Eye,
-  EyeOff,
   Info,
   Keyboard,
   Menu,
-  Pin,
-  PinOff,
   Plus,
-  Search,
   Settings,
-  Trash2,
 } from "lucide-react";
 import { AboutModal } from "./components/AboutModal";
 import { ErrorModal } from "./components/ErrorModal";
 import { PaneView } from "./components/PaneView";
 import { SettingsModal } from "./components/SettingsModal";
 import { ShortcutsModal } from "./components/ShortcutsModal";
-import { SnapshotSearchModal } from "./components/SnapshotSearchModal";
 import { ToastViewport } from "./components/ToastViewport";
 import { matchesShortcut } from "./shortcuts";
 import { useAppState } from "./state/AppStateContext";
 
-type OpenModal = "settings" | "shortcuts" | "about" | "snapshots" | null;
+type OpenModal = "settings" | "shortcuts" | "about" | null;
 
 export function App() {
   const {
@@ -40,10 +29,6 @@ export function App() {
     settings,
     setActivePaneId,
     addPane,
-    clearActivePane,
-    deleteActivePane,
-    duplicateActivePane,
-    moveActivePane,
     saveNow,
     showToast,
     snapshotAllPanes,
@@ -82,21 +67,6 @@ export function App() {
         addPane();
       }
 
-      if (matchesShortcut(event, "duplicatePane")) {
-        event.preventDefault();
-        duplicateActivePane();
-      }
-
-      if (matchesShortcut(event, "clearPane")) {
-        event.preventDefault();
-        clearActivePane();
-      }
-
-      if (matchesShortcut(event, "deletePane")) {
-        event.preventDefault();
-        deleteActivePane();
-      }
-
       if (matchesShortcut(event, "focusPreviousPane")) {
         event.preventDefault();
         const index = panes.findIndex((pane) => pane.id === activePaneId);
@@ -109,21 +79,6 @@ export function App() {
         const index = panes.findIndex((pane) => pane.id === activePaneId);
         const next = panes[Math.min(panes.length - 1, index + 1)];
         setActivePaneId(next.id);
-      }
-
-      if (matchesShortcut(event, "movePaneLeft")) {
-        event.preventDefault();
-        moveActivePane(-1);
-      }
-
-      if (matchesShortcut(event, "movePaneRight")) {
-        event.preventDefault();
-        moveActivePane(1);
-      }
-
-      if (matchesShortcut(event, "openSnapshotSearch")) {
-        event.preventDefault();
-        openMenuModal("snapshots");
       }
 
       if (matchesShortcut(event, "openSettings")) {
@@ -159,10 +114,6 @@ export function App() {
     addPane,
     adjustOpacity,
     blockingError,
-    clearActivePane,
-    deleteActivePane,
-    duplicateActivePane,
-    moveActivePane,
     openMenuModal,
     openModal,
     panes,
@@ -235,52 +186,21 @@ export function App() {
   return (
     <main className="appShell" style={{ opacity: settings.opacity }}>
       <header className="appHeader">
+        <h1 className="appTitle">QuickDeck</h1>
+        <div className="headerStatus">
+          <span>{settings.topmost ? "Topmost" : "Normal"}</span>
+          <span>{Math.round(settings.opacity * 100)}%</span>
+          <span className={`saveState saveState-${saveState}`}>{saveState}</span>
+        </div>
         <div className="menuWrap">
-          <button className="iconTextButton" type="button" onClick={() => setMenuOpen((open) => !open)}>
+          <button className="iconButton" type="button" aria-label="Open menu" onClick={() => setMenuOpen((open) => !open)}>
             <Menu size={18} />
-            <span>QuickDeck</span>
           </button>
           {menuOpen ? (
             <div className="menuPanel">
               <button type="button" onClick={addPane}>
                 <Plus size={16} />
                 Add Pane
-              </button>
-              <button type="button" onClick={duplicateActivePane}>
-                <CopyPlus size={16} />
-                Duplicate Pane
-              </button>
-              <button type="button" onClick={clearActivePane}>
-                <Eraser size={16} />
-                Clear Pane
-              </button>
-              <button type="button" onClick={deleteActivePane}>
-                <Trash2 size={16} />
-                Delete Empty Pane
-              </button>
-              <button type="button" onClick={() => moveActivePane(-1)}>
-                <ChevronsLeft size={16} />
-                Move Pane Left
-              </button>
-              <button type="button" onClick={() => moveActivePane(1)}>
-                <ChevronsRight size={16} />
-                Move Pane Right
-              </button>
-              <button type="button" onClick={() => openMenuModal("snapshots")}>
-                <Search size={16} />
-                Snapshot Search
-              </button>
-              <button type="button" onClick={toggleTopmost}>
-                {settings.topmost ? <PinOff size={16} /> : <Pin size={16} />}
-                {settings.topmost ? "Disable Topmost" : "Enable Topmost"}
-              </button>
-              <button type="button" onClick={() => adjustOpacity(0.05)}>
-                <Eye size={16} />
-                Increase Opacity
-              </button>
-              <button type="button" onClick={() => adjustOpacity(-0.05)}>
-                <EyeOff size={16} />
-                Decrease Opacity
               </button>
               <button type="button" onClick={() => openMenuModal("settings")}>
                 <Settings size={16} />
@@ -297,11 +217,6 @@ export function App() {
             </div>
           ) : null}
         </div>
-        <div className="headerStatus">
-          <span>{settings.topmost ? "Topmost" : "Normal"}</span>
-          <span>{Math.round(settings.opacity * 100)}%</span>
-          <span className={`saveState saveState-${saveState}`}>{saveState}</span>
-        </div>
       </header>
       <div className="paneDeck">
         {panes.map((pane) => (
@@ -311,7 +226,6 @@ export function App() {
       {openModal === "settings" ? <SettingsModal onClose={() => setOpenModal(null)} /> : null}
       {openModal === "shortcuts" ? <ShortcutsModal onClose={() => setOpenModal(null)} /> : null}
       {openModal === "about" ? <AboutModal onClose={() => setOpenModal(null)} /> : null}
-      {openModal === "snapshots" ? <SnapshotSearchModal onClose={() => setOpenModal(null)} /> : null}
       {blockingError ? <ErrorModal error={blockingError} onClose={dismissBlockingError} /> : null}
       <ToastViewport />
     </main>
