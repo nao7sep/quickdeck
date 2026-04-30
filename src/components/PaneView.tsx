@@ -52,7 +52,19 @@ export function PaneView({ pane }: PaneViewProps) {
           value={pane.title}
           spellCheck={false}
           onChange={(event) => updatePaneTitle(pane.id, event.target.value)}
-          onFocus={() => setActivePaneId(pane.id)}
+          onMouseDown={(event) => {
+            setActivePaneId(pane.id);
+
+            if (document.activeElement !== event.currentTarget) {
+              event.preventDefault();
+              event.currentTarget.focus();
+              event.currentTarget.select();
+            }
+          }}
+          onFocus={(event) => {
+            setActivePaneId(pane.id);
+            event.target.select();
+          }}
         />
         <button
           className="iconButton paneDeleteButton"
