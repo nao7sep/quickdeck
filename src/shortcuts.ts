@@ -1,4 +1,6 @@
 export type ShortcutId =
+  | "toggleZen"
+  | "toggleTopmost"
   | "addPane"
   | "focusPreviousPane"
   | "focusNextPane"
@@ -6,7 +8,6 @@ export type ShortcutId =
   | "movePaneRight"
   | "openSettings"
   | "openShortcuts"
-  | "toggleTopmost"
   | "closeModal";
 
 export type ShortcutDefinition = {
@@ -17,8 +18,13 @@ export type ShortcutDefinition = {
 
 export const shortcutDefinitions: ShortcutDefinition[] = [
   {
+    id: "toggleZen",
+    keys: "Cmd/Ctrl + K",
+    description: "Toggle zen mode",
+  },
+  {
     id: "toggleTopmost",
-    keys: "Cmd/Ctrl + Shift + T",
+    keys: "Cmd/Ctrl + T",
     description: "Toggle always on top",
   },
   {
@@ -66,6 +72,14 @@ export const shortcutDefinitions: ShortcutDefinition[] = [
 export function matchesShortcut(event: KeyboardEvent, id: ShortcutId): boolean {
   const commandOrControl = event.metaKey || event.ctrlKey;
 
+  if (id === "toggleZen") {
+    return commandOrControl && !event.shiftKey && event.key.toLowerCase() === "k";
+  }
+
+  if (id === "toggleTopmost") {
+    return commandOrControl && !event.shiftKey && event.key.toLowerCase() === "t";
+  }
+
   if (id === "addPane") {
     return commandOrControl && !event.shiftKey && event.key.toLowerCase() === "n";
   }
@@ -92,10 +106,6 @@ export function matchesShortcut(event: KeyboardEvent, id: ShortcutId): boolean {
 
   if (id === "openShortcuts") {
     return commandOrControl && !event.shiftKey && event.key === "/";
-  }
-
-  if (id === "toggleTopmost") {
-    return commandOrControl && event.shiftKey && event.key.toLowerCase() === "t";
   }
 
   return id === "closeModal" && event.key === "Escape";

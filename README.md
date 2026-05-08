@@ -16,8 +16,9 @@ It is built with Tauri, React, and TypeScript. Current workspace state is autosa
 - Snapshot search with local-time timestamps
 - Configurable editor font family and size
 - Word, character, and X/Twitter weighted character counts
+- Zen mode that hides all but the active pane, with a status-bar pane switcher; toggle through settings or shortcut
 - Always-on-top toggle through settings or shortcut
-- Status bar showing pane count, snapshot count, save state, and recent snapshot activity
+- Status bar showing save state, recent snapshot activity, and clickable Zen and Topmost badges; pane and snapshot counts in normal mode, pane switcher in zen mode
 - Settings, shortcuts, snapshot search, and about modals (all closable with Escape or outside click)
 
 ## Requirements

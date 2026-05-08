@@ -11,6 +11,7 @@ export type Pane = {
 export type SaveState = "saved" | "saving" | "unsaved" | "error";
 
 export type AppSettings = {
+  zen: boolean;
   topmost: boolean;
   editorFontFamily: string;
   editorFontSize: number;

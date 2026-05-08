@@ -58,6 +58,14 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
           <label className="checkboxRow">
             <input
               type="checkbox"
+              checked={draft.zen}
+              onChange={(event) => setField("zen", event.target.checked)}
+            />
+            <span>Zen mode (show only the focused pane)</span>
+          </label>
+          <label className="checkboxRow">
+            <input
+              type="checkbox"
               checked={draft.topmost}
               onChange={(event) => setField("topmost", event.target.checked)}
             />

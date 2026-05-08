@@ -6,13 +6,13 @@ import {
   Info,
   Keyboard,
   Menu,
-  Pin,
   Plus,
   Settings,
 } from "lucide-react";
 import { AboutModal } from "./components/AboutModal";
 import { SnapshotSearchModal } from "./components/SnapshotSearchModal";
 import { ErrorModal } from "./components/ErrorModal";
+import { PaneSwitcher } from "./components/PaneSwitcher";
 import { PaneView } from "./components/PaneView";
 import { SettingsModal } from "./components/SettingsModal";
 import { ShortcutsModal } from "./components/ShortcutsModal";
@@ -62,6 +62,10 @@ export function App() {
 
   const toggleTopmost = useCallback(() => {
     updateSettings({ ...settings, topmost: !settings.topmost });
+  }, [settings, updateSettings]);
+
+  const toggleZen = useCallback(() => {
+    updateSettings({ ...settings, zen: !settings.zen });
   }, [settings, updateSettings]);
 
   // Close the hamburger menu on outside click or Escape.
@@ -139,6 +143,11 @@ export function App() {
         event.preventDefault();
         toggleTopmost();
       }
+
+      if (matchesShortcut(event, "toggleZen")) {
+        event.preventDefault();
+        toggleZen();
+      }
     }
 
     window.addEventListener("keydown", handleKeyDown);
@@ -154,6 +163,7 @@ export function App() {
     setActivePaneId,
     settings,
     toggleTopmost,
+    toggleZen,
     updateSettings,
   ]);
 
@@ -244,30 +254,56 @@ export function App() {
     };
   }, []);
 
+  const visiblePanes = settings.zen
+    ? [panes.find((pane) => pane.id === activePaneId) ?? panes[0]]
+    : panes;
+
   return (
     <main className="appShell">
       <div className="paneDeck">
-        {panes.map((pane) => (
+        {visiblePanes.map((pane) => (
           <PaneView pane={pane} key={pane.id} />
         ))}
       </div>
       <footer className="appStatusBar">
-        <span className="appTitle">QuickDeck</span>
+        {settings.zen ? (
+          <PaneSwitcher panes={panes} activePaneId={activePaneId} onSelect={setActivePaneId} />
+        ) : (
+          <span className="appTitle">QuickDeck</span>
+        )}
         <div className="statusBarRight">
-          <span className="statusBadge statusBadge-info">
-            {panes.length} {panes.length === 1 ? "pane" : "panes"}
-          </span>
-          <span className="statusBadge statusBadge-info">
-            {snapshotCount.toLocaleString()} snapshots
-          </span>
+          {!settings.zen ? (
+            <>
+              <span className="statusBadge statusBadge-info">
+                {panes.length} {panes.length === 1 ? "pane" : "panes"}
+              </span>
+              <span className="statusBadge statusBadge-info">
+                {snapshotCount.toLocaleString()} snapshots
+              </span>
+            </>
+          ) : null}
           {snapshotPulse ? (
             <span className="statusBadge statusBadge-snapshot">Snapshot saved</span>
           ) : null}
+          {settings.zen ? (
+            <button
+              type="button"
+              className="statusBadge statusBadge-zen statusBadgeButton"
+              title="Click to disable zen mode"
+              onClick={toggleZen}
+            >
+              Zen
+            </button>
+          ) : null}
           {settings.topmost ? (
-            <span className="statusBadge statusBadge-topmost">
-              <Pin size={11} />
+            <button
+              type="button"
+              className="statusBadge statusBadge-topmost statusBadgeButton"
+              title="Click to disable always on top"
+              onClick={toggleTopmost}
+            >
               Topmost
-            </span>
+            </button>
           ) : null}
           <span className={`statusBadge saveState saveState-${saveState}`}>{saveState}</span>
           <div className="menuWrap" ref={menuWrapRef}>

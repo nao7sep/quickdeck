@@ -2,6 +2,7 @@ import type { AppSettings, Pane } from "../types";
 import { randomPaneColor } from "../utils/paneColors";
 
 export const defaultSettings: AppSettings = {
+  zen: false,
   topmost: false,
   editorFontFamily: "monospace",
   editorFontSize: 14,
