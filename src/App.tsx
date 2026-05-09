@@ -34,6 +34,7 @@ export function App() {
     addPane,
     movePane,
     saveNow,
+    showBlockingError,
     showToast,
     snapshotAllPanes,
     snapshotCount,
@@ -185,6 +186,7 @@ export function App() {
   const saveNowRef = useRef(saveNow);
   const snapshotAllPanesRef = useRef(snapshotAllPanes);
   const showToastRef = useRef(showToast);
+  const showBlockingErrorRef = useRef(showBlockingError);
 
   useEffect(() => {
     saveNowRef.current = saveNow;
@@ -199,20 +201,26 @@ export function App() {
   }, [showToast]);
 
   useEffect(() => {
+    showBlockingErrorRef.current = showBlockingError;
+  }, [showBlockingError]);
+
+  useEffect(() => {
     const appWindow = isTauri() ? getCurrentWindow() : null;
     let closeUnlisten: (() => void) | undefined;
     let closing = false;
 
-    async function persistCloseState() {
+    async function persistCloseState(): Promise<boolean> {
       try {
         await snapshotAllPanesRef.current("app_close");
       } catch {
-        // Session save still matters if insurance snapshots fail during shutdown.
+        // Insurance snapshots are best-effort; proceed to the real save.
       }
       try {
         await saveNowRef.current();
-      } catch {
-        // saveNow surfaces its own blocking error; swallow here so shutdown proceeds.
+        return true;
+      } catch (error) {
+        showBlockingErrorRef.current("Could Not Save Data", String(error));
+        return false;
       }
     }
 
@@ -231,15 +239,19 @@ export function App() {
         closing = true;
         event.preventDefault();
 
+        const saved = await persistCloseState();
+        if (!saved) {
+          // The blocking-error modal is now visible. Leave the window open so
+          // the user can fix the underlying problem and try closing again.
+          closing = false;
+          return;
+        }
+
         try {
-          await persistCloseState();
-        } finally {
-          try {
-            await appWindow.destroy();
-          } catch (error) {
-            showToastRef.current("error", `Could not close window: ${String(error)}`);
-            closing = false;
-          }
+          await appWindow.destroy();
+        } catch (error) {
+          showToastRef.current("error", `Could not close window: ${String(error)}`);
+          closing = false;
         }
       }).then((unlisten) => {
         closeUnlisten = unlisten;

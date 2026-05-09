@@ -296,6 +296,9 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     setSaveState("unsaved");
   }, []);
 
+  // Throws on failure. Each caller decides whether to surface a modal and/or
+  // change control flow, since autosave and the close path want different
+  // policies.
   const saveNow = useCallback(async () => {
     if (!loaded) {
       return;
@@ -308,17 +311,12 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         saveConfig(settings),
         saveSession(buildSessionState(panes, activePaneId)),
       ]);
-      // Only flag as saved if no edit landed during the write.
-      if (dirtyCounterRef.current === dirtyAtStart) {
-        setSaveState("saved");
-      } else {
-        setSaveState("unsaved");
-      }
+      setSaveState(dirtyCounterRef.current === dirtyAtStart ? "saved" : "unsaved");
     } catch (error) {
       setSaveState("error");
-      showBlockingError("Could Not Save Data", String(error));
+      throw error;
     }
-  }, [activePaneId, loaded, panes, settings, showBlockingError]);
+  }, [activePaneId, loaded, panes, settings]);
 
   useEffect(() => {
     if (!loaded || saveState !== "unsaved") {
@@ -326,11 +324,13 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     }
 
     const timeoutId = window.setTimeout(() => {
-      void saveNow();
+      saveNow().catch((error) => {
+        showBlockingError("Could Not Save Data", String(error));
+      });
     }, Math.max(1, settings.autosaveDelaySeconds) * 1000);
 
     return () => window.clearTimeout(timeoutId);
-  }, [loaded, saveNow, saveState, settings.autosaveDelaySeconds]);
+  }, [loaded, saveNow, saveState, settings.autosaveDelaySeconds, showBlockingError]);
 
   const value = useMemo<AppStateContextValue>(
     () => ({

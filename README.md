@@ -85,6 +85,6 @@ The data files are:
 
 - `config.json`
 - `session.json`
-- `snapshots.sqlite3`
+- `snapshots.sqlite3` (plus `snapshots.sqlite3-wal` and `snapshots.sqlite3-shm` while the app is running, due to SQLite WAL mode)
 
 QuickDeck does not include telemetry, remote sync, or network persistence.

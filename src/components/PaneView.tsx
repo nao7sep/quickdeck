@@ -20,6 +20,7 @@ export function PaneView({ pane }: PaneViewProps) {
   } = useAppState();
   const editorRef = useRef<HTMLTextAreaElement | null>(null);
   const titleRef = useRef<HTMLInputElement | null>(null);
+  const pendingPasteSnapshotRef = useRef(false);
   const active = pane.id === activePaneId;
   const counts = getTextCounts(pane.content);
 
@@ -82,10 +83,21 @@ export function PaneView({ pane }: PaneViewProps) {
         ref={editorRef}
         className="paneEditor"
         value={pane.content}
-        onChange={(event) => updatePaneContent(pane.id, event.target.value)}
+        onChange={(event) => {
+          const next = event.target.value;
+          updatePaneContent(pane.id, next);
+          if (pendingPasteSnapshotRef.current) {
+            pendingPasteSnapshotRef.current = false;
+            recordSnapshot(pane.id, "paste", next);
+          }
+        }}
         onCopy={() => recordSnapshot(pane.id, "copy", pane.content)}
         onCut={() => recordSnapshot(pane.id, "cut", pane.content)}
-        onPaste={() => recordSnapshot(pane.id, "paste", pane.content)}
+        onPaste={() => {
+          // The matching change event fires next with the post-paste value;
+          // snapshot there so we capture what the user actually pasted in.
+          pendingPasteSnapshotRef.current = true;
+        }}
         onFocus={() => setActivePaneId(pane.id)}
         spellCheck
         style={{
