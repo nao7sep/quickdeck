@@ -69,18 +69,11 @@ button {
   background: linear-gradient(135deg, #1e1b4b 0%, #312e81 50%, #4c1d95 100%);
 }
 
-.appTitle {
-  font-size: 12px;
-  font-weight: 800;
-  letter-spacing: 0.5px;
-  color: rgba(255, 255, 255, 0.72);
-  text-transform: uppercase;
-}
-
 .statusBarRight {
   display: flex;
   align-items: center;
   gap: 8px;
+  margin-left: auto;
 }
 
 .statusBadge {

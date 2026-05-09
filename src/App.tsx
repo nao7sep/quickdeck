@@ -268,9 +268,7 @@ export function App() {
       <footer className="appStatusBar">
         {settings.zen ? (
           <PaneSwitcher panes={panes} activePaneId={activePaneId} onSelect={setActivePaneId} />
-        ) : (
-          <span className="appTitle">QuickDeck</span>
-        )}
+        ) : null}
         <div className="statusBarRight">
           {!settings.zen ? (
             <>
