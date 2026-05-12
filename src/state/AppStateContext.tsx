@@ -184,12 +184,13 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   );
 
   const addPane = useCallback(() => {
+    const paneId = nanoid();
     setPanes((current) => {
       const existingHeaders = current.map((pane) => pane.headerColor);
-      const pane = createDefaultPane(nanoid(), existingHeaders);
-      setActivePaneId(pane.id);
+      const pane = createDefaultPane(paneId, existingHeaders);
       return [...current, pane];
     });
+    setActivePaneId(paneId);
     markUnsaved();
   }, [markUnsaved]);
 
