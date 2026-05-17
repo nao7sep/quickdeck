@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Search } from "lucide-react";
 import { searchSnapshots, type SnapshotSearchRow } from "../services/persistence";
 import { useAppState } from "../state/AppStateContext";
+import { useComposing, isComposingKeyboardEvent } from "../hooks/useComposing";
 import { ModalBase } from "./ModalBase";
 
 type SnapshotSearchModalProps = {
@@ -14,6 +15,7 @@ export function SnapshotSearchModal({ onClose }: SnapshotSearchModalProps) {
   const [rows, setRows] = useState<SnapshotSearchRow[]>([]);
   const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(false);
+  const composing = useComposing();
 
   async function runSearch(nextOffset: number) {
     const trimmedQuery = query.trim();
@@ -62,7 +64,10 @@ export function SnapshotSearchModal({ onClose }: SnapshotSearchModalProps) {
             placeholder="Search snapshots"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
+            onCompositionStart={composing.handlers.onCompositionStart}
+            onCompositionEnd={composing.handlers.onCompositionEnd}
             onKeyDown={(event) => {
+              if (isComposingKeyboardEvent(composing.composingRef, event)) return;
               if (event.key === "Enter") {
                 void runSearch(0);
               }
