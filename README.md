@@ -15,6 +15,7 @@ It is built with Tauri, React, and TypeScript. Current workspace state is autosa
 - Local SQLite snapshots on copy, paste, cut, and app close (whitespace-trimmed and deduped per pane)
 - Snapshot search with local-time timestamps
 - Configurable editor font family and size
+- Zoom (50%–500%) via the gear menu or keyboard shortcuts; level is persisted
 - Word, character, and X/Twitter weighted character counts
 - Zen mode that hides all but the active pane, with a status-bar pane switcher; toggle through settings or shortcut
 - Always-on-top toggle through settings or shortcut

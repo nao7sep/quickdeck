@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 import {
   History,
   Info,
   Keyboard,
   Menu,
+  Minus,
   Plus,
   Settings,
 } from "lucide-react";
@@ -19,6 +21,7 @@ import { ShortcutsModal } from "./components/ShortcutsModal";
 import { ToastViewport } from "./components/ToastViewport";
 import { matchesShortcut } from "./shortcuts";
 import { useAppState } from "./state/AppStateContext";
+import { isZoomIn, isZoomOut, isZoomReset, stepZoomIn, stepZoomOut, ZOOM_DEFAULT } from "./utils/zoom";
 
 type OpenModal = "settings" | "shortcuts" | "about" | "snapshots" | null;
 
@@ -68,6 +71,40 @@ export function App() {
   const toggleZen = useCallback(() => {
     updateSettings({ ...settings, zen: !settings.zen });
   }, [settings, updateSettings]);
+
+  // Keep latest settings in a ref so the zoom keyboard effect below can read
+  // the current value without re-registering on every settings change.
+  const settingsRef = useRef(settings);
+  useEffect(() => { settingsRef.current = settings; }, [settings]);
+
+  // Apply zoom level to the Tauri webview whenever it changes.
+  useEffect(() => {
+    if (!isTauri()) return undefined;
+    getCurrentWebview()
+      .setZoom(settings.zoomLevel)
+      .catch((e) => console.warn("[zoom] Failed to set zoom:", e));
+  }, [settings.zoomLevel]);
+
+  // Zoom keyboard shortcuts — separate effect with its own document listener so
+  // they work even when a modal is open (zoom should always be accessible).
+  const zoomLevelRef = useRef(settings.zoomLevel);
+  useEffect(() => { zoomLevelRef.current = settings.zoomLevel; }, [settings.zoomLevel]);
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (isZoomIn(e)) {
+        e.preventDefault();
+        updateSettings({ ...settingsRef.current, zoomLevel: stepZoomIn(zoomLevelRef.current) });
+      } else if (isZoomOut(e)) {
+        e.preventDefault();
+        updateSettings({ ...settingsRef.current, zoomLevel: stepZoomOut(zoomLevelRef.current) });
+      } else if (isZoomReset(e)) {
+        e.preventDefault();
+        updateSettings({ ...settingsRef.current, zoomLevel: ZOOM_DEFAULT });
+      }
+    };
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, [updateSettings]);
 
   // Close the hamburger menu on outside click or Escape.
   useEffect(() => {
@@ -330,6 +367,45 @@ export function App() {
                   <Settings size={16} />
                   Settings
                 </button>
+                <div className="menuDivider" />
+                <div className="menuZoomRow">
+                  <span>Zoom</span>
+                  <div className="menuZoomControls">
+                    <button
+                      type="button"
+                      className="menuZoomButton"
+                      onClick={() => updateSettings({ ...settings, zoomLevel: stepZoomOut(settings.zoomLevel) })}
+                      disabled={stepZoomOut(settings.zoomLevel) === settings.zoomLevel}
+                      title="Zoom out"
+                    >
+                      <Minus size={12} />
+                    </button>
+                    {settings.zoomLevel !== ZOOM_DEFAULT ? (
+                      <button
+                        type="button"
+                        className="menuZoomLabel menuZoomLabelClickable"
+                        onClick={() => updateSettings({ ...settings, zoomLevel: ZOOM_DEFAULT })}
+                        title="Reset to 100%"
+                      >
+                        {Math.round(settings.zoomLevel * 100)}%
+                      </button>
+                    ) : (
+                      <span className="menuZoomLabel">
+                        {Math.round(settings.zoomLevel * 100)}%
+                      </span>
+                    )}
+                    <button
+                      type="button"
+                      className="menuZoomButton"
+                      onClick={() => updateSettings({ ...settings, zoomLevel: stepZoomIn(settings.zoomLevel) })}
+                      disabled={stepZoomIn(settings.zoomLevel) === settings.zoomLevel}
+                      title="Zoom in"
+                    >
+                      <Plus size={12} />
+                    </button>
+                  </div>
+                </div>
+                <div className="menuDivider" />
                 <button type="button" onClick={() => openMenuModal("shortcuts")}>
                   <Keyboard size={16} />
                   Shortcuts

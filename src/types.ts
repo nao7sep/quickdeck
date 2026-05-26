@@ -17,6 +17,7 @@ export type AppSettings = {
   editorFontSize: number;
   autosaveDelaySeconds: number;
   snapshotSearchPageSize: number;
+  zoomLevel: number;
 };
 
 export type ToastKind = "info" | "warning" | "error";

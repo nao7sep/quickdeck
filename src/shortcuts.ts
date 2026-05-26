@@ -54,12 +54,12 @@ export const shortcutDefinitions: ShortcutDefinition[] = [
   },
   {
     id: "openSettings",
-    keys: "Cmd/Ctrl + ,",
+    keys: "Cmd/Ctrl + Comma",
     description: "Open settings",
   },
   {
     id: "openShortcuts",
-    keys: "Cmd/Ctrl + /",
+    keys: "Cmd/Ctrl + Slash",
     description: "Open shortcuts",
   },
   {

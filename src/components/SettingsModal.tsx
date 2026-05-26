@@ -13,7 +13,12 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
   const [draft, setDraft] = useState<AppSettings>(settings);
   const [confirmingClose, setConfirmingClose] = useState(false);
 
-  const isDirty = useMemo(() => JSON.stringify(draft) !== JSON.stringify(settings), [draft, settings]);
+  const isDirty = useMemo(() => {
+    // Exclude zoomLevel — it is controlled outside this modal (keyboard shortcuts
+    // and the menu zoom widget) and must not be compared against the draft.
+    const keys = (Object.keys(settings) as (keyof AppSettings)[]).filter((k) => k !== "zoomLevel");
+    return keys.some((k) => draft[k] !== settings[k]);
+  }, [draft, settings]);
 
   function requestClose() {
     if (confirmingClose) {
@@ -45,7 +50,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
               className="primaryButton"
               type="button"
               onClick={() => {
-                updateSettings(normalizeDraft(draft));
+                updateSettings({ ...normalizeDraft(draft), zoomLevel: settings.zoomLevel });
                 onClose();
               }}
             >
