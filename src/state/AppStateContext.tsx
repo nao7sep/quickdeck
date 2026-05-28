@@ -24,6 +24,7 @@ import {
 import type {
   AppSettings,
   BlockingError,
+  LoadStatus,
   Pane,
   SaveState,
   SnapshotTrigger,
@@ -40,6 +41,8 @@ type AppStateContextValue = {
   toasts: Toast[];
   blockingError: BlockingError | null;
   dataDir: string;
+  loadStatus: LoadStatus;
+  loadError: string | null;
   snapshotCount: number;
   snapshotJustSavedAt: number | null;
   setActivePaneId: (paneId: string) => void;
@@ -69,7 +72,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [blockingError, setBlockingError] = useState<BlockingError | null>(null);
   const [dataDir, setDataDir] = useState("Loading...");
-  const [loaded, setLoaded] = useState(false);
+  const [loadStatus, setLoadStatus] = useState<LoadStatus>("loading");
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [snapshotCount, setSnapshotCount] = useState(0);
   const [snapshotJustSavedAt, setSnapshotJustSavedAt] = useState<number | null>(null);
   const panesRef = useRef(panes);
@@ -115,7 +119,6 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     let canceled = false;
 
     async function loadPersistedState() {
-      setSaveState("saving");
       try {
         const data = await loadAppData();
         if (canceled) {
@@ -144,14 +147,15 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         }
 
         setSaveState("saved");
+        setLoadStatus("ready");
       } catch (error) {
         if (!canceled) {
-          setSaveState("error");
-          showBlockingError("Could Not Load Data", String(error));
-        }
-      } finally {
-        if (!canceled) {
-          setLoaded(true);
+          // Halt: do not transition into a state where any write path can run.
+          // The App shell renders a non-dismissible error screen for "failed",
+          // so the user's existing files on disk are never overwritten by the
+          // default in-memory state.
+          setLoadError(String(error));
+          setLoadStatus("failed");
         }
       }
     }
@@ -161,7 +165,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     return () => {
       canceled = true;
     };
-  }, [showBlockingError]);
+  }, []);
 
   const updatePaneTitle = useCallback(
     (paneId: string, title: string) => {
@@ -248,6 +252,10 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
 
   const recordSnapshot = useCallback(
     (paneId: string, trigger: SnapshotTrigger, content: string) => {
+      if (loadStatus !== "ready") {
+        return;
+      }
+
       const trimmed = trimSnapshotContent(content);
       if (trimmed.length === 0) {
         return;
@@ -264,11 +272,15 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
           showToast("warning", `Snapshot was not saved: ${String(error)}`);
         });
     },
-    [showToast],
+    [loadStatus, showToast],
   );
 
   const snapshotAllPanes = useCallback(
     async (trigger: SnapshotTrigger) => {
+      if (loadStatus !== "ready") {
+        return;
+      }
+
       const snapshots = panesRef.current
         .map((pane) => ({
           paneId: pane.id,
@@ -288,7 +300,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         setSnapshotJustSavedAt(Date.now());
       }
     },
-    [],
+    [loadStatus],
   );
 
   const updateSettings = useCallback((nextSettings: AppSettings) => {
@@ -299,9 +311,10 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
 
   // Throws on failure. Each caller decides whether to surface a modal and/or
   // change control flow, since autosave and the close path want different
-  // policies.
+  // policies. No-ops unless load succeeded — see the LoadStatus comment in
+  // types.ts.
   const saveNow = useCallback(async () => {
-    if (!loaded) {
+    if (loadStatus !== "ready") {
       return;
     }
 
@@ -317,10 +330,10 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       setSaveState("error");
       throw error;
     }
-  }, [activePaneId, loaded, panes, settings]);
+  }, [activePaneId, loadStatus, panes, settings]);
 
   useEffect(() => {
-    if (!loaded || saveState !== "unsaved") {
+    if (loadStatus !== "ready" || saveState !== "unsaved") {
       return undefined;
     }
 
@@ -331,7 +344,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     }, Math.max(1, settings.autosaveDelaySeconds) * 1000);
 
     return () => window.clearTimeout(timeoutId);
-  }, [loaded, saveNow, saveState, settings.autosaveDelaySeconds, showBlockingError]);
+  }, [loadStatus, saveNow, saveState, settings.autosaveDelaySeconds, showBlockingError]);
 
   const value = useMemo<AppStateContextValue>(
     () => ({
@@ -343,6 +356,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       toasts,
       blockingError,
       dataDir,
+      loadStatus,
+      loadError,
       snapshotCount,
       snapshotJustSavedAt,
       setActivePaneId,
@@ -369,6 +384,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       deletePane,
       dismissBlockingError,
       dismissToast,
+      loadError,
+      loadStatus,
       movePane,
       panes,
       recordSnapshot,

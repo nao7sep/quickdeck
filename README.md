@@ -88,4 +88,6 @@ The data files are:
 - `session.json`
 - `snapshots.sqlite3` (plus `snapshots.sqlite3-wal` and `snapshots.sqlite3-shm` while the app is running, due to SQLite WAL mode)
 
+If `config.json` or `session.json` fails to load at startup, QuickDeck halts on an error screen rather than starting from default state. No saves run in this state, so the affected file is never overwritten before you can repair it.
+
 QuickDeck does not include telemetry, remote sync, or network persistence.

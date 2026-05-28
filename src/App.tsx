@@ -14,6 +14,7 @@ import {
 import { AboutModal } from "./components/AboutModal";
 import { SnapshotSearchModal } from "./components/SnapshotSearchModal";
 import { ErrorModal } from "./components/ErrorModal";
+import { LoadErrorScreen } from "./components/LoadErrorScreen";
 import { PaneSwitcher } from "./components/PaneSwitcher";
 import { PaneView } from "./components/PaneView";
 import { SettingsModal } from "./components/SettingsModal";
@@ -31,6 +32,8 @@ export function App() {
     activePaneId,
     blockingError,
     dismissBlockingError,
+    loadError,
+    loadStatus,
     saveState,
     settings,
     setActivePaneId,
@@ -134,7 +137,7 @@ export function App() {
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
-      if (openModal || blockingError) {
+      if (loadStatus !== "ready" || openModal || blockingError) {
         return;
       }
 
@@ -194,6 +197,7 @@ export function App() {
     activePaneId,
     addPane,
     blockingError,
+    loadStatus,
     movePane,
     openMenuModal,
     openModal,
@@ -244,7 +248,7 @@ export function App() {
   useEffect(() => {
     const appWindow = isTauri() ? getCurrentWindow() : null;
     let closeUnlisten: (() => void) | undefined;
-    let closing = false;
+    let closeInFlight = false;
 
     async function persistCloseState(): Promise<boolean> {
       try {
@@ -269,26 +273,28 @@ export function App() {
 
     if (appWindow) {
       void appWindow.onCloseRequested(async (event) => {
-        if (closing) {
-          return;
-        }
-
-        closing = true;
+        // We own the close lifecycle on every invocation. preventDefault must
+        // run before the in-flight guard, otherwise a second close request
+        // arriving during a slow save would let Tauri tear the window down
+        // mid-write.
         event.preventDefault();
-
-        const saved = await persistCloseState();
-        if (!saved) {
-          // The blocking-error modal is now visible. Leave the window open so
-          // the user can fix the underlying problem and try closing again.
-          closing = false;
+        if (closeInFlight) {
           return;
         }
-
+        closeInFlight = true;
         try {
+          const saved = await persistCloseState();
+          if (!saved) {
+            // The blocking-error modal is now visible. Leave the window open
+            // so the user can fix the underlying problem and try closing
+            // again; finally resets the flag.
+            return;
+          }
           await appWindow.destroy();
         } catch (error) {
           showToastRef.current("error", `Could not close window: ${String(error)}`);
-          closing = false;
+        } finally {
+          closeInFlight = false;
         }
       }).then((unlisten) => {
         closeUnlisten = unlisten;
@@ -302,6 +308,10 @@ export function App() {
       closeUnlisten?.();
     };
   }, []);
+
+  if (loadStatus === "failed") {
+    return <LoadErrorScreen error={loadError ?? "Unknown error while loading saved data."} />;
+  }
 
   const visiblePanes = settings.zen
     ? [panes.find((pane) => pane.id === activePaneId) ?? panes[0]]

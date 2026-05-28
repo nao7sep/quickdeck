@@ -10,6 +10,11 @@ export type Pane = {
 
 export type SaveState = "saved" | "saving" | "unsaved" | "error";
 
+// Tracks whether persisted data has been read off disk yet. Every write path
+// gates on "ready" so a failed load can never overwrite the existing files
+// with default state.
+export type LoadStatus = "loading" | "ready" | "failed";
+
 export type AppSettings = {
   zen: boolean;
   topmost: boolean;
