@@ -50,7 +50,9 @@ require_command lsof
 cd "$REPO_DIR"
 
 log_step "Stopping stale development listeners"
-stop_port 1421
+# 1621 is this app's Vite dev port (bumped from the 1420/1421 Tauri scaffold
+# default so it never collides with dropkick's launcher port-kill on 1521).
+stop_port 1621
 
 log_step "Installing dependencies required for launch"
 npm install

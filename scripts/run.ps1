@@ -64,7 +64,9 @@ try {
     Set-Location $repoDir
 
     Write-Step "Stopping stale development listeners"
-    Stop-Port 1421
+    # 1621 is this app's Vite dev port (bumped from the 1420/1421 Tauri scaffold
+    # default so it never collides with dropkick's launcher port-kill on 1521).
+    Stop-Port 1621
 
     Write-Step "Installing dependencies required for launch"
     Invoke-Native -FilePath "npm" -ArgumentList @("install")
