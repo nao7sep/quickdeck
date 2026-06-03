@@ -1,0 +1,76 @@
+name: Release
+
+# QuickDeck is developed and primarily used on macOS. Windows is a secondary
+# target that cannot be cross-compiled from a Mac, so both platforms are built
+# here in CI: macOS on a macos-latest runner, Windows on a windows-latest one.
+#
+# fail-fast is disabled so a Windows build failure never blocks the macOS
+# release (Windows is the optional, nice-to-have target).
+#
+# Two ways to trigger:
+#   - Push a tag like v0.1.0  -> builds both platforms and attaches the
+#     installers to a single draft GitHub Release for that tag.
+#   - Run manually from the Actions tab ("Run workflow") -> builds both and
+#     uploads the bundles as downloadable run artifacts, without creating a
+#     release. Use this to grab a Windows build for testing without cutting a tag.
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest
+            artifact-name: quickdeck-macos
+          - platform: windows-latest
+            artifact-name: quickdeck-windows
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Build app (and publish a draft release on tag pushes)
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          # Empty on manual runs, so tauri-action only builds and skips the
+          # release; set to the tag name on tag pushes, so both matrix jobs
+          # publish into the same release for that tag.
+          tagName: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+          releaseName: "QuickDeck ${{ github.ref_name }}"
+          releaseDraft: true
+          prerelease: false
+
+      - name: Upload bundles as run artifacts (manual runs)
+        if: github.ref_type != 'tag'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact-name }}
+          path: src-tauri/target/release/bundle/
+          if-no-files-found: error
