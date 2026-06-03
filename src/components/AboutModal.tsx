@@ -23,7 +23,7 @@ export function AboutModal({ onClose }: AboutModalProps) {
     <ModalBase title="About QuickDeck" onRequestClose={onClose}>
       <div className="aboutText">
         <p className="aboutTitle">QuickDeck</p>
-        <p className="aboutVersion">Version 0.1.0</p>
+        <p className="aboutVersion">Version {__APP_VERSION__}</p>
         <p>A local-first multi-pane plain-text workspace.</p>
         <div className="aboutLinks">
           <button type="button" className="aboutLinkButton" onClick={() => open(REPO_URL)}>

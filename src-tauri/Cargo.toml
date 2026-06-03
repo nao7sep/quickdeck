@@ -1,6 +1,6 @@
 [package]
 name = "quickdeck"
-version = "0.1.0"
+version = "0.1.1"
 description = "QuickDeck desktop application"
 authors = ["Yoshinao Inoguchi <nao7sep@gmail.com>"]
 license = "MIT"
