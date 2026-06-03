@@ -42,7 +42,7 @@ Run the desktop app in development mode:
 npm run tauri dev
 ```
 
-QuickDeck uses Vite dev port `1421` to avoid colliding with other local apps.
+QuickDeck uses Vite dev port `1621` to avoid colliding with other local apps.
 
 ## Scripts
 
@@ -50,19 +50,15 @@ macOS:
 
 ```sh
 scripts/run.command
-scripts/update-packages.command
 ```
 
 Windows PowerShell:
 
 ```powershell
 scripts/run.ps1
-scripts/update-packages.ps1
 ```
 
-The run scripts install dependencies, stop stale QuickDeck listeners on port `1421`, and launch Tauri development mode.
-
-The update scripts install and update npm packages, update Cargo dependencies within declared constraints, clean build outputs, and build the desktop app.
+The run scripts install dependencies, stop stale QuickDeck listeners on port `1621`, and launch Tauri development mode.
 
 ## Build
 
