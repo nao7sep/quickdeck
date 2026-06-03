@@ -36,10 +36,10 @@ jobs:
     runs-on: ${{ matrix.platform }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: lts/*
 
@@ -67,10 +67,17 @@ jobs:
           releaseDraft: true
           prerelease: false
 
-      - name: Upload bundles as run artifacts (manual runs)
+      - name: Upload installers as run artifacts (manual runs)
         if: github.ref_type != 'tag'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.artifact-name }}
-          path: src-tauri/target/release/bundle/
-          if-no-files-found: error
+          # Installers only. A bare .app gets damaged through the artifact
+          # zip round-trip (unsigned bundle + stripped attributes), so ship
+          # the .dmg instead. These globs are cross-platform; only one
+          # platform's files exist per run, hence if-no-files-found: ignore.
+          path: |
+            src-tauri/target/release/bundle/dmg/*.dmg
+            src-tauri/target/release/bundle/msi/*.msi
+            src-tauri/target/release/bundle/nsis/*.exe
+          if-no-files-found: ignore
