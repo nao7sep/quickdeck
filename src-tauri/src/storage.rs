@@ -113,6 +113,15 @@ pub fn search_snapshots(
 ) -> Result<SnapshotSearchResult, String> {
     let data_dir = app_data_dir(app)?;
     let conn = open_snapshot_db(&data_dir)?;
+    search_snapshots_with_connection(&conn, &query, limit, offset)
+}
+
+fn search_snapshots_with_connection(
+    conn: &Connection,
+    query: &str,
+    limit: u32,
+    offset: u32,
+) -> Result<SnapshotSearchResult, String> {
     let terms = query
         .split_whitespace()
         .map(|term| term.to_lowercase())
@@ -137,7 +146,11 @@ pub fn search_snapshots(
         values.push(Value::Text(format!("%{}%", escape_like(&term))));
     }
 
-    sql.push_str(" order by created_at_utc desc limit ? offset ?");
+    // id is the tiebreaker so pagination stays stable when several snapshots
+    // share a created_at_utc (it has only second granularity). Without it,
+    // LIMIT/OFFSET pages could repeat or skip same-second rows. Each id begins
+    // with its own timestamp, so `id desc` keeps newest-first within a second.
+    sql.push_str(" order by created_at_utc desc, id desc limit ? offset ?");
     values.push(Value::Integer(fetch_limit as i64));
     values.push(Value::Integer(offset as i64));
 
@@ -299,6 +312,10 @@ fn open_snapshot_db(data_dir: &Path) -> Result<Connection, String> {
 fn ensure_snapshot_db(data_dir: &Path) -> Result<(), String> {
     fs::create_dir_all(data_dir).map_err(to_string_error)?;
     let conn = Connection::open(data_dir.join("snapshots.sqlite3")).map_err(to_string_error)?;
+    init_schema(&conn)
+}
+
+fn init_schema(conn: &Connection) -> Result<(), String> {
     conn.execute_batch(
         "
         pragma journal_mode = wal;
@@ -340,4 +357,281 @@ fn escape_like(term: &str) -> String {
 
 fn to_string_error(error: impl std::fmt::Display) -> String {
     error.to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn mem_db() -> Connection {
+        let conn = Connection::open_in_memory().expect("open in-memory db");
+        init_schema(&conn).expect("init schema");
+        conn
+    }
+
+    fn input(pane: &str, content: &str) -> SnapshotInput {
+        SnapshotInput {
+            pane_id: pane.to_string(),
+            trigger: "copy".to_string(),
+            content: content.to_string(),
+        }
+    }
+
+    // Inserts a snapshot row with an explicit timestamp so ordering and
+    // pagination tests don't depend on Utc::now()'s second granularity.
+    fn insert_row(conn: &Connection, id: &str, pane: &str, created_at_utc: &str, content: &str) {
+        conn.execute(
+            "insert into snapshots (id, pane_id, created_at_utc, trigger, content_hash, content)
+             values (?1, ?2, ?3, 'copy', ?4, ?5)",
+            params![id, pane, created_at_utc, hash_content(content), content],
+        )
+        .expect("insert row");
+    }
+
+    // --- create_snapshot_with_connection -----------------------------------
+
+    #[test]
+    fn empty_content_is_not_inserted() {
+        let conn = mem_db();
+        let result = create_snapshot_with_connection(&conn, input("p1", "")).unwrap();
+        assert!(!result.inserted);
+        assert!(result.id.is_none());
+        assert_eq!(count_rows(&conn), 0);
+    }
+
+    #[test]
+    fn first_insert_succeeds_with_expected_id_shape() {
+        let conn = mem_db();
+        let result = create_snapshot_with_connection(&conn, input("pane-a", "hello")).unwrap();
+        assert!(result.inserted);
+        let id = result.id.expect("id present");
+        // id = <created_at_utc>-<pane_id>-<hash12>, created_at_utc ends in "-utc".
+        assert!(id.contains("-utc-pane-a-"), "unexpected id: {id}");
+        let hash12 = id.rsplit('-').next().unwrap();
+        assert_eq!(hash12.len(), 12);
+        assert!(hash12.chars().all(|c| c.is_ascii_hexdigit()));
+    }
+
+    #[test]
+    fn exact_duplicate_in_same_pane_is_deduped() {
+        let conn = mem_db();
+        let first = create_snapshot_with_connection(&conn, input("p1", "same body")).unwrap();
+        let second = create_snapshot_with_connection(&conn, input("p1", "same body")).unwrap();
+        assert!(first.inserted);
+        assert!(!second.inserted);
+        // The dedup path returns the existing row's id.
+        assert_eq!(second.id, first.id);
+        assert_eq!(count_rows(&conn), 1);
+    }
+
+    #[test]
+    fn same_content_in_different_panes_both_insert() {
+        let conn = mem_db();
+        let a = create_snapshot_with_connection(&conn, input("p1", "shared")).unwrap();
+        let b = create_snapshot_with_connection(&conn, input("p2", "shared")).unwrap();
+        assert!(a.inserted);
+        assert!(b.inserted);
+        assert_ne!(a.id, b.id);
+        assert_eq!(count_rows(&conn), 2);
+    }
+
+    #[test]
+    fn batch_insert_dedupes_within_transaction() {
+        let conn = mem_db();
+        let tx = conn.unchecked_transaction().unwrap();
+        let results: Vec<_> = vec![input("p1", "x"), input("p1", "x"), input("p1", "y")]
+            .into_iter()
+            .map(|s| create_snapshot_with_connection(&tx, s).unwrap())
+            .collect();
+        tx.commit().unwrap();
+        assert!(results[0].inserted);
+        assert!(!results[1].inserted);
+        assert!(results[2].inserted);
+        assert_eq!(count_rows(&conn), 2);
+    }
+
+    // --- hashing & LIKE escaping -------------------------------------------
+
+    #[test]
+    fn hash_content_matches_known_sha256_vector() {
+        // SHA-256("abc")
+        assert_eq!(
+            hash_content("abc"),
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
+        assert_eq!(hash_content("abc").len(), 64);
+    }
+
+    #[test]
+    fn escape_like_escapes_wildcards_and_backslash() {
+        assert_eq!(escape_like("100%"), "100\\%");
+        assert_eq!(escape_like("a_b"), "a\\_b");
+        assert_eq!(escape_like("c:\\path"), "c:\\\\path");
+        assert_eq!(escape_like("plain"), "plain");
+    }
+
+    // --- search_snapshots_with_connection ----------------------------------
+
+    #[test]
+    fn search_with_empty_or_blank_query_returns_nothing() {
+        let conn = mem_db();
+        insert_row(&conn, "id1", "p1", "20260101-000001-utc", "hello world");
+
+        for query in ["", "   ", "\t\n"] {
+            let result = search_snapshots_with_connection(&conn, query, 25, 0).unwrap();
+            assert!(result.rows.is_empty(), "query {query:?} should match nothing");
+            assert!(!result.has_more);
+        }
+    }
+
+    #[test]
+    fn search_is_case_insensitive() {
+        let conn = mem_db();
+        insert_row(&conn, "id1", "p1", "20260101-000001-utc", "The Quick Brown Fox");
+        let result = search_snapshots_with_connection(&conn, "QUICK", 25, 0).unwrap();
+        assert_eq!(result.rows.len(), 1);
+        assert_eq!(result.rows[0].id, "id1");
+    }
+
+    #[test]
+    fn search_requires_all_terms() {
+        let conn = mem_db();
+        insert_row(&conn, "both", "p1", "20260101-000002-utc", "alpha beta gamma");
+        insert_row(&conn, "one", "p1", "20260101-000001-utc", "alpha only");
+
+        let result = search_snapshots_with_connection(&conn, "alpha gamma", 25, 0).unwrap();
+        assert_eq!(result.rows.len(), 1);
+        assert_eq!(result.rows[0].id, "both");
+    }
+
+    #[test]
+    fn search_treats_like_wildcards_literally() {
+        let conn = mem_db();
+        insert_row(&conn, "pct", "p1", "20260101-000002-utc", "50% off today");
+        insert_row(&conn, "plain", "p1", "20260101-000001-utc", "500 dollars");
+
+        // Without LIKE escaping, "50%" would match "500" too.
+        let result = search_snapshots_with_connection(&conn, "50%", 25, 0).unwrap();
+        assert_eq!(result.rows.len(), 1);
+        assert_eq!(result.rows[0].id, "pct");
+    }
+
+    #[test]
+    fn search_orders_by_timestamp_descending() {
+        let conn = mem_db();
+        insert_row(&conn, "old", "p1", "20260101-000001-utc", "note one");
+        insert_row(&conn, "new", "p1", "20260101-000003-utc", "note two");
+        insert_row(&conn, "mid", "p1", "20260101-000002-utc", "note three");
+
+        let result = search_snapshots_with_connection(&conn, "note", 25, 0).unwrap();
+        let ids: Vec<_> = result.rows.iter().map(|r| r.id.as_str()).collect();
+        assert_eq!(ids, vec!["new", "mid", "old"]);
+    }
+
+    #[test]
+    fn search_paginates_with_has_more_flag() {
+        let conn = mem_db();
+        for i in 0..3 {
+            insert_row(
+                &conn,
+                &format!("id{i}"),
+                "p1",
+                &format!("20260101-00000{}-utc", i + 1),
+                &format!("term here {i}"),
+            );
+        }
+
+        let page = search_snapshots_with_connection(&conn, "term", 2, 0).unwrap();
+        assert_eq!(page.rows.len(), 2);
+        assert!(page.has_more);
+
+        let rest = search_snapshots_with_connection(&conn, "term", 2, 2).unwrap();
+        assert_eq!(rest.rows.len(), 1);
+        assert!(!rest.has_more);
+    }
+
+    #[test]
+    fn search_pagination_is_stable_across_same_second_rows() {
+        let conn = mem_db();
+        // Four snapshots sharing one created_at_utc (second granularity), with
+        // distinct content so the (pane_id, content_hash) index is satisfied.
+        let ts = "20260101-000001-utc";
+        for i in 0..4 {
+            insert_row(&conn, &format!("id{i}"), "p1", ts, &format!("term {i}"));
+        }
+
+        let page1 = search_snapshots_with_connection(&conn, "term", 2, 0).unwrap();
+        let page2 = search_snapshots_with_connection(&conn, "term", 2, 2).unwrap();
+
+        let mut paged: Vec<_> = page1
+            .rows
+            .iter()
+            .chain(page2.rows.iter())
+            .map(|r| r.id.clone())
+            .collect();
+        // Every row appears exactly once across the two pages — no repeats, no skips.
+        assert_eq!(paged.len(), 4);
+        paged.sort();
+        paged.dedup();
+        assert_eq!(paged, vec!["id0", "id1", "id2", "id3"]);
+        // The id tiebreaker fixes the order to newest-id-first.
+        let order: Vec<_> = page1
+            .rows
+            .iter()
+            .chain(page2.rows.iter())
+            .map(|r| r.id.as_str())
+            .collect();
+        assert_eq!(order, vec!["id3", "id2", "id1", "id0"]);
+    }
+
+    #[test]
+    fn search_limit_is_clamped_to_bounds() {
+        let conn = mem_db();
+        for i in 0..5 {
+            insert_row(
+                &conn,
+                &format!("id{i}"),
+                "p1",
+                &format!("20260101-00000{}-utc", i + 1),
+                &format!("term {i}"),
+            );
+        }
+        // limit 0 clamps up to 1.
+        let result = search_snapshots_with_connection(&conn, "term", 0, 0).unwrap();
+        assert_eq!(result.rows.len(), 1);
+        assert!(result.has_more);
+    }
+
+    // --- JSON file IO ------------------------------------------------------
+
+    #[test]
+    fn write_then_read_json_roundtrips() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.json");
+        let value = serde_json::json!({ "zoomLevel": 1.2, "zen": true });
+
+        atomic_write_json(&path, &value).unwrap();
+        let read_back = read_json_optional(&path).unwrap();
+        assert_eq!(read_back, Some(value));
+    }
+
+    #[test]
+    fn read_missing_file_returns_none() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("does-not-exist.json");
+        assert_eq!(read_json_optional(&path).unwrap(), None);
+    }
+
+    #[test]
+    fn read_malformed_json_returns_err() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("broken.json");
+        fs::write(&path, "{ not valid json").unwrap();
+        assert!(read_json_optional(&path).is_err());
+    }
+
+    fn count_rows(conn: &Connection) -> i64 {
+        conn.query_row("select count(*) from snapshots", [], |row| row.get(0))
+            .unwrap()
+    }
 }

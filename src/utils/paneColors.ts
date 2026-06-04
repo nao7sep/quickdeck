@@ -79,7 +79,7 @@ function pickHue(usedHues: number[]): number {
   return bestHue;
 }
 
-function minHueDistance(hue: number, others: number[]): number {
+export function minHueDistance(hue: number, others: number[]): number {
   let min = 360;
   for (const other of others) {
     const diff = Math.abs(hue - other) % 360;
@@ -91,7 +91,7 @@ function minHueDistance(hue: number, others: number[]): number {
   return min;
 }
 
-function lightnessForHue(hue: number): number {
+export function lightnessForHue(hue: number): number {
   let bestEntry = HUE_LIGHTNESS[0];
   let bestDistance = 360;
   for (const entry of HUE_LIGHTNESS) {
@@ -105,7 +105,7 @@ function lightnessForHue(hue: number): number {
   return bestEntry.lightness;
 }
 
-function hslToHex(hueDeg: number, saturation: number, lightness: number): string {
+export function hslToHex(hueDeg: number, saturation: number, lightness: number): string {
   const h = ((hueDeg % 360) + 360) % 360 / 360;
   const s = clamp01(saturation);
   const l = clamp01(lightness);
@@ -147,7 +147,7 @@ function clamp01(value: number): number {
   return Math.min(1, Math.max(0, value));
 }
 
-function hueFromHex(hex: string): number | null {
+export function hueFromHex(hex: string): number | null {
   const match = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
   if (!match) {
     return null;

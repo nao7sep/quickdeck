@@ -74,6 +74,20 @@ Desktop build:
 npm run tauri build
 ```
 
+## Tests
+
+Frontend unit tests (Vitest):
+
+```sh
+npm test
+```
+
+Rust backend tests (snapshot storage layer):
+
+```sh
+cd src-tauri && cargo test
+```
+
 ## Local Data
 
 QuickDeck stores data locally in `~/.quickdeck`.

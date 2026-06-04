@@ -10,7 +10,8 @@ import {
 } from "react";
 import { nanoid } from "nanoid";
 import { createDefaultPane, defaultSettings } from "./defaults";
-import { randomPaneColor } from "../utils/paneColors";
+import { normalizePanes, normalizeSettings } from "./normalize";
+import { appendPane, deletePane as deletePaneOp, reorderPane } from "./paneOps";
 import { trimSnapshotContent } from "../utils/snapshotContent";
 import {
   buildSessionState,
@@ -189,41 +190,30 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
 
   const addPane = useCallback(() => {
     const paneId = nanoid();
-    setPanes((current) => {
-      const existingHeaders = current.map((pane) => pane.headerColor);
-      const pane = createDefaultPane(paneId, existingHeaders);
-      return [...current, pane];
-    });
+    setPanes((current) => appendPane(current, paneId));
     setActivePaneId(paneId);
     markUnsaved();
   }, [markUnsaved]);
 
   const deletePane = useCallback(
     (paneId: string) => {
-      const pane = panes.find((candidate) => candidate.id === paneId);
-      if (!pane) {
-        return;
-      }
+      const outcome = deletePaneOp(panes, paneId, activePaneId);
 
-      if (panes.length === 1) {
-        showToast("warning", "At least one pane must remain.");
-        return;
+      switch (outcome.kind) {
+        case "not-found":
+          return;
+        case "blocked-last":
+          showToast("warning", "At least one pane must remain.");
+          return;
+        case "blocked-non-empty":
+          showToast("warning", "Only empty panes can be deleted.");
+          return;
+        case "deleted":
+          setPanes(outcome.panes);
+          setActivePaneId(outcome.nextActivePaneId);
+          markUnsaved();
+          return;
       }
-
-      if (trimSnapshotContent(pane.content).length > 0) {
-        showToast("warning", "Only empty panes can be deleted.");
-        return;
-      }
-
-      const deletedIndex = panes.findIndex((candidate) => candidate.id === paneId);
-      const nextPanes = panes.filter((candidate) => candidate.id !== paneId);
-      const fallbackActivePane = nextPanes[Math.max(0, deletedIndex - 1)] ?? nextPanes[0];
-
-      setPanes(nextPanes);
-      if (activePaneId === paneId) {
-        setActivePaneId(fallbackActivePane.id);
-      }
-      markUnsaved();
     },
     [activePaneId, markUnsaved, panes, showToast],
   );
@@ -231,19 +221,10 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const movePane = useCallback(
     (paneId: string, direction: -1 | 1) => {
       setPanes((current) => {
-        const fromIndex = current.findIndex((pane) => pane.id === paneId);
-        if (fromIndex < 0) {
-          return current;
+        const next = reorderPane(current, paneId, direction);
+        if (next !== current) {
+          markUnsaved();
         }
-        const toIndex = fromIndex + direction;
-        if (toIndex < 0 || toIndex >= current.length) {
-          return current;
-        }
-
-        const next = [...current];
-        const [moved] = next.splice(fromIndex, 1);
-        next.splice(toIndex, 0, moved);
-        markUnsaved();
         return next;
       });
     },
@@ -413,63 +394,4 @@ export function useAppState() {
     throw new Error("useAppState must be used within AppStateProvider");
   }
   return value;
-}
-
-function normalizeSettings(settings: AppSettings | null): AppSettings {
-  if (!settings) {
-    return defaultSettings;
-  }
-
-  return {
-    ...defaultSettings,
-    ...settings,
-    editorFontSize: clampNumber(settings.editorFontSize, 10, 32, defaultSettings.editorFontSize),
-    autosaveDelaySeconds: clampNumber(settings.autosaveDelaySeconds, 1, 60, defaultSettings.autosaveDelaySeconds),
-    snapshotSearchPageSize: clampNumber(
-      settings.snapshotSearchPageSize,
-      5,
-      200,
-      defaultSettings.snapshotSearchPageSize,
-    ),
-  };
-}
-
-function normalizePanes(panes: Pane[] | undefined): Pane[] {
-  if (!Array.isArray(panes)) {
-    return [];
-  }
-
-  const accumulatedHeaders: string[] = [];
-
-  return panes
-    .filter((pane) => typeof pane.id === "string" && pane.id.length > 0)
-    .map((pane) => {
-      const hasColors =
-        typeof pane.headerColor === "string" &&
-        /^#[0-9a-f]{6}$/i.test(pane.headerColor) &&
-        typeof pane.backgroundColor === "string" &&
-        /^#[0-9a-f]{6}$/i.test(pane.backgroundColor);
-
-      const colors = hasColors
-        ? { header: pane.headerColor, background: pane.backgroundColor }
-        : randomPaneColor(accumulatedHeaders);
-
-      accumulatedHeaders.push(colors.header);
-
-      return {
-        id: pane.id,
-        title: typeof pane.title === "string" && pane.title.length > 0 ? pane.title : "New Buffer",
-        content: typeof pane.content === "string" ? pane.content : "",
-        headerColor: colors.header,
-        backgroundColor: colors.background,
-      };
-    });
-}
-
-function clampNumber(value: number, min: number, max: number, fallback: number): number {
-  if (!Number.isFinite(value)) {
-    return fallback;
-  }
-
-  return Math.min(max, Math.max(min, value));
 }
