@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { matchesShortcut } from "../src/shortcuts";
+import { matchesShortcut, shortcutDefinitions } from "../src/shortcuts";
 
 type Mods = { ctrlKey?: boolean; metaKey?: boolean; shiftKey?: boolean };
 
@@ -9,6 +9,8 @@ function key(k: string, mods: Mods = {}): KeyboardEvent {
 
 describe("matchesShortcut", () => {
   it("matches toggle shortcuts case-insensitively with either primary modifier", () => {
+    expect(matchesShortcut(key("d", { ctrlKey: true }), "toggleDark")).toBe(true);
+    expect(matchesShortcut(key("D", { metaKey: true }), "toggleDark")).toBe(true);
     expect(matchesShortcut(key("k", { ctrlKey: true }), "toggleZen")).toBe(true);
     expect(matchesShortcut(key("K", { metaKey: true }), "toggleZen")).toBe(true);
     expect(matchesShortcut(key("t", { ctrlKey: true }), "toggleTopmost")).toBe(true);
@@ -43,5 +45,25 @@ describe("matchesShortcut", () => {
     expect(matchesShortcut(key("Escape", {}), "closeModal")).toBe(true);
     expect(matchesShortcut(key("Escape", { metaKey: true }), "closeModal")).toBe(true);
     expect(matchesShortcut(key("a", {}), "closeModal")).toBe(false);
+  });
+});
+
+describe("shortcutDefinitions", () => {
+  it("lists the toggles in dark -> zen -> topmost order", () => {
+    const toggles = shortcutDefinitions
+      .map((s) => s.id)
+      .filter((id) => id === "toggleDark" || id === "toggleZen" || id === "toggleTopmost");
+    expect(toggles).toEqual(["toggleDark", "toggleZen", "toggleTopmost"]);
+  });
+
+  it("has unique descriptions, since the modal uses them as render keys", () => {
+    const descriptions = shortcutDefinitions.map((s) => s.description);
+    expect(new Set(descriptions).size).toBe(descriptions.length);
+  });
+
+  it("includes the zoom rows as id-less, display-only entries", () => {
+    // Zoom is matched in utils/zoom.ts, not matchesShortcut, so it carries no id.
+    const idless = shortcutDefinitions.filter((s) => s.id === undefined).map((s) => s.description);
+    expect(idless).toEqual(["Zoom in", "Zoom out", "Reset zoom"]);
   });
 });

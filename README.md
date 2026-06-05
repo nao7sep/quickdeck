@@ -15,11 +15,12 @@ It is built with Tauri, React, and TypeScript. Current workspace state is autosa
 - Local SQLite snapshots on copy, paste, cut, and app close (whitespace-trimmed and deduped per pane)
 - Snapshot search with local-time timestamps
 - Configurable editor font family and size
-- Zoom (50%–500%) via the gear menu or keyboard shortcuts; level is persisted
+- Zoom (50%–500%) via the menu or keyboard shortcuts; level is persisted
 - Word, character, and X/Twitter weighted character counts
+- Dark theme toggle through settings, the status-bar Light/Dark button, or shortcut (off by default)
 - Zen mode that hides all but the active pane, with a status-bar pane switcher; toggle through settings or shortcut
 - Always-on-top toggle through settings or shortcut
-- Status bar showing save state, recent snapshot activity, and clickable Zen and Topmost badges; pane and snapshot counts in normal mode, pane switcher in zen mode
+- Status bar showing save state, recent snapshot activity, a Light/Dark toggle, and clickable Zen and Topmost badges; pane and snapshot counts in normal mode, pane switcher in zen mode
 - Settings, shortcuts, snapshot search, and about modals (all closable with Escape or outside click)
 
 ## Requirements

@@ -3,6 +3,7 @@ import { Trash2 } from "lucide-react";
 import type { Pane } from "../types";
 import { useAppState } from "../state/AppStateContext";
 import { getTextCounts } from "../utils/counts";
+import { darkPaneBackground } from "../utils/paneColors";
 
 type PaneViewProps = {
   pane: Pane;
@@ -41,6 +42,7 @@ export function PaneView({ pane }: PaneViewProps) {
         {
           "--pane-color": pane.headerColor,
           "--pane-bg": pane.backgroundColor,
+          "--pane-bg-dark": darkPaneBackground(pane.backgroundColor),
         } as CSSProperties
       }
       onMouseDown={() => setActivePaneId(pane.id)}

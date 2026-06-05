@@ -67,6 +67,10 @@ export function App() {
     setMenuOpen(false);
   }, []);
 
+  const toggleDark = useCallback(() => {
+    updateSettings({ ...settings, dark: !settings.dark });
+  }, [settings, updateSettings]);
+
   const toggleTopmost = useCallback(() => {
     updateSettings({ ...settings, topmost: !settings.topmost });
   }, [settings, updateSettings]);
@@ -79,6 +83,19 @@ export function App() {
   // the current value without re-registering on every settings change.
   const settingsRef = useRef(settings);
   useEffect(() => { settingsRef.current = settings; }, [settings]);
+
+  // Apply the dark theme by toggling a class on the document root, which flips
+  // the CSS custom-property tokens defined in styles.css. Also sync the native
+  // window theme so the OS title bar (and the window backing shown briefly while
+  // resizing) matches, rather than staying light.
+  useEffect(() => {
+    document.documentElement.classList.toggle("dark", settings.dark);
+    if (isTauri()) {
+      getCurrentWindow()
+        .setTheme(settings.dark ? "dark" : "light")
+        .catch((e) => console.warn("[theme] Failed to set window theme:", e));
+    }
+  }, [settings.dark]);
 
   // Apply zoom level to the Tauri webview whenever it changes.
   useEffect(() => {
@@ -180,6 +197,11 @@ export function App() {
         openMenuModal("shortcuts");
       }
 
+      if (matchesShortcut(event, "toggleDark")) {
+        event.preventDefault();
+        toggleDark();
+      }
+
       if (matchesShortcut(event, "toggleTopmost")) {
         event.preventDefault();
         toggleTopmost();
@@ -204,6 +226,7 @@ export function App() {
     panes,
     setActivePaneId,
     settings,
+    toggleDark,
     toggleTopmost,
     toggleZen,
     updateSettings,
@@ -331,10 +354,10 @@ export function App() {
         <div className="statusBarRight">
           {!settings.zen ? (
             <>
-              <span className="statusBadge statusBadge-info">
+              <span className="statusBadge statusBadge-panes">
                 {panes.length} {panes.length === 1 ? "pane" : "panes"}
               </span>
-              <span className="statusBadge statusBadge-info">
+              <span className="statusBadge statusBadge-snapshots">
                 {snapshotCount.toLocaleString()} snapshots
               </span>
             </>
@@ -342,6 +365,14 @@ export function App() {
           {snapshotPulse ? (
             <span className="statusBadge statusBadge-snapshot">Snapshot saved</span>
           ) : null}
+          <button
+            type="button"
+            className="statusBadge statusBadgeButton statusThemeToggle"
+            title={settings.dark ? "Switch to light theme" : "Switch to dark theme"}
+            onClick={toggleDark}
+          >
+            {settings.dark ? "Dark" : "Light"}
+          </button>
           {settings.zen ? (
             <button
               type="button"

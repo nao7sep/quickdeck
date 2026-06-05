@@ -8,6 +8,7 @@
     "core:webview:allow-set-webview-zoom",
     "core:window:allow-destroy",
     "core:window:allow-set-always-on-top",
+    "core:window:allow-set-theme",
     "opener:default",
     "opener:allow-open-url"
   ]

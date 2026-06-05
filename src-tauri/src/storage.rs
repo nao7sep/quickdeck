@@ -388,6 +388,18 @@ mod tests {
         .expect("insert row");
     }
 
+    // --- config serialization ----------------------------------------------
+
+    #[test]
+    fn json_object_key_order_is_preserved() {
+        // QuickDeck relies on serde_json's `preserve_order` feature so config.json
+        // round-trips in the frontend's field order (dark -> zen -> topmost ...)
+        // instead of being alphabetized. Without the feature this would re-sort.
+        let json = r#"{"dark":false,"zen":true,"topmost":false}"#;
+        let value: JsonValue = serde_json::from_str(json).unwrap();
+        assert_eq!(serde_json::to_string(&value).unwrap(), json);
+    }
+
     // --- create_snapshot_with_connection -----------------------------------
 
     #[test]

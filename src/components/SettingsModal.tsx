@@ -63,6 +63,14 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
           <label className="checkboxRow">
             <input
               type="checkbox"
+              checked={draft.dark}
+              onChange={(event) => setField("dark", event.target.checked)}
+            />
+            <span>Dark theme</span>
+          </label>
+          <label className="checkboxRow">
+            <input
+              type="checkbox"
               checked={draft.zen}
               onChange={(event) => setField("zen", event.target.checked)}
             />

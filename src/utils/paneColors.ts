@@ -50,6 +50,35 @@ export function randomPaneColor(existingHeaders: ReadonlyArray<string> = []): Pa
   };
 }
 
+const DARK_PANE_LIGHTNESS = 0.16;
+
+// Dark-theme pane body. A non-active pane should read as weakly colored as it
+// does in light mode, where its background is a pale, high-lightness tint. The
+// perceived strength of a color is its chroma (max − min of its RGB channels);
+// in light mode that chroma is small precisely because the tint is so light. So
+// we measure the light background's chroma and reproduce *exactly* that chroma
+// at a dark lightness — same hue, same colorfulness, just dark. Derived at
+// render time from the stored light background, so no extra color is persisted.
+export function darkPaneBackground(lightBackground: string): string {
+  const match = /^#?([0-9a-f]{6})$/i.exec(lightBackground.trim());
+  const hue = hueFromHex(lightBackground) ?? 0;
+  if (!match) {
+    return hslToHex(hue, 0, DARK_PANE_LIGHTNESS);
+  }
+
+  const int = parseInt(match[1], 16);
+  const r = ((int >> 16) & 0xff) / 255;
+  const g = ((int >> 8) & 0xff) / 255;
+  const b = (int & 0xff) / 255;
+  const chroma = Math.max(r, g, b) - Math.min(r, g, b);
+
+  // Invert chroma = (1 − |2L − 1|) · S to find the saturation that yields the
+  // same chroma at the target dark lightness.
+  const denominator = 1 - Math.abs(2 * DARK_PANE_LIGHTNESS - 1);
+  const saturation = denominator === 0 ? 0 : chroma / denominator;
+  return hslToHex(hue, saturation, DARK_PANE_LIGHTNESS);
+}
+
 function pickHue(usedHues: number[]): number {
   if (usedHues.length === 0) {
     return Math.random() * 360;

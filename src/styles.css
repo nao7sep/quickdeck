@@ -3,7 +3,7 @@
    ================================================================ */
 
 :root {
-  color: #1e1e2e;
+  color: var(--text);
   background: transparent;
   font-family:
     Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
@@ -12,16 +12,84 @@
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
 
+  /* Theme tokens — light values. The dark theme (:root.dark) below redefines
+     only the white / near-white surfaces and the dark text that sits on them.
+     Already-dark surfaces (status bar, modal header, pane headers, gradient
+     buttons) are intentionally not tokenized and stay identical in both. */
   --border: #e5e7f0;
+  --border-strong: #c0c4d6;
   --surface: #ffffff;
   --surface-muted: #f8f9fc;
+  --surface-hover: #f0f0f8;
+  --surface-selected: #ede9fe;
+  --surface-accent: #f5f3ff;
+  --app-bg: #ecedf5;
+  --deck-gutter: #c8cadf;
+  --text: #1e1e2e;
+  --text-strong: #374151;
+  --text-heading: #1e1b4b;
+  --text-onhover: #312e81;
   --text-muted: #6b7280;
+  --accent: #6d28d9;
+  --accent-strong: #4c1d95;
   --danger: #ef4444;
   --warning: #f59e0b;
+  --divider-subtle: rgba(0, 0, 0, 0.07);
+  --overlay-hover: rgba(0, 0, 0, 0.08);
+  --kbd-bg: #ffffff;
+  --kbd-border: #c4b5fd;
+  --kbd-text: #4c1d95;
+  --toast-warning-bg: linear-gradient(135deg, #fffbeb, #fef9e7);
+  --toast-warning-border: #fde68a;
+  --toast-error-bg: linear-gradient(135deg, #fef2f2, #fff5f5);
+  --toast-error-border: #fca5a5;
+
+  /* Window chrome (title-bar strip + status bar) — constant across themes. */
+  --chrome-gradient: linear-gradient(135deg, #1e1b4b 0%, #312e81 50%, #4c1d95 100%);
 
   /* Per-pane CSS custom properties (set inline per pane) */
   --pane-color: #7c3aed;
   --pane-bg: #f5f3ff;
+}
+
+:root.dark {
+  --border: #34343f;
+  --border-strong: #45454f;
+  --surface: #20202a;
+  --surface-muted: #282833;
+  --surface-hover: #2e2e3a;
+  --surface-selected: #3a2e5a;
+  --surface-accent: #272033;
+  --app-bg: #141419;
+  --deck-gutter: #4c4c58;
+  --text: #e6e6ee;
+  --text-strong: #c9ccd6;
+  --text-heading: #f1f1f7;
+  --text-onhover: #d7cdff;
+  --text-muted: #989eaa;
+  --accent: #c4b5fd;
+  --accent-strong: #ddd0ff;
+  --divider-subtle: rgba(255, 255, 255, 0.08);
+  --overlay-hover: rgba(255, 255, 255, 0.10);
+  --kbd-bg: #2a2438;
+  --kbd-border: #5b4b8a;
+  --kbd-text: #e2d8ff;
+  --toast-warning-bg: linear-gradient(135deg, #2a2410, #241f0e);
+  --toast-warning-border: #6b5d2a;
+  --toast-error-bg: linear-gradient(135deg, #2a1414, #241010);
+  --toast-error-border: #7a3a3a;
+}
+
+/* Pane bodies carry per-pane near-white tints via inline --pane-bg in light
+   mode. In dark mode a non-active pane uses --pane-bg-dark (the same hue at a
+   dark, low lightness) and the active pane uses a neutral dark surface — the
+   direct analog of light mode, where the active pane is plain white. */
+:root.dark .pane {
+  background: var(--pane-bg-dark, #181820);
+}
+
+:root.dark .pane-active {
+  background: #20202a;
 }
 
 * {
@@ -54,7 +122,7 @@ button {
   grid-template-rows: 1fr auto;
   width: 100%;
   height: 100%;
-  background: #ecedf5;
+  background: var(--app-bg);
 }
 
 /* ── Status Bar ──────────────────────────────────────────────── */
@@ -66,7 +134,7 @@ button {
   gap: 12px;
   height: 44px;
   padding: 0 16px;
-  background: linear-gradient(135deg, #1e1b4b 0%, #312e81 50%, #4c1d95 100%);
+  background: var(--chrome-gradient);
 }
 
 .statusBarRight {
@@ -89,19 +157,36 @@ button {
   letter-spacing: 0.3px;
 }
 
-.statusBadge-info {
-  background: rgba(255, 255, 255, 0.1);
-  color: rgba(255, 255, 255, 0.78);
+/* Status-bar pills/buttons use a colorful palette spaced around the hue wheel
+   so that no two adjacent items share a similar color. Left to right the
+   possible run is: panes (blue) · snapshots (fuchsia) · snapshot-saved (green)
+   · Light/Dark (amber) · Zen (purple) · Topmost (cyan) · save state · menu
+   (emerald). The save-state pill is the one exception — it is a status signal,
+   so it keeps its semantic colors (neutral / amber / red). */
+
+.statusBadge-panes {
+  background: rgba(59, 130, 246, 0.40);
+  color: #bfdbfe;
+}
+
+.statusBadge-snapshots {
+  background: rgba(217, 70, 239, 0.40);
+  color: #f5d0fe;
 }
 
 .statusBadge-topmost {
-  background: rgba(99, 102, 241, 0.42);
-  color: #c7d2fe;
+  background: rgba(34, 211, 238, 0.38);
+  color: #a5f3fc;
 }
 
 .statusBadge-zen {
   background: rgba(168, 85, 247, 0.42);
   color: #e9d5ff;
+}
+
+.statusThemeToggle {
+  background: rgba(245, 158, 11, 0.40);
+  color: #fde68a;
 }
 
 .statusBadgeButton {
@@ -110,11 +195,15 @@ button {
 }
 
 .statusBadge-topmost.statusBadgeButton:hover {
-  background: rgba(99, 102, 241, 0.62);
+  background: rgba(34, 211, 238, 0.55);
 }
 
 .statusBadge-zen.statusBadgeButton:hover {
   background: rgba(168, 85, 247, 0.62);
+}
+
+.statusThemeToggle:hover {
+  background: rgba(245, 158, 11, 0.58);
 }
 
 @keyframes snapshotFlash {
@@ -137,15 +226,15 @@ button {
   width: 32px;
   height: 32px;
   margin-left: 4px;
-  border: 1px solid rgba(255, 255, 255, 0.24);
+  border: 1px solid rgba(16, 185, 129, 0.45);
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.12);
-  color: rgba(255, 255, 255, 0.92);
+  background: rgba(16, 185, 129, 0.38);
+  color: #a7f3d0;
   transition: background 120ms;
 }
 
 .statusMenuButton:hover {
-  background: rgba(255, 255, 255, 0.24);
+  background: rgba(16, 185, 129, 0.55);
 }
 
 .menuPanelUp {
@@ -217,7 +306,7 @@ button {
   padding: 6px;
   border: 1px solid var(--border);
   border-radius: 14px;
-  background: #ffffff;
+  background: var(--surface);
   box-shadow:
     0 20px 40px rgba(30, 27, 75, 0.18),
     0 4px 12px rgba(30, 27, 75, 0.1);
@@ -232,19 +321,19 @@ button {
   border: 0;
   border-radius: 8px;
   background: transparent;
-  color: #1e1e2e;
+  color: var(--text);
   font-weight: 500;
   text-align: left;
 }
 
 .paneSwitcherOption:hover {
-  background: #f0f0f8;
-  color: #312e81;
+  background: var(--surface-hover);
+  color: var(--text-onhover);
 }
 
 .paneSwitcherOption-selected {
-  background: #ede9fe;
-  color: #312e81;
+  background: var(--surface-selected);
+  color: var(--text-onhover);
 }
 
 .paneSwitcherOptionTitle {
@@ -320,7 +409,7 @@ button {
   padding: 6px;
   border: 1px solid var(--border);
   border-radius: 14px;
-  background: #ffffff;
+  background: var(--surface);
   box-shadow:
     0 20px 40px rgba(30, 27, 75, 0.18),
     0 4px 12px rgba(30, 27, 75, 0.1);
@@ -335,14 +424,14 @@ button {
   border: 0;
   border-radius: 8px;
   background: transparent;
-  color: #1e1e2e;
+  color: var(--text);
   font-weight: 500;
   text-align: left;
 }
 
 .menuPanel button:hover {
-  background: #f0f0f8;
-  color: #312e81;
+  background: var(--surface-hover);
+  color: var(--text-onhover);
 }
 
 .menuDivider {
@@ -359,7 +448,7 @@ button {
   padding: 4px 12px;
   font-size: 13px;
   font-weight: 500;
-  color: #374151;
+  color: var(--text-strong);
 }
 
 .menuZoomControls {
@@ -381,12 +470,12 @@ button {
   border: 0;
   border-radius: 0;
   background: transparent;
-  color: #6b7280;
+  color: var(--text-muted);
 }
 
 .menuPanel .menuZoomButton:hover:not(:disabled) {
-  background: #f0f0f8;
-  color: #312e81;
+  background: var(--surface-hover);
+  color: var(--text-onhover);
 }
 
 .menuPanel .menuZoomButton:disabled {
@@ -411,16 +500,16 @@ button {
   font-size: 12px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
-  color: #1e1e2e;
+  color: var(--text);
 }
 
 .menuPanel .menuZoomLabelClickable {
-  color: #6d28d9;
+  color: var(--accent);
   cursor: pointer;
 }
 
 .menuPanel .menuZoomLabelClickable:hover {
-  color: #4c1d95;
+  color: var(--accent-strong);
   text-decoration: underline;
 }
 
@@ -433,7 +522,7 @@ button {
   min-width: 0;
   overflow: hidden;
   gap: 2px;
-  background: #c8cadf;
+  background: var(--deck-gutter);
 }
 
 /* ── Individual Pane ─────────────────────────────────────────── */
@@ -512,7 +601,7 @@ button {
   resize: none;
   border: 0;
   background: transparent;
-  color: #1e1e2e;
+  color: var(--text);
   line-height: 1.6;
   padding: 14px;
   outline: none;
@@ -530,7 +619,7 @@ button {
   min-width: 0;
   min-height: 28px;
   padding: 4px 10px;
-  border-top: 1px solid rgba(0, 0, 0, 0.07);
+  border-top: 1px solid var(--divider-subtle);
   color: var(--text-muted);
   font-size: 11px;
   font-weight: 600;
@@ -662,14 +751,14 @@ button {
   min-width: 104px;
   padding: 0 16px;
   border: 1.5px solid var(--border);
-  background: #ffffff;
-  color: #374151;
+  background: var(--surface);
+  color: var(--text-strong);
   transition: background 120ms, border-color 120ms;
 }
 
 .secondaryButton:hover {
   background: var(--surface-muted);
-  border-color: #c0c4d6;
+  border-color: var(--border-strong);
 }
 
 .dangerButton {
@@ -693,8 +782,8 @@ button {
 .iconTextButton {
   padding: 0 12px;
   border: 1.5px solid var(--border);
-  background: #ffffff;
-  color: #374151;
+  background: var(--surface);
+  color: var(--text-strong);
   transition: background 120ms;
 }
 
@@ -714,7 +803,7 @@ button {
   gap: 6px;
   font-size: 13px;
   font-weight: 600;
-  color: #374151;
+  color: var(--text-strong);
 }
 
 .formGrid input[type="text"],
@@ -724,7 +813,8 @@ button {
   min-height: 36px;
   border: 1.5px solid var(--border);
   border-radius: 8px;
-  background: #ffffff;
+  background: var(--surface);
+  color: var(--text);
   padding: 0 10px;
   transition: border-color 120ms, box-shadow 120ms;
 }
@@ -767,13 +857,13 @@ button {
   gap: 16px;
   padding: 9px 12px;
   border-radius: 8px;
-  background: #f5f3ff;
+  background: var(--surface-accent);
 }
 
 .shortcutRow > span {
   flex: 1;
   font-size: 13px;
-  color: #374151;
+  color: var(--text-strong);
   font-weight: 500;
 }
 
@@ -784,14 +874,14 @@ button {
 kbd {
   display: inline-flex;
   justify-content: center;
-  border: 1.5px solid #c4b5fd;
+  border: 1.5px solid var(--kbd-border);
   border-radius: 7px;
-  background: #ffffff;
+  background: var(--kbd-bg);
   padding: 4px 10px;
   font-size: 12px;
   font-weight: 700;
-  color: #4c1d95;
-  box-shadow: 0 2px 0 #c4b5fd;
+  color: var(--kbd-text);
+  box-shadow: 0 2px 0 var(--kbd-border);
   white-space: nowrap;
 }
 
@@ -801,7 +891,7 @@ kbd {
   display: grid;
   gap: 10px;
   font-size: 14px;
-  color: #374151;
+  color: var(--text-strong);
   line-height: 1.6;
   text-align: center;
 }
@@ -813,7 +903,7 @@ kbd {
 .aboutTitle {
   font-size: 22px;
   font-weight: 800;
-  color: #1e1b4b;
+  color: var(--text-heading);
 }
 
 .aboutVersion {
@@ -835,7 +925,7 @@ kbd {
   gap: 4px;
   border: 0;
   background: transparent;
-  color: #6d28d9;
+  color: var(--accent);
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
@@ -845,7 +935,7 @@ kbd {
 }
 
 .aboutLinkButton:hover {
-  background: #f5f3ff;
+  background: var(--surface-accent);
   text-decoration: underline;
 }
 
@@ -870,7 +960,7 @@ kbd {
   gap: 8px;
   border: 1.5px solid var(--border);
   border-radius: 10px;
-  background: #ffffff;
+  background: var(--surface);
   padding: 0 12px;
   transition: border-color 120ms, box-shadow 120ms;
 }
@@ -915,7 +1005,7 @@ kbd {
   gap: 0;
   border: 1.5px solid var(--border);
   border-radius: 10px;
-  background: #ffffff;
+  background: var(--surface);
   overflow: hidden;
   transition: border-color 160ms, box-shadow 160ms;
 }
@@ -930,8 +1020,8 @@ kbd {
   justify-content: flex-start;
   gap: 12px;
   padding: 8px 12px;
-  background: #f5f3ff;
-  color: #4c1d95;
+  background: var(--surface-accent);
+  color: var(--accent-strong);
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.2px;
@@ -945,7 +1035,7 @@ kbd {
   overflow: auto;
   white-space: pre-wrap;
   word-break: break-word;
-  background: #ffffff;
+  background: var(--surface);
   font-family: inherit;
   font-size: 13px;
   line-height: 1.5;
@@ -974,7 +1064,7 @@ kbd {
   gap: 12px;
   border: 1.5px solid var(--border);
   border-radius: 12px;
-  background: #ffffff;
+  background: var(--surface);
   padding: 10px 14px;
   box-shadow:
     0 8px 24px rgba(30, 27, 75, 0.14),
@@ -984,13 +1074,13 @@ kbd {
 }
 
 .toast-warning {
-  border-color: #fde68a;
-  background: linear-gradient(135deg, #fffbeb, #fef9e7);
+  border-color: var(--toast-warning-border);
+  background: var(--toast-warning-bg);
 }
 
 .toast-error {
-  border-color: #fca5a5;
-  background: linear-gradient(135deg, #fef2f2, #fff5f5);
+  border-color: var(--toast-error-border);
+  background: var(--toast-error-bg);
 }
 
 .toastClose {
@@ -1007,7 +1097,7 @@ kbd {
 }
 
 .toastClose:hover {
-  background: rgba(0, 0, 0, 0.08);
+  background: var(--overlay-hover);
 }
 
 /* ── Load Error Screen ───────────────────────────────────────── */
@@ -1018,7 +1108,7 @@ kbd {
   width: 100%;
   height: 100%;
   padding: 32px;
-  background: #ecedf5;
+  background: var(--app-bg);
 }
 
 .loadErrorPanel {
@@ -1036,7 +1126,7 @@ kbd {
   margin: 0;
   font-size: 18px;
   font-weight: 700;
-  color: #1e1b4b;
+  color: var(--text-heading);
 }
 
 .loadErrorMessage {

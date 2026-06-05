@@ -3,6 +3,7 @@ import { randomPaneColor } from "../utils/paneColors";
 import { ZOOM_DEFAULT } from "../utils/zoom";
 
 export const defaultSettings: AppSettings = {
+  dark: false,
   zen: false,
   topmost: false,
   editorFontFamily: "monospace",

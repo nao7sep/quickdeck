@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { clampNumber, normalizePanes, normalizeSettings } from "../../src/state/normalize";
 import { defaultSettings } from "../../src/state/defaults";
+import { ZOOM_MAX, ZOOM_MIN } from "../../src/utils/zoom";
 import type { AppSettings, Pane } from "../../src/types";
 
 const HEX = /^#[0-9a-f]{6}$/i;
@@ -56,6 +57,64 @@ describe("normalizeSettings", () => {
   it("falls back when a numeric setting is not finite", () => {
     const result = normalizeSettings({ ...defaultSettings, editorFontSize: Number.NaN });
     expect(result.editorFontSize).toBe(defaultSettings.editorFontSize);
+  });
+
+  it("drops unknown keys not in the schema", () => {
+    const result = normalizeSettings({
+      ...defaultSettings,
+      darkMode: true,
+      theme: "light",
+      uiZoomPercent: 69,
+    } as unknown as AppSettings);
+    expect(result).not.toHaveProperty("darkMode");
+    expect(result).not.toHaveProperty("theme");
+    expect(result).not.toHaveProperty("uiZoomPercent");
+    expect(Object.keys(result).sort()).toEqual(Object.keys(defaultSettings).sort());
+  });
+
+  it("emits keys in canonical order (dark, zen, topmost first)", () => {
+    expect(Object.keys(normalizeSettings({ ...defaultSettings }))).toEqual([
+      "dark",
+      "zen",
+      "topmost",
+      "editorFontFamily",
+      "editorFontSize",
+      "autosaveDelaySeconds",
+      "snapshotSearchPageSize",
+      "zoomLevel",
+    ]);
+  });
+
+  it("coerces the boolean toggles and falls back for non-booleans", () => {
+    expect(normalizeSettings({ ...defaultSettings, dark: true }).dark).toBe(true);
+    const bad = normalizeSettings({
+      ...defaultSettings,
+      dark: "yes",
+      topmost: 1,
+    } as unknown as AppSettings);
+    expect(bad.dark).toBe(defaultSettings.dark);
+    expect(bad.topmost).toBe(defaultSettings.topmost);
+  });
+
+  it("falls back for an empty or non-string font family", () => {
+    expect(normalizeSettings({ ...defaultSettings, editorFontFamily: "   " }).editorFontFamily).toBe(
+      defaultSettings.editorFontFamily,
+    );
+    expect(
+      normalizeSettings({ ...defaultSettings, editorFontFamily: 123 } as unknown as AppSettings)
+        .editorFontFamily,
+    ).toBe(defaultSettings.editorFontFamily);
+    expect(normalizeSettings({ ...defaultSettings, editorFontFamily: "Courier" }).editorFontFamily).toBe(
+      "Courier",
+    );
+  });
+
+  it("clamps zoomLevel into the supported range", () => {
+    expect(normalizeSettings({ ...defaultSettings, zoomLevel: 99 }).zoomLevel).toBe(ZOOM_MAX);
+    expect(normalizeSettings({ ...defaultSettings, zoomLevel: 0.01 }).zoomLevel).toBe(ZOOM_MIN);
+    expect(normalizeSettings({ ...defaultSettings, zoomLevel: Number.NaN }).zoomLevel).toBe(
+      defaultSettings.zoomLevel,
+    );
   });
 });
 

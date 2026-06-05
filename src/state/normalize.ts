@@ -8,6 +8,7 @@
 import type { AppSettings, Pane } from "../types";
 import { defaultSettings } from "./defaults";
 import { randomPaneColor } from "../utils/paneColors";
+import { ZOOM_MAX, ZOOM_MIN } from "../utils/zoom";
 
 export function clampNumber(value: number, min: number, max: number, fallback: number): number {
   if (!Number.isFinite(value)) {
@@ -17,22 +18,41 @@ export function clampNumber(value: number, min: number, max: number, fallback: n
   return Math.min(max, Math.max(min, value));
 }
 
+function asBoolean(value: unknown, fallback: boolean): boolean {
+  return typeof value === "boolean" ? value : fallback;
+}
+
 export function normalizeSettings(settings: AppSettings | null): AppSettings {
   if (!settings) {
     return defaultSettings;
   }
 
+  // Build the result from known keys only, in the canonical field order.
+  // Spreading the loaded object would carry hand-edited or renamed keys (e.g.
+  // a stale "darkMode"/"theme") back into every save; listing fields explicitly
+  // keeps config.json pinned to the current schema.
   return {
-    ...defaultSettings,
-    ...settings,
+    dark: asBoolean(settings.dark, defaultSettings.dark),
+    zen: asBoolean(settings.zen, defaultSettings.zen),
+    topmost: asBoolean(settings.topmost, defaultSettings.topmost),
+    editorFontFamily:
+      typeof settings.editorFontFamily === "string" && settings.editorFontFamily.trim().length > 0
+        ? settings.editorFontFamily
+        : defaultSettings.editorFontFamily,
     editorFontSize: clampNumber(settings.editorFontSize, 10, 32, defaultSettings.editorFontSize),
-    autosaveDelaySeconds: clampNumber(settings.autosaveDelaySeconds, 1, 60, defaultSettings.autosaveDelaySeconds),
+    autosaveDelaySeconds: clampNumber(
+      settings.autosaveDelaySeconds,
+      1,
+      60,
+      defaultSettings.autosaveDelaySeconds,
+    ),
     snapshotSearchPageSize: clampNumber(
       settings.snapshotSearchPageSize,
       5,
       200,
       defaultSettings.snapshotSearchPageSize,
     ),
+    zoomLevel: clampNumber(settings.zoomLevel, ZOOM_MIN, ZOOM_MAX, defaultSettings.zoomLevel),
   };
 }
 

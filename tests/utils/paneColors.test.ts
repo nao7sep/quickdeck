@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  darkPaneBackground,
   hslToHex,
   hueFromHex,
   minHueDistance,
@@ -16,6 +17,15 @@ function relativeLuminance(hex: string): number {
     return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
   });
   return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2];
+}
+
+// Chroma = max - min of the RGB channels (0..1); the perceptual "colorfulness".
+function chroma(hex: string): number {
+  const int = parseInt(hex.slice(1), 16);
+  const r = ((int >> 16) & 0xff) / 255;
+  const g = ((int >> 8) & 0xff) / 255;
+  const b = (int & 0xff) / 255;
+  return Math.max(r, g, b) - Math.min(r, g, b);
 }
 
 afterEach(() => {
@@ -79,5 +89,39 @@ describe("randomPaneColor", () => {
 
   it("ignores unparseable existing headers without throwing", () => {
     expect(() => randomPaneColor(["not-a-color", "#zzzzzz"])).not.toThrow();
+  });
+});
+
+describe("darkPaneBackground", () => {
+  const lightHues = [0, 35, 90, 150, 210, 270, 330];
+
+  it("reproduces the light background's exact chroma at a dark lightness", () => {
+    for (const hue of lightHues) {
+      // Same recipe randomPaneColor uses for the light pane background.
+      const light = hslToHex(hue, 0.55, 0.95);
+      const dark = darkPaneBackground(light);
+      // Same colorfulness as the pale light tint (not the old, vivid ~0.13).
+      expect(Math.abs(chroma(dark) - chroma(light))).toBeLessThan(0.01);
+    }
+  });
+
+  it("keeps the hue but renders it much darker", () => {
+    for (const hue of lightHues) {
+      const light = hslToHex(hue, 0.55, 0.95);
+      const dark = darkPaneBackground(light);
+      // Circular distance tolerates byte-rounding noise at low lightness/chroma.
+      expect(minHueDistance(hueFromHex(dark) as number, [hue])).toBeLessThan(3);
+      expect(relativeLuminance(dark)).toBeLessThan(0.06);
+      expect(relativeLuminance(dark)).toBeLessThan(relativeLuminance(light));
+    }
+  });
+
+  it("leaves a grey input grey (zero chroma in, zero chroma out)", () => {
+    expect(chroma(darkPaneBackground("#cccccc"))).toBeCloseTo(0, 5);
+  });
+
+  it("returns a valid dark hex for unparseable input without throwing", () => {
+    expect(() => darkPaneBackground("not-a-color")).not.toThrow();
+    expect(darkPaneBackground("not-a-color")).toMatch(HEX);
   });
 });

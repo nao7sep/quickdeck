@@ -16,6 +16,7 @@ export type SaveState = "saved" | "saving" | "unsaved" | "error";
 export type LoadStatus = "loading" | "ready" | "failed";
 
 export type AppSettings = {
+  dark: boolean;
   zen: boolean;
   topmost: boolean;
   editorFontFamily: string;
