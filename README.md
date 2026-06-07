@@ -59,7 +59,7 @@ Windows PowerShell:
 scripts/run.ps1
 ```
 
-The run scripts install dependencies, stop stale QuickDeck listeners on port `1621`, and launch Tauri development mode.
+The run scripts install dependencies, free Vite's dev port `1621` by stopping any process currently listening on it, and launch Tauri development mode.
 
 ## Build
 

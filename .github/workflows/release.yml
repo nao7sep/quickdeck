@@ -6,6 +6,10 @@ name: Release
 #
 # fail-fast is disabled so a Windows build failure never blocks the macOS one.
 #
+# The per-platform builds are gated on a single `test` job that runs the frontend
+# test suite (which includes the version-consistency check across the manifests).
+# A failing test therefore blocks the release before any installer is built.
+#
 # Two ways to trigger:
 #   - Push a tag like v0.1.0  -> builds both platforms and attaches ONLY the two
 #     installers (macOS .dmg + Windows .exe) to a single DRAFT GitHub Release for
@@ -28,7 +32,28 @@ permissions:
   contents: write
 
 jobs:
+  # Gate the release on the frontend test suite. This is platform-independent, so
+  # it runs once on Linux and both build jobs depend on it; a failure (including a
+  # version drift across the manifests) blocks the release before anything builds.
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: lts/*
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Run frontend tests
+        run: npm test
+
   build:
+    needs: test
     strategy:
       fail-fast: false
       matrix:
@@ -65,11 +90,15 @@ jobs:
         uses: tauri-apps/tauri-action@v0
 
       # Tauri names bundles {productName}_{version}_{arch}[-setup].{ext}; copy the
-      # one installer per platform to the minimal `quickdeck-<version>` form.
+      # one installer per platform to the minimal `quickdeck-<version>` form. The
+      # version is read from tauri.conf.json — the same field the bundle and the
+      # in-app About dialog derive from — so the installer filename matches the
+      # version reported inside the app. The gating `test` job has already
+      # confirmed that field is present and valid semver.
       - name: Rename installers to the minimal pattern
         shell: bash
         run: |
-          VERSION=$(node -p "require('./package.json').version")
+          VERSION=$(node -p "require('./src-tauri/tauri.conf.json').version")
           mkdir -p artifacts
           shopt -s nullglob
           for f in src-tauri/target/release/bundle/dmg/*.dmg; do

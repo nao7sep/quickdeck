@@ -3,8 +3,12 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
 // Single source of truth for the app version: the Tauri config (the version the
-// bundle/installer actually carries). Injected as __APP_VERSION__ so the About
-// dialog never drifts from the release.
+// bundle/installer actually carries, and the one the release workflow names the
+// installer file from). Injected as __APP_VERSION__ so the About dialog never
+// drifts from the release. package.json, package-lock.json, and Cargo.toml must
+// each carry a literal version for their own tooling; tests/version.test.ts
+// checks that they stay equal to this one, and the release workflow runs the test
+// suite, so a drift fails the release before any installer is built.
 const { version } = JSON.parse(
   readFileSync(new URL("./src-tauri/tauri.conf.json", import.meta.url), "utf8"),
 );
