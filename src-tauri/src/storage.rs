@@ -4,7 +4,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use chrono::Utc;
+use chrono::{SecondsFormat, Utc};
 use rusqlite::{params, params_from_iter, types::Value, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
@@ -147,9 +147,9 @@ fn search_snapshots_with_connection(
     }
 
     // id is the tiebreaker so pagination stays stable when several snapshots
-    // share a created_at_utc (it has only second granularity). Without it,
-    // LIMIT/OFFSET pages could repeat or skip same-second rows. Each id begins
-    // with its own timestamp, so `id desc` keeps newest-first within a second.
+    // share an identical created_at_utc. Without it, LIMIT/OFFSET pages could
+    // repeat or skip rows with the same timestamp. Each id begins with its own
+    // timestamp, so `id desc` keeps newest-first within a tie.
     sql.push_str(" order by created_at_utc desc, id desc limit ? offset ?");
     values.push(Value::Integer(fetch_limit as i64));
     values.push(Value::Integer(offset as i64));
@@ -217,10 +217,15 @@ fn create_snapshot_with_connection(
         });
     }
 
-    let created_at_utc = Utc::now().format("%Y%m%d-%H%M%S-utc").to_string();
+    let now = Utc::now();
+    // Data column: the canonical internal/serialized form (ISO 8601, exactly 3
+    // fractional digits, Z). The id keeps the compact filename-style stamp — an
+    // opaque, sortable, filesystem-safe key whose content-hash suffix makes it
+    // unique even within the same second.
+    let created_at_utc = now.to_rfc3339_opts(SecondsFormat::Millis, true);
     let id = format!(
         "{}-{}-{}",
-        created_at_utc,
+        now.format("%Y%m%d-%H%M%S-utc"),
         snapshot.pane_id,
         &content_hash[..12]
     );
@@ -425,6 +430,34 @@ mod tests {
     }
 
     #[test]
+    fn insert_writes_canonical_iso_created_at_utc() {
+        let conn = mem_db();
+        let id = create_snapshot_with_connection(&conn, input("pane-a", "hello"))
+            .unwrap()
+            .id
+            .expect("id present");
+        // The id keeps the compact filename-style stamp...
+        assert!(id.contains("-utc-pane-a-"), "unexpected id: {id}");
+
+        // ...but the created_at_utc column is canonical ISO 8601: exactly three
+        // fractional digits and a Z suffix (e.g. 2026-06-10T03:15:42.123Z).
+        let created_at_utc: String = conn
+            .query_row(
+                "select created_at_utc from snapshots where id = ?1",
+                params![id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(created_at_utc.len(), 24, "created_at_utc: {created_at_utc}");
+        assert!(created_at_utc.ends_with('Z'), "created_at_utc: {created_at_utc}");
+        assert_eq!(&created_at_utc[19..20], ".", "created_at_utc: {created_at_utc}");
+        assert!(
+            chrono::DateTime::parse_from_rfc3339(&created_at_utc).is_ok(),
+            "not rfc3339: {created_at_utc}"
+        );
+    }
+
+    #[test]
     fn exact_duplicate_in_same_pane_is_deduped() {
         let conn = mem_db();
         let first = create_snapshot_with_connection(&conn, input("p1", "same body")).unwrap();
@@ -487,7 +520,7 @@ mod tests {
     #[test]
     fn search_with_empty_or_blank_query_returns_nothing() {
         let conn = mem_db();
-        insert_row(&conn, "id1", "p1", "20260101-000001-utc", "hello world");
+        insert_row(&conn, "id1", "p1", "2026-01-01T00:00:01.000Z", "hello world");
 
         for query in ["", "   ", "\t\n"] {
             let result = search_snapshots_with_connection(&conn, query, 25, 0).unwrap();
@@ -499,7 +532,7 @@ mod tests {
     #[test]
     fn search_is_case_insensitive() {
         let conn = mem_db();
-        insert_row(&conn, "id1", "p1", "20260101-000001-utc", "The Quick Brown Fox");
+        insert_row(&conn, "id1", "p1", "2026-01-01T00:00:01.000Z", "The Quick Brown Fox");
         let result = search_snapshots_with_connection(&conn, "QUICK", 25, 0).unwrap();
         assert_eq!(result.rows.len(), 1);
         assert_eq!(result.rows[0].id, "id1");
@@ -508,8 +541,8 @@ mod tests {
     #[test]
     fn search_requires_all_terms() {
         let conn = mem_db();
-        insert_row(&conn, "both", "p1", "20260101-000002-utc", "alpha beta gamma");
-        insert_row(&conn, "one", "p1", "20260101-000001-utc", "alpha only");
+        insert_row(&conn, "both", "p1", "2026-01-01T00:00:02.000Z", "alpha beta gamma");
+        insert_row(&conn, "one", "p1", "2026-01-01T00:00:01.000Z", "alpha only");
 
         let result = search_snapshots_with_connection(&conn, "alpha gamma", 25, 0).unwrap();
         assert_eq!(result.rows.len(), 1);
@@ -519,8 +552,8 @@ mod tests {
     #[test]
     fn search_treats_like_wildcards_literally() {
         let conn = mem_db();
-        insert_row(&conn, "pct", "p1", "20260101-000002-utc", "50% off today");
-        insert_row(&conn, "plain", "p1", "20260101-000001-utc", "500 dollars");
+        insert_row(&conn, "pct", "p1", "2026-01-01T00:00:02.000Z", "50% off today");
+        insert_row(&conn, "plain", "p1", "2026-01-01T00:00:01.000Z", "500 dollars");
 
         // Without LIKE escaping, "50%" would match "500" too.
         let result = search_snapshots_with_connection(&conn, "50%", 25, 0).unwrap();
@@ -531,13 +564,27 @@ mod tests {
     #[test]
     fn search_orders_by_timestamp_descending() {
         let conn = mem_db();
-        insert_row(&conn, "old", "p1", "20260101-000001-utc", "note one");
-        insert_row(&conn, "new", "p1", "20260101-000003-utc", "note two");
-        insert_row(&conn, "mid", "p1", "20260101-000002-utc", "note three");
+        insert_row(&conn, "old", "p1", "2026-01-01T00:00:01.000Z", "note one");
+        insert_row(&conn, "new", "p1", "2026-01-01T00:00:03.000Z", "note two");
+        insert_row(&conn, "mid", "p1", "2026-01-01T00:00:02.000Z", "note three");
 
         let result = search_snapshots_with_connection(&conn, "note", 25, 0).unwrap();
         let ids: Vec<_> = result.rows.iter().map(|r| r.id.as_str()).collect();
         assert_eq!(ids, vec!["new", "mid", "old"]);
+    }
+
+    #[test]
+    fn search_orders_same_second_rows_by_subsecond_precision() {
+        let conn = mem_db();
+        // Same second, different milliseconds. Under the old second-granularity
+        // created_at_utc these tied and fell back to the id; the canonical ISO
+        // form now carries ms, so they order directly — newest (latest ms) first.
+        insert_row(&conn, "id-early", "p1", "2026-01-01T00:00:01.100Z", "note alpha");
+        insert_row(&conn, "id-late", "p1", "2026-01-01T00:00:01.900Z", "note beta");
+
+        let result = search_snapshots_with_connection(&conn, "note", 25, 0).unwrap();
+        let ids: Vec<_> = result.rows.iter().map(|r| r.id.as_str()).collect();
+        assert_eq!(ids, vec!["id-late", "id-early"]);
     }
 
     #[test]
@@ -548,7 +595,7 @@ mod tests {
                 &conn,
                 &format!("id{i}"),
                 "p1",
-                &format!("20260101-00000{}-utc", i + 1),
+                &format!("2026-01-01T00:00:0{}.000Z", i + 1),
                 &format!("term here {i}"),
             );
         }
@@ -565,9 +612,9 @@ mod tests {
     #[test]
     fn search_pagination_is_stable_across_same_second_rows() {
         let conn = mem_db();
-        // Four snapshots sharing one created_at_utc (second granularity), with
-        // distinct content so the (pane_id, content_hash) index is satisfied.
-        let ts = "20260101-000001-utc";
+        // Four snapshots sharing one created_at_utc, with distinct content so
+        // the (pane_id, content_hash) index is satisfied.
+        let ts = "2026-01-01T00:00:01.000Z";
         for i in 0..4 {
             insert_row(&conn, &format!("id{i}"), "p1", ts, &format!("term {i}"));
         }
@@ -604,7 +651,7 @@ mod tests {
                 &conn,
                 &format!("id{i}"),
                 "p1",
-                &format!("20260101-00000{}-utc", i + 1),
+                &format!("2026-01-01T00:00:0{}.000Z", i + 1),
                 &format!("term {i}"),
             );
         }

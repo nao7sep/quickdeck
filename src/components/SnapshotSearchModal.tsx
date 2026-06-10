@@ -4,6 +4,7 @@ import { searchSnapshots, type SnapshotSearchRow } from "../services/persistence
 import { useAppState } from "../state/AppStateContext";
 import { useComposing, isComposingKeyboardEvent } from "../hooks/useComposing";
 import { ModalBase } from "./ModalBase";
+import { formatSnapshotTimestamp } from "../utils/snapshotTimestamp";
 
 type SnapshotSearchModalProps = {
   onClose: () => void;
@@ -102,30 +103,5 @@ export function SnapshotSearchModal({ onClose }: SnapshotSearchModalProps) {
         ) : null}
       </div>
     </ModalBase>
-  );
-}
-
-// Snapshot ids encode the UTC instant as "YYYYMMDD-HHMMSS-utc". Convert that
-// into a deterministic local-time string ("YYYY-MM-DD HH:mm") so the format
-// stays the same across machine locales.
-function formatSnapshotTimestamp(rawUtc: string): string {
-  const match = /^(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})-utc$/i.exec(rawUtc);
-  if (!match) {
-    return rawUtc;
-  }
-
-  const [, y, mo, d, h, mi, s] = match;
-  const date = new Date(Date.UTC(
-    Number(y), Number(mo) - 1, Number(d),
-    Number(h), Number(mi), Number(s),
-  ));
-  if (Number.isNaN(date.getTime())) {
-    return rawUtc;
-  }
-
-  const pad = (value: number) => String(value).padStart(2, "0");
-  return (
-    `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ` +
-    `${pad(date.getHours())}:${pad(date.getMinutes())}`
   );
 }
