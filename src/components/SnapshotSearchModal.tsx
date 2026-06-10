@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Search } from "lucide-react";
 import { searchSnapshots, type SnapshotSearchRow } from "../services/persistence";
+import { logWarn, serializeError } from "../services/logger";
 import { useAppState } from "../state/AppStateContext";
 import { useComposing, isComposingKeyboardEvent } from "../hooks/useComposing";
 import { ModalBase } from "./ModalBase";
@@ -41,6 +42,7 @@ export function SnapshotSearchModal({ onClose }: SnapshotSearchModalProps) {
     } catch (err) {
       // Report modal-local failures inline; the modal stays usable, so there is
       // no need to spawn an app-level toast over it.
+      logWarn("snapshot search failed", { offset: nextOffset, error: serializeError(err) });
       setError(`Snapshot search failed: ${String(err)}`);
       if (nextOffset === 0) {
         setRows([]);

@@ -1,5 +1,6 @@
 import { isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { logWarn, serializeError } from "../services/logger";
 
 // Non-dismissible halt shown when persisted state could not be loaded.
 //
@@ -18,9 +19,11 @@ export function LoadErrorScreen({ error }: LoadErrorScreenProps) {
     if (isTauri()) {
       void getCurrentWindow()
         .destroy()
-        .catch(() => {
-          // If destroy fails the user can still force-quit from the OS;
-          // there is no safe in-app fallback that wouldn't risk a write.
+        .catch((error) => {
+          // If destroy fails the user can still force-quit from the OS; there is
+          // no safe in-app fallback that wouldn't risk a write. Record it so the
+          // failed quit is not silent.
+          logWarn("quit destroy failed", { error: serializeError(error) });
         });
     } else {
       window.close();

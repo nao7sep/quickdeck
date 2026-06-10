@@ -1,7 +1,7 @@
 use std::{
     fs::{self, File},
     io::Write,
-    path::{Path, PathBuf},
+    path::Path,
 };
 
 use chrono::{SecondsFormat, Utc};
@@ -9,9 +9,9 @@ use rusqlite::{params, params_from_iter, types::Value, Connection, OptionalExten
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use sha2::{Digest, Sha256};
-use tauri::{AppHandle, Manager};
+use tauri::AppHandle;
 
-const DATA_DIR_NAME: &str = ".quickdeck";
+use crate::paths::app_data_dir;
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -19,6 +19,9 @@ pub struct LoadedAppData {
     pub config: Option<JsonValue>,
     pub session: Option<JsonValue>,
     pub data_dir: String,
+    // Whether developer-only debug logging is on. Set by the command layer
+    // (see lib.rs) from logging::debug_enabled(); storage leaves it false.
+    pub debug_enabled: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -61,6 +64,7 @@ pub fn load_app_data(app: &AppHandle) -> Result<LoadedAppData, String> {
         config,
         session,
         data_dir: data_dir.to_string_lossy().into_owned(),
+        debug_enabled: false,
     })
 }
 
@@ -248,13 +252,6 @@ fn create_snapshot_with_connection(
         inserted: true,
         id: Some(id),
     })
-}
-
-fn app_data_dir(app: &AppHandle) -> Result<PathBuf, String> {
-    let home = app.path().home_dir().map_err(to_string_error)?;
-    let data_dir = home.join(DATA_DIR_NAME);
-    fs::create_dir_all(&data_dir).map_err(to_string_error)?;
-    Ok(data_dir)
 }
 
 pub fn count_snapshots(app: &AppHandle) -> Result<u64, String> {

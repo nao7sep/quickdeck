@@ -1,6 +1,7 @@
 import { ExternalLink } from "lucide-react";
 import { isTauri } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { logWarn, serializeError } from "../services/logger";
 import { ModalBase } from "./ModalBase";
 
 type AboutModalProps = {
@@ -13,7 +14,7 @@ const ISSUES_URL = "https://github.com/nao7sep/quickdeck/issues";
 export function AboutModal({ onClose }: AboutModalProps) {
   function open(url: string) {
     if (isTauri()) {
-      void openUrl(url).catch(() => {});
+      void openUrl(url).catch((error) => logWarn("open url failed", { url, error: serializeError(error) }));
     } else {
       window.open(url, "_blank", "noreferrer");
     }

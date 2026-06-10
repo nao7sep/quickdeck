@@ -12,6 +12,8 @@ export type LoadedAppData = {
   config: AppSettings | null;
   session: SessionState | null;
   dataDir: string;
+  // Whether developer-only debug logging is on (resolved by the Rust core).
+  debugEnabled: boolean;
 };
 
 export type SnapshotWriteInput = {
@@ -51,6 +53,7 @@ export async function loadAppData(): Promise<LoadedAppData> {
       config: null,
       session: null,
       dataDir: "Browser preview",
+      debugEnabled: import.meta.env.DEV,
     };
   }
 

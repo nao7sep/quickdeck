@@ -98,7 +98,14 @@ The data files are:
 - `config.json`
 - `session.json`
 - `snapshots.sqlite3` (plus `snapshots.sqlite3-wal` and `snapshots.sqlite3-shm` while the app is running, due to SQLite WAL mode)
+- `logs/` — one append-only session log per launch, named `yyyymmdd-hhmmss-utc.log`
 
 If `config.json` or `session.json` fails to load at startup, QuickDeck halts on an error screen rather than starting from default state. No saves run in this state, so the affected file is never overwritten before you can repair it.
+
+## Logs
+
+Each launch writes one fresh session log to `~/.quickdeck/logs/`, named by its UTC start time (e.g. `20260610-030818-utc.log`). Every line is a single JSON object — a `time`/`level`/`message` envelope plus event-specific fields. Logs are kept indefinitely (never rotated or auto-deleted); they are small and are exactly what's needed to reconstruct a past session when debugging. In the rare case two sessions start within the same second, the second file gets a numeric suffix (`…-utc-2.log`) so a launch never appends into another session's log.
+
+Levels are `info`, `warn`, and `error` (always recorded) plus `debug`, which is developer-only: it is emitted from a development build or when `QUICKDECK_DEBUG=1` is set, and is off in release builds. Field names such as `password`, `token`, and `apiKey` are redacted before a line is written (on the console fallback too). If the log file cannot be opened or written, QuickDeck falls back to the console and keeps running.
 
 QuickDeck does not include telemetry, remote sync, or network persistence.

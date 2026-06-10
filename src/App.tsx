@@ -21,6 +21,7 @@ import { SettingsModal } from "./components/SettingsModal";
 import { ShortcutsModal } from "./components/ShortcutsModal";
 import { ToastViewport } from "./components/ToastViewport";
 import { matchesShortcut } from "./shortcuts";
+import { logError, logWarn, serializeError } from "./services/logger";
 import { useAppState } from "./state/AppStateContext";
 import { isZoomIn, isZoomOut, isZoomReset, stepZoomIn, stepZoomOut, ZOOM_DEFAULT } from "./utils/zoom";
 
@@ -93,7 +94,7 @@ export function App() {
     if (isTauri()) {
       getCurrentWindow()
         .setTheme(settings.dark ? "dark" : "light")
-        .catch((e) => console.warn("[theme] Failed to set window theme:", e));
+        .catch((error) => logWarn("set window theme failed", { dark: settings.dark, error: serializeError(error) }));
     }
   }, [settings.dark]);
 
@@ -102,7 +103,7 @@ export function App() {
     if (!isTauri()) return undefined;
     getCurrentWebview()
       .setZoom(settings.zoomLevel)
-      .catch((e) => console.warn("[zoom] Failed to set zoom:", e));
+      .catch((error) => logWarn("set zoom failed", { zoomLevel: settings.zoomLevel, error: serializeError(error) }));
   }, [settings.zoomLevel]);
 
   // Zoom keyboard shortcuts — separate effect with its own document listener so
@@ -241,6 +242,7 @@ export function App() {
 
     const appWindow = getCurrentWindow();
     void appWindow.setAlwaysOnTop(settings.topmost).catch((error) => {
+      logWarn("set always-on-top failed", { topmost: settings.topmost, error: serializeError(error) });
       showToast("warning", `Could not update always-on-top: ${String(error)}`);
     });
 
@@ -275,16 +277,24 @@ export function App() {
     let closeUnlisten: (() => void) | undefined;
     let closeInFlight = false;
 
+    // The clean-shutdown line itself is logged Rust-side on RunEvent (see
+    // lib.rs): a frontend log here would be a fire-and-forget IPC racing the
+    // window teardown, so it could not be relied on to persist. The failure
+    // paths below only log when the close is aborted, in which case the window
+    // stays open and the forward has time to land.
     async function persistCloseState(): Promise<boolean> {
       try {
         await snapshotAllPanesRef.current("app_close");
-      } catch {
-        // Insurance snapshots are best-effort; proceed to the real save.
+      } catch (error) {
+        // Insurance snapshots are best-effort; proceed to the real save, but
+        // record that the close-time snapshot did not land.
+        logWarn("close snapshot failed", { error: serializeError(error) });
       }
       try {
         await saveNowRef.current();
         return true;
       } catch (error) {
+        logError("save on close failed", { error: serializeError(error) });
         showBlockingErrorRef.current("Could Not Save Data", String(error));
         return false;
       }
@@ -317,6 +327,7 @@ export function App() {
           }
           await appWindow.destroy();
         } catch (error) {
+          logError("close window failed", { error: serializeError(error) });
           showToastRef.current("error", `Could not close window: ${String(error)}`);
         } finally {
           closeInFlight = false;
@@ -324,6 +335,7 @@ export function App() {
       }).then((unlisten) => {
         closeUnlisten = unlisten;
       }).catch((error) => {
+        logWarn("register close handler failed", { error: serializeError(error) });
         showToastRef.current("warning", `Could not register close handler: ${String(error)}`);
       });
     }

@@ -22,6 +22,7 @@ import {
   saveConfig,
   saveSession,
 } from "../services/persistence";
+import { logError, logInfo, logWarn, serializeError, setDebugEnabled } from "../services/logger";
 import type {
   AppSettings,
   BlockingError,
@@ -126,16 +127,27 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
           return;
         }
 
+        // Adopt the authoritative debug gate before logging anything else.
+        setDebugEnabled(data.debugEnabled);
         setDataDir(data.dataDir);
-        setSettings(normalizeSettings(data.config));
+        const effectiveSettings = normalizeSettings(data.config);
+        setSettings(effectiveSettings);
+        // Startup baseline: record the key effective configuration.
+        logInfo("config loaded", {
+          settings: effectiveSettings,
+          hasSession: data.session !== null,
+          dataDir: data.dataDir,
+        });
 
         try {
           const initialCount = await countSnapshots();
           if (!canceled) {
             setSnapshotCount(initialCount);
           }
-        } catch {
-          // Snapshot count is informational only; ignore failures.
+        } catch (error) {
+          // Snapshot count is informational only — recover and continue — but a
+          // failure here is still an unexpected error worth recording.
+          logWarn("snapshot count failed", { error: serializeError(error) });
         }
 
         const loadedPanes = normalizePanes(data.session?.panes);
@@ -155,6 +167,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
           // The App shell renders a non-dismissible error screen for "failed",
           // so the user's existing files on disk are never overwritten by the
           // default in-memory state.
+          logError("load failed", { error: serializeError(error) });
           setLoadError(String(error));
           setLoadStatus("failed");
         }
@@ -193,6 +206,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     setPanes((current) => appendPane(current, paneId));
     setActivePaneId(paneId);
     markUnsaved();
+    logInfo("pane added", { paneId });
   }, [markUnsaved]);
 
   const deletePane = useCallback(
@@ -203,6 +217,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         case "not-found":
           return;
         case "blocked-last":
+          // Expected, anticipated outcomes surfaced to the user as toasts — not
+          // logged incidents.
           showToast("warning", "At least one pane must remain.");
           return;
         case "blocked-non-empty":
@@ -212,6 +228,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
           setPanes(outcome.panes);
           setActivePaneId(outcome.nextActivePaneId);
           markUnsaved();
+          logInfo("pane deleted", { paneId });
           return;
       }
     },
@@ -220,15 +237,18 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
 
   const movePane = useCallback(
     (paneId: string, direction: -1 | 1) => {
-      setPanes((current) => {
-        const next = reorderPane(current, paneId, direction);
-        if (next !== current) {
-          markUnsaved();
-        }
-        return next;
-      });
+      // Decide and emit side effects outside the state updater: updaters must be
+      // pure (StrictMode double-invokes them in development), so logging or
+      // marking-dirty inside one would fire twice per move.
+      const next = reorderPane(panes, paneId, direction);
+      if (next === panes) {
+        return;
+      }
+      setPanes(next);
+      markUnsaved();
+      logInfo("pane moved", { paneId, direction });
     },
-    [markUnsaved],
+    [markUnsaved, panes],
   );
 
   const recordSnapshot = useCallback(
@@ -250,6 +270,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
           }
         })
         .catch((error) => {
+          logWarn("snapshot not saved", { trigger, error: serializeError(error) });
           showToast("warning", `Snapshot was not saved: ${String(error)}`);
         });
     },
@@ -288,6 +309,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     setSettings(nextSettings);
     dirtyCounterRef.current += 1;
     setSaveState("unsaved");
+    logInfo("settings updated", { settings: nextSettings });
   }, []);
 
   // Throws on failure. Each caller decides whether to surface a modal and/or
@@ -320,6 +342,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
 
     const timeoutId = window.setTimeout(() => {
       saveNow().catch((error) => {
+        logError("autosave failed", { error: serializeError(error) });
         showBlockingError("Could Not Save Data", String(error));
       });
     }, Math.max(1, settings.autosaveDelaySeconds) * 1000);
