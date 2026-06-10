@@ -84,9 +84,7 @@ npm run typecheck   # type-check the app and the test files
 npm test            # run the suite
 ```
 
-`npm run typecheck` checks both the app (`tsconfig.json`) and the test files
-(`tsconfig.test.json`) — the tests stay out of the shipped build but are still type-checked,
-since Vitest runs them without type-checking.
+`npm run typecheck` checks both the app (`tsconfig.json`) and the test files (`tsconfig.test.json`) — the tests stay out of the shipped build but are still type-checked, since Vitest runs them without type-checking.
 
 Rust backend tests (snapshot storage layer):
 
