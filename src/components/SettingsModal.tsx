@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { useAppState } from "../state/AppStateContext";
 import type { AppSettings } from "../types";
+import { SETTINGS_BOUNDS, isSettingsDraftValid, normalizeSettings } from "../state/normalize";
 import { ConfirmCloseModal } from "./ConfirmCloseModal";
 import { ModalBase } from "./ModalBase";
 
@@ -20,6 +21,8 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
     return keys.some((k) => draft[k] !== settings[k]);
   }, [draft, settings]);
 
+  const isValid = useMemo(() => isSettingsDraftValid(draft), [draft]);
+
   function requestClose() {
     if (confirmingClose) {
       return;
@@ -28,6 +31,14 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
       setConfirmingClose(true);
       return;
     }
+    onClose();
+  }
+
+  function save() {
+    // Reuse the load-path normalizer so the form and disk agree on the canonical
+    // shape (trimmed font, clamped bounds). zoomLevel is owned outside the modal,
+    // so commit the current value rather than the (possibly stale) draft copy.
+    updateSettings({ ...normalizeSettings(draft), zoomLevel: settings.zoomLevel });
     onClose();
   }
 
@@ -49,10 +60,8 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
             <button
               className="primaryButton"
               type="button"
-              onClick={() => {
-                updateSettings({ ...normalizeDraft(draft), zoomLevel: settings.zoomLevel });
-                onClose();
-              }}
+              disabled={!isDirty || !isValid}
+              onClick={save}
             >
               Save Settings
             </button>
@@ -94,31 +103,46 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
             />
           </label>
           <label>
-            <span>Editor font size (px)</span>
+            <span>
+              Editor font size (px){" "}
+              <span className="fieldRange">
+                {SETTINGS_BOUNDS.editorFontSize.min}–{SETTINGS_BOUNDS.editorFontSize.max}
+              </span>
+            </span>
             <input
               type="number"
-              min={10}
-              max={32}
+              min={SETTINGS_BOUNDS.editorFontSize.min}
+              max={SETTINGS_BOUNDS.editorFontSize.max}
               value={draft.editorFontSize}
               onChange={(event) => setField("editorFontSize", Number(event.target.value))}
             />
           </label>
           <label>
-            <span>Autosave delay after edits (seconds)</span>
+            <span>
+              Autosave delay after edits (seconds){" "}
+              <span className="fieldRange">
+                {SETTINGS_BOUNDS.autosaveDelaySeconds.min}–{SETTINGS_BOUNDS.autosaveDelaySeconds.max}
+              </span>
+            </span>
             <input
               type="number"
-              min={1}
-              max={60}
+              min={SETTINGS_BOUNDS.autosaveDelaySeconds.min}
+              max={SETTINGS_BOUNDS.autosaveDelaySeconds.max}
               value={draft.autosaveDelaySeconds}
               onChange={(event) => setField("autosaveDelaySeconds", Number(event.target.value))}
             />
           </label>
           <label>
-            <span>Snapshot search results per page</span>
+            <span>
+              Snapshot search results per page{" "}
+              <span className="fieldRange">
+                {SETTINGS_BOUNDS.snapshotSearchPageSize.min}–{SETTINGS_BOUNDS.snapshotSearchPageSize.max}
+              </span>
+            </span>
             <input
               type="number"
-              min={5}
-              max={200}
+              min={SETTINGS_BOUNDS.snapshotSearchPageSize.min}
+              max={SETTINGS_BOUNDS.snapshotSearchPageSize.max}
               value={draft.snapshotSearchPageSize}
               onChange={(event) => setField("snapshotSearchPageSize", Number(event.target.value))}
             />
@@ -130,22 +154,4 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
       ) : null}
     </>
   );
-}
-
-function normalizeDraft(settings: AppSettings): AppSettings {
-  return {
-    ...settings,
-    editorFontFamily: settings.editorFontFamily.trim() || "monospace",
-    editorFontSize: clamp(settings.editorFontSize, 10, 32),
-    autosaveDelaySeconds: clamp(settings.autosaveDelaySeconds, 1, 60),
-    snapshotSearchPageSize: clamp(settings.snapshotSearchPageSize, 5, 200),
-  };
-}
-
-function clamp(value: number, min: number, max: number): number {
-  if (!Number.isFinite(value)) {
-    return min;
-  }
-
-  return Math.min(max, Math.max(min, value));
 }

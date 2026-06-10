@@ -10,11 +10,12 @@ type SnapshotSearchModalProps = {
 };
 
 export function SnapshotSearchModal({ onClose }: SnapshotSearchModalProps) {
-  const { settings, showToast } = useAppState();
+  const { settings } = useAppState();
   const [query, setQuery] = useState("");
   const [rows, setRows] = useState<SnapshotSearchRow[]>([]);
   const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const composing = useComposing();
 
   async function runSearch(nextOffset: number) {
@@ -22,10 +23,12 @@ export function SnapshotSearchModal({ onClose }: SnapshotSearchModalProps) {
     if (trimmedQuery.length === 0) {
       setRows([]);
       setHasMore(false);
+      setError(null);
       return;
     }
 
     setLoading(true);
+    setError(null);
     try {
       const result = await searchSnapshots(
         trimmedQuery,
@@ -34,8 +37,14 @@ export function SnapshotSearchModal({ onClose }: SnapshotSearchModalProps) {
       );
       setRows((current) => (nextOffset === 0 ? result.rows : [...current, ...result.rows]));
       setHasMore(result.hasMore);
-    } catch (error) {
-      showToast("warning", `Snapshot search failed: ${String(error)}`);
+    } catch (err) {
+      // Report modal-local failures inline; the modal stays usable, so there is
+      // no need to spawn an app-level toast over it.
+      setError(`Snapshot search failed: ${String(err)}`);
+      if (nextOffset === 0) {
+        setRows([]);
+        setHasMore(false);
+      }
     } finally {
       setLoading(false);
     }
@@ -76,18 +85,16 @@ export function SnapshotSearchModal({ onClose }: SnapshotSearchModalProps) {
         </div>
       </div>
       <div className="snapshotResults">
-        {rows.length === 0 ? (
-          <p className="mutedText">No snapshot results.</p>
-        ) : (
-          rows.map((row) => (
-            <article className="snapshotResult" key={row.id}>
-              <header>
-                <span>{formatSnapshotTimestamp(row.createdAtUtc)}</span>
-              </header>
-              <pre>{row.content}</pre>
-            </article>
-          ))
-        )}
+        {error ? <p className="errorText" role="alert">{error}</p> : null}
+        {!error && rows.length === 0 ? <p className="mutedText">No snapshot results.</p> : null}
+        {rows.map((row) => (
+          <article className="snapshotResult" key={row.id}>
+            <header>
+              <span>{formatSnapshotTimestamp(row.createdAtUtc)}</span>
+            </header>
+            <pre>{row.content}</pre>
+          </article>
+        ))}
         {hasMore ? (
           <button className="secondaryButton loadMoreButton" type="button" disabled={loading} onClick={() => void runSearch(rows.length)}>
             Load More

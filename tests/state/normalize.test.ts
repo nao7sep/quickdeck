@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { clampNumber, normalizePanes, normalizeSettings } from "../../src/state/normalize";
+import {
+  SETTINGS_BOUNDS,
+  clampNumber,
+  isSettingsDraftValid,
+  normalizePanes,
+  normalizeSettings,
+} from "../../src/state/normalize";
 import { defaultSettings } from "../../src/state/defaults";
 import { ZOOM_MAX, ZOOM_MIN } from "../../src/utils/zoom";
 import type { AppSettings, Pane } from "../../src/types";
@@ -109,6 +115,12 @@ describe("normalizeSettings", () => {
     );
   });
 
+  it("trims surrounding whitespace from a non-blank font family", () => {
+    expect(normalizeSettings({ ...defaultSettings, editorFontFamily: "  Menlo  " }).editorFontFamily).toBe(
+      "Menlo",
+    );
+  });
+
   it("clamps zoomLevel into the supported range", () => {
     expect(normalizeSettings({ ...defaultSettings, zoomLevel: 99 }).zoomLevel).toBe(ZOOM_MAX);
     expect(normalizeSettings({ ...defaultSettings, zoomLevel: 0.01 }).zoomLevel).toBe(ZOOM_MIN);
@@ -116,6 +128,70 @@ describe("normalizeSettings", () => {
       defaultSettings.zoomLevel,
     );
   });
+});
+
+describe("isSettingsDraftValid", () => {
+  it("accepts the default settings", () => {
+    expect(isSettingsDraftValid(defaultSettings)).toBe(true);
+  });
+
+  it("accepts values exactly at the inclusive bounds", () => {
+    expect(
+      isSettingsDraftValid({
+        ...defaultSettings,
+        editorFontSize: SETTINGS_BOUNDS.editorFontSize.min,
+        autosaveDelaySeconds: SETTINGS_BOUNDS.autosaveDelaySeconds.max,
+        snapshotSearchPageSize: SETTINGS_BOUNDS.snapshotSearchPageSize.min,
+      }),
+    ).toBe(true);
+  });
+
+  it("rejects values just outside the bounds", () => {
+    expect(isSettingsDraftValid({ ...defaultSettings, editorFontSize: 9 })).toBe(false);
+    expect(isSettingsDraftValid({ ...defaultSettings, editorFontSize: 33 })).toBe(false);
+    expect(isSettingsDraftValid({ ...defaultSettings, snapshotSearchPageSize: 4 })).toBe(false);
+  });
+
+  it("rejects zero, the value an emptied number input produces", () => {
+    expect(isSettingsDraftValid({ ...defaultSettings, editorFontSize: 0 })).toBe(false);
+  });
+
+  it("rejects non-finite values", () => {
+    expect(isSettingsDraftValid({ ...defaultSettings, autosaveDelaySeconds: Number.NaN })).toBe(false);
+    expect(
+      isSettingsDraftValid({ ...defaultSettings, snapshotSearchPageSize: Number.POSITIVE_INFINITY }),
+    ).toBe(false);
+  });
+});
+
+// The form (isSettingsDraftValid + input min/max) and the load path
+// (normalizeSettings clamp) read the same SETTINGS_BOUNDS, so they can never
+// disagree about what is acceptable. This guards against the form accepting a
+// value the load path would silently clamp away on the next launch.
+describe("SETTINGS_BOUNDS agreement between validation and clamping", () => {
+  const keys = ["editorFontSize", "autosaveDelaySeconds", "snapshotSearchPageSize"] as const;
+
+  for (const key of keys) {
+    const { min, max } = SETTINGS_BOUNDS[key];
+
+    it(`treats ${key} at its max as valid and leaves it unchanged`, () => {
+      const draft = { ...defaultSettings, [key]: max };
+      expect(isSettingsDraftValid(draft)).toBe(true);
+      expect(normalizeSettings(draft)[key]).toBe(max);
+    });
+
+    it(`rejects ${key} above its max and clamps it to the same max`, () => {
+      const draft = { ...defaultSettings, [key]: max + 1 };
+      expect(isSettingsDraftValid(draft)).toBe(false);
+      expect(normalizeSettings(draft)[key]).toBe(max);
+    });
+
+    it(`rejects ${key} below its min and clamps it to the same min`, () => {
+      const draft = { ...defaultSettings, [key]: min - 1 };
+      expect(isSettingsDraftValid(draft)).toBe(false);
+      expect(normalizeSettings(draft)[key]).toBe(min);
+    });
+  }
 });
 
 describe("normalizePanes", () => {

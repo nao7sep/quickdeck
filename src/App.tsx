@@ -111,6 +111,8 @@ export function App() {
   useEffect(() => { zoomLevelRef.current = settings.zoomLevel; }, [settings.zoomLevel]);
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
+      // Zoom is window chrome and stays global even while a modal is open; the
+      // modal key handlers (Escape/Tab) never overlap the zoom keys.
       if (isZoomIn(e)) {
         e.preventDefault();
         updateSettings({ ...settingsRef.current, zoomLevel: stepZoomIn(zoomLevelRef.current) });

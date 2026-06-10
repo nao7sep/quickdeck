@@ -47,6 +47,14 @@
   /* Window chrome (title-bar strip + status bar) — constant across themes. */
   --chrome-gradient: linear-gradient(135deg, #1e1b4b 0%, #312e81 50%, #4c1d95 100%);
 
+  /* Explicit stacking layers. Toasts sit above menus/popovers but below modals
+     so a toast can never cover a modal's actions. Stacked dialogs (e.g. a
+     dirty-close confirmation over Settings) share the modal layer and order by
+     DOM order plus the modal stack. */
+  --z-menu: 20;
+  --z-toast: 30;
+  --z-modal: 50;
+
   /* Per-pane CSS custom properties (set inline per pane) */
   --pane-color: #7c3aed;
   --pane-bg: #f5f3ff;
@@ -296,7 +304,7 @@ button {
 
 .paneSwitcherPanel {
   position: absolute;
-  z-index: 20;
+  z-index: var(--z-menu);
   left: 0;
   bottom: 38px;
   display: grid;
@@ -402,7 +410,7 @@ button {
 
 .menuPanel {
   position: absolute;
-  z-index: 20;
+  z-index: var(--z-menu);
   right: 0;
   display: grid;
   width: 210px;
@@ -641,7 +649,7 @@ button {
 .modalOverlay {
   position: fixed;
   inset: 0;
-  z-index: 50;
+  z-index: var(--z-modal);
   display: grid;
   place-items: center;
   padding: 24px;
@@ -659,6 +667,13 @@ button {
   background: var(--surface);
   box-shadow: 0 32px 80px rgba(30, 27, 75, 0.32);
   overflow: hidden;
+}
+
+/* The surface is a programmatic focus target (focused on open when there is no
+   inner control, and as the trap fallback). It is not an interactive control,
+   so it should not paint a focus ring; real controls keep their own. */
+.modalSurface:focus {
+  outline: none;
 }
 
 .modalHeader,
@@ -824,6 +839,23 @@ button {
   outline: none;
   border-color: #8b5cf6;
   box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.15);
+}
+
+/* Allowed-range hint shown in numeric field labels (e.g. "10–32"). */
+.fieldRange {
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+/* An out-of-range numeric value is what disables Save; flag the offending
+   field so the disabled commit button is not unexplained. */
+.formGrid input[type="number"]:invalid {
+  border-color: var(--danger);
+}
+
+.formGrid input[type="number"]:invalid:focus {
+  border-color: var(--danger);
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.15);
 }
 
 .formGrid input[type="range"] {
@@ -1051,7 +1083,7 @@ kbd {
   position: fixed;
   right: 16px;
   bottom: 16px;
-  z-index: 80;
+  z-index: var(--z-toast);
   display: grid;
   gap: 8px;
   width: min(360px, calc(100vw - 32px));
