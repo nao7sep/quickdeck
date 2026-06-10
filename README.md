@@ -80,8 +80,13 @@ npm run tauri build
 Frontend unit tests (Vitest):
 
 ```sh
-npm test
+npm run typecheck   # type-check the app and the test files
+npm test            # run the suite
 ```
+
+`npm run typecheck` checks both the app (`tsconfig.json`) and the test files
+(`tsconfig.test.json`) — the tests stay out of the shipped build but are still type-checked,
+since Vitest runs them without type-checking.
 
 Rust backend tests (snapshot storage layer):
 
@@ -104,7 +109,7 @@ If `config.json` or `session.json` fails to load at startup, QuickDeck halts on 
 
 ## Logs
 
-Each launch writes one fresh session log to `~/.quickdeck/logs/`, named by its UTC start time (e.g. `20260610-030818-utc.log`). Every line is a single JSON object — a `time`/`level`/`message` envelope plus event-specific fields. Logs are kept indefinitely (never rotated or auto-deleted); they are small and are exactly what's needed to reconstruct a past session when debugging. In the rare case two sessions start within the same second, the second file gets a numeric suffix (`…-utc-2.log`) so a launch never appends into another session's log.
+Each launch writes one fresh session log to `~/.quickdeck/logs/`, named by its UTC start time (e.g. `20260610-030818-utc.log`) — strictly that stamp, with no millisecond, pid, or collision suffix. Every line is a single JSON object — a `time`/`level`/`message` envelope plus event-specific fields. Logs are kept indefinitely (never rotated or auto-deleted); they are small and are exactly what's needed to reconstruct a past session when debugging. Two launches in the same UTC second would collide on the filename, which is accepted and not engineered around — QuickDeck does not expect to start twice within one second (and like its config/data files, the log is written without locking).
 
 Levels are `info`, `warn`, and `error` (always recorded) plus `debug`, which is developer-only: it is emitted from a development build or when `QUICKDECK_DEBUG=1` is set, and is off in release builds. Field names such as `password`, `token`, and `apiKey` are redacted before a line is written (on the console fallback too). If the log file cannot be opened or written, QuickDeck falls back to the console and keeps running.
 

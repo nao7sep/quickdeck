@@ -11,7 +11,6 @@ use std::{
     collections::HashSet,
     fs::{File, OpenOptions},
     io::{BufWriter, Write},
-    path::Path,
     sync::{Mutex, OnceLock},
     time::Instant,
 };
@@ -75,11 +74,6 @@ struct Logger {
 
 static LOGGER: OnceLock<Logger> = OnceLock::new();
 
-// Upper bound on the per-launch filename-disambiguation retry (see
-// create_unique_session_file). Reaching it means ~this many sessions already
-// started in the same UTC second — far beyond anything real.
-const MAX_SESSION_FILE_ATTEMPTS: u32 = 100;
-
 // Seeded with the obvious secret-bearing names; extend here as needed.
 fn default_denied_keys() -> HashSet<String> {
     ["apikey", "authorization", "token", "password", "secret"]
@@ -134,35 +128,17 @@ pub fn init(app: &AppHandle, version: &str) {
 
 fn open_session_file(app: &AppHandle) -> Result<File, String> {
     let dir = paths::logs_dir(app)?;
-    // UTC session-start stamp and nothing else (see timestamp-conventions).
+    // UTC session-start stamp and nothing else — strictly `yyyymmdd-hhmmss-utc.log`
+    // (see timestamp-conventions). `create_new` so a launch never appends into an
+    // existing file; a same-second collision between two launches is accepted, not
+    // engineered around — the create simply fails and `init` degrades to stderr.
     let stamp = Utc::now().format("%Y%m%d-%H%M%S-utc").to_string();
-    create_unique_session_file(&dir, &stamp)
-}
-
-// Creates a brand-new file for this launch — `create_new` (atomic exclusive
-// create), so two launches in the same UTC second can never append into one
-// another's session file. On the rare name clash it disambiguates with a numeric
-// suffix (`<stamp>-2.log`, `<stamp>-3.log`, ...), preserving the one-file-per-
-// launch invariant while keeping the plain stamp as the common case.
-fn create_unique_session_file(dir: &Path, stamp: &str) -> Result<File, String> {
-    for n in 1..=MAX_SESSION_FILE_ATTEMPTS {
-        let name = if n == 1 {
-            format!("{stamp}.log")
-        } else {
-            format!("{stamp}-{n}.log")
-        };
-        let path = dir.join(&name);
-        match OpenOptions::new().create_new(true).write(true).open(&path) {
-            Ok(file) => return Ok(file),
-            Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => continue,
-            Err(err) => return Err(format!("{}: {}", path.display(), err)),
-        }
-    }
-    Err(format!(
-        "could not create a unique session log in {} after {} attempts",
-        dir.display(),
-        MAX_SESSION_FILE_ATTEMPTS
-    ))
+    let path = dir.join(format!("{stamp}.log"));
+    OpenOptions::new()
+        .create_new(true)
+        .write(true)
+        .open(&path)
+        .map_err(|err| format!("{}: {}", path.display(), err))
 }
 
 // The authoritative debug gate, exposed so the command layer can hand the
@@ -592,29 +568,5 @@ mod tests {
             .read_to_string(&mut contents)
             .unwrap();
         assert_eq!(contents, "{\"a\":1}\n{\"b\":2}\n");
-    }
-
-    #[test]
-    fn create_unique_session_file_never_reuses_an_existing_name() {
-        let dir = tempfile::tempdir().unwrap();
-        let stamp = "20260101-000000-utc";
-
-        // Two launches resolving to the same second must get distinct files —
-        // the second one must NOT append into the first session's file.
-        let _first = create_unique_session_file(dir.path(), stamp).unwrap();
-        let _second = create_unique_session_file(dir.path(), stamp).unwrap();
-
-        let mut names: Vec<String> = std::fs::read_dir(dir.path())
-            .unwrap()
-            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
-            .collect();
-        names.sort();
-        assert_eq!(
-            names,
-            vec![
-                "20260101-000000-utc-2.log".to_string(),
-                "20260101-000000-utc.log".to_string(),
-            ]
-        );
     }
 }
