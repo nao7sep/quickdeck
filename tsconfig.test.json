@@ -1,0 +1,7 @@
+{
+  // Typechecks the test files (their subjects are pulled in via imports). Also
+  // includes src's ambient .d.ts (e.g. vite-env.d.ts, type shims) so globals and
+  // module declarations resolve the same way they do for the app.
+  "extends": "./tsconfig.json",
+  "include": ["src/**/*.d.ts", "tests/**/*.ts"]
+}

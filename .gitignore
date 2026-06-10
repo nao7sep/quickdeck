@@ -1,14 +1,15 @@
-# macOS
-.DS_Store
-
-# dependencies
+# Dependencies
 node_modules/
 
-# builds
+# Build outputs and caches
 dist/
 dist-ssr/
 src-tauri/target/
 src-tauri/gen/
+*.tsbuildinfo
 
-# logs
+# Logs
 *.log
+
+# OS files
+.DS_Store
