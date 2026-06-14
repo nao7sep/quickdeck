@@ -4,6 +4,7 @@ import type { Pane } from "../types";
 import { useAppState } from "../state/AppStateContext";
 import { getTextCounts } from "../utils/counts";
 import { darkPaneBackground } from "../utils/paneColors";
+import { shouldPullEditorFocus } from "../utils/paneFocus";
 
 type PaneViewProps = {
   pane: Pane;
@@ -25,13 +26,19 @@ export function PaneView({ pane }: PaneViewProps) {
   const active = pane.id === activePaneId;
   const counts = getTextCounts(pane.content);
 
-  // When this pane becomes active, focus the textarea unless the user clicked
-  // into this pane's own title input (in which case leave it alone).
+  // When this pane becomes active, pull focus into the textarea so Cmd/Ctrl+Arrow
+  // and click-to-edit land ready to type — but never steal focus from a control
+  // outside the pane deck (most importantly the zen-mode pane switcher, a
+  // follows-focus tablist in the status bar). The decision lives in a pure helper
+  // so it is unit-tested; the DOM focus move itself is verified by manual QA.
   useEffect(() => {
-    if (active && editorRef.current && document.activeElement !== editorRef.current) {
-      if (document.activeElement !== titleRef.current) {
-        editorRef.current.focus();
-      }
+    const editor = editorRef.current;
+    if (!active || !editor) {
+      return;
+    }
+    const deck = editor.closest<HTMLElement>(".paneDeck");
+    if (shouldPullEditorFocus(document.activeElement, editor, titleRef.current, deck)) {
+      editor.focus();
     }
   }, [active]);
 
