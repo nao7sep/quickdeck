@@ -25,7 +25,7 @@ export function PaneSwitcher({ panes, activePaneId, onSelect }: PaneSwitcherProp
     }
 
     function handleEscape(event: KeyboardEvent) {
-      if (event.key === "Escape") {
+      if (event.key === "Escape" && !event.isComposing && (event as { keyCode?: number }).keyCode !== 229) {
         setOpen(false);
       }
     }

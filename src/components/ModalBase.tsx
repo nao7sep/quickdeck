@@ -57,6 +57,7 @@ export function ModalBase({ title, children, footer, closeDisabled = false, onRe
       }
 
       if (event.key === "Escape") {
+        if (event.isComposing || (event as { keyCode?: number }).keyCode === 229) return;
         event.preventDefault();
         event.stopImmediatePropagation();
         if (!closeDisabled) {
