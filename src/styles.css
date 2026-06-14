@@ -339,6 +339,16 @@ button {
   color: var(--text-onhover);
 }
 
+/* Keyboard focus cursor for the tablist: a clip-safe background fill (these
+   flat, borderless tabs live in an overflow-auto panel that would clip a focus
+   ring into fragments), distinct from the persistent selected fill below. */
+.paneSwitcherOption:focus-visible {
+  outline: none;
+  background: var(--surface-hover);
+  color: var(--text-onhover);
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
 .paneSwitcherOption-selected {
   background: var(--surface-selected);
   color: var(--text-onhover);
@@ -440,6 +450,17 @@ button {
 .menuPanel button:hover {
   background: var(--surface-hover);
   color: var(--text-onhover);
+}
+
+/* Keyboard focus cursor for menu items: a clip-safe background fill rather than
+   a ring (a flat menu item's native affordance, and safe inside the rounded
+   panel). Menu items have no persistent selection, so this is their only
+   emphasis. The zoom stepper's buttons are not menu items and are excluded. */
+.menuPanel > button:focus-visible {
+  outline: none;
+  background: var(--surface-hover);
+  color: var(--text-onhover);
+  box-shadow: inset 0 0 0 2px var(--accent);
 }
 
 .menuDivider {

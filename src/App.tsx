@@ -6,7 +6,7 @@ import {
   History,
   Info,
   Keyboard,
-  Menu,
+  Menu as MenuIcon,
   Minus,
   Plus,
   Settings,
@@ -15,6 +15,7 @@ import { AboutModal } from "./components/AboutModal";
 import { SnapshotSearchModal } from "./components/SnapshotSearchModal";
 import { ErrorModal } from "./components/ErrorModal";
 import { LoadErrorScreen } from "./components/LoadErrorScreen";
+import { Menu, MenuItem } from "./components/Menu";
 import { PaneSwitcher } from "./components/PaneSwitcher";
 import { PaneView } from "./components/PaneView";
 import { SettingsModal } from "./components/SettingsModal";
@@ -48,10 +49,8 @@ export function App() {
     snapshotJustSavedAt,
     updateSettings,
   } = useAppState();
-  const [menuOpen, setMenuOpen] = useState(false);
   const [openModal, setOpenModal] = useState<OpenModal>(null);
   const [snapshotPulse, setSnapshotPulse] = useState(false);
-  const menuWrapRef = useRef<HTMLDivElement | null>(null);
 
   // Brief "snapshot saved" flash whenever the timestamp updates.
   useEffect(() => {
@@ -65,7 +64,6 @@ export function App() {
 
   const openMenuModal = useCallback((modal: OpenModal) => {
     setOpenModal(modal);
-    setMenuOpen(false);
   }, []);
 
   const toggleDark = useCallback(() => {
@@ -128,32 +126,6 @@ export function App() {
     document.addEventListener("keydown", handler);
     return () => document.removeEventListener("keydown", handler);
   }, [updateSettings]);
-
-  // Close the hamburger menu on outside click or Escape.
-  useEffect(() => {
-    if (!menuOpen) {
-      return undefined;
-    }
-
-    function handleClickOutside(event: MouseEvent) {
-      if (menuWrapRef.current && !menuWrapRef.current.contains(event.target as Node)) {
-        setMenuOpen(false);
-      }
-    }
-
-    function handleEscape(event: KeyboardEvent) {
-      if (event.key === "Escape" && !event.isComposing && (event as { keyCode?: number }).keyCode !== 229) {
-        setMenuOpen(false);
-      }
-    }
-
-    document.addEventListener("mousedown", handleClickOutside);
-    document.addEventListener("keydown", handleEscape);
-    return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
-      document.removeEventListener("keydown", handleEscape);
-    };
-  }, [menuOpen]);
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
@@ -383,6 +355,7 @@ export function App() {
             type="button"
             className="statusBadge statusBadgeButton statusThemeToggle"
             title={settings.dark ? "Switch to light theme" : "Switch to dark theme"}
+            aria-pressed={settings.dark}
             onClick={toggleDark}
           >
             {settings.dark ? "Dark" : "Light"}
@@ -392,6 +365,7 @@ export function App() {
               type="button"
               className="statusBadge statusBadge-zen statusBadgeButton"
               title="Click to disable zen mode"
+              aria-pressed={settings.zen}
               onClick={toggleZen}
             >
               Zen
@@ -402,80 +376,88 @@ export function App() {
               type="button"
               className="statusBadge statusBadge-topmost statusBadgeButton"
               title="Click to disable always on top"
+              aria-pressed={settings.topmost}
               onClick={toggleTopmost}
             >
               Topmost
             </button>
           ) : null}
           <span className={`statusBadge saveState saveState-${saveState}`}>{saveState}</span>
-          <div className="menuWrap" ref={menuWrapRef}>
-            <button className="statusMenuButton" type="button" aria-label="Open menu" onClick={() => setMenuOpen((open) => !open)}>
-              <Menu size={18} />
-            </button>
-            {menuOpen ? (
-              <div className="menuPanel menuPanelUp">
-                <button type="button" onClick={() => { addPane(); setMenuOpen(false); }}>
-                  <Plus size={16} />
-                  Add Pane
+          <Menu
+            label="App menu"
+            panelClassName="menuPanelUp"
+            trigger={(triggerProps) => (
+              <button className="statusMenuButton" type="button" aria-label="Open menu" {...triggerProps}>
+                <MenuIcon size={18} />
+              </button>
+            )}
+          >
+            <MenuItem onSelect={() => addPane()}>
+              <Plus size={16} />
+              Add Pane
+            </MenuItem>
+            <MenuItem onSelect={() => openMenuModal("settings")}>
+              <Settings size={16} />
+              Settings
+            </MenuItem>
+            <div className="menuDivider" />
+            {/* A contained zoom stepper, skipped by the menu's arrow navigation:
+                its buttons are tabIndex=-1 and are driven by pointer plus the
+                global zoom shortcuts, not promoted into menu items. */}
+            <div className="menuZoomRow">
+              <span>Zoom</span>
+              <div className="menuZoomControls">
+                <button
+                  type="button"
+                  className="menuZoomButton"
+                  tabIndex={-1}
+                  onClick={() => updateSettings({ ...settings, zoomLevel: stepZoomOut(settings.zoomLevel) })}
+                  disabled={stepZoomOut(settings.zoomLevel) === settings.zoomLevel}
+                  title="Zoom out"
+                >
+                  <Minus size={12} />
                 </button>
-                <button type="button" onClick={() => openMenuModal("settings")}>
-                  <Settings size={16} />
-                  Settings
-                </button>
-                <div className="menuDivider" />
-                <div className="menuZoomRow">
-                  <span>Zoom</span>
-                  <div className="menuZoomControls">
-                    <button
-                      type="button"
-                      className="menuZoomButton"
-                      onClick={() => updateSettings({ ...settings, zoomLevel: stepZoomOut(settings.zoomLevel) })}
-                      disabled={stepZoomOut(settings.zoomLevel) === settings.zoomLevel}
-                      title="Zoom out"
-                    >
-                      <Minus size={12} />
-                    </button>
-                    {settings.zoomLevel !== ZOOM_DEFAULT ? (
-                      <button
-                        type="button"
-                        className="menuZoomLabel menuZoomLabelClickable"
-                        onClick={() => updateSettings({ ...settings, zoomLevel: ZOOM_DEFAULT })}
-                        title="Reset to 100%"
-                      >
-                        {Math.round(settings.zoomLevel * 100)}%
-                      </button>
-                    ) : (
-                      <span className="menuZoomLabel">
-                        {Math.round(settings.zoomLevel * 100)}%
-                      </span>
-                    )}
-                    <button
-                      type="button"
-                      className="menuZoomButton"
-                      onClick={() => updateSettings({ ...settings, zoomLevel: stepZoomIn(settings.zoomLevel) })}
-                      disabled={stepZoomIn(settings.zoomLevel) === settings.zoomLevel}
-                      title="Zoom in"
-                    >
-                      <Plus size={12} />
-                    </button>
-                  </div>
-                </div>
-                <div className="menuDivider" />
-                <button type="button" onClick={() => openMenuModal("shortcuts")}>
-                  <Keyboard size={16} />
-                  Shortcuts
-                </button>
-                <button type="button" onClick={() => openMenuModal("snapshots")}>
-                  <History size={16} />
-                  Snapshot Search
-                </button>
-                <button type="button" onClick={() => openMenuModal("about")}>
-                  <Info size={16} />
-                  About
+                {settings.zoomLevel !== ZOOM_DEFAULT ? (
+                  <button
+                    type="button"
+                    className="menuZoomLabel menuZoomLabelClickable"
+                    tabIndex={-1}
+                    onClick={() => updateSettings({ ...settings, zoomLevel: ZOOM_DEFAULT })}
+                    title="Reset to 100%"
+                  >
+                    {Math.round(settings.zoomLevel * 100)}%
+                  </button>
+                ) : (
+                  <span className="menuZoomLabel">
+                    {Math.round(settings.zoomLevel * 100)}%
+                  </span>
+                )}
+                <button
+                  type="button"
+                  className="menuZoomButton"
+                  tabIndex={-1}
+                  onClick={() => updateSettings({ ...settings, zoomLevel: stepZoomIn(settings.zoomLevel) })}
+                  disabled={stepZoomIn(settings.zoomLevel) === settings.zoomLevel}
+                  title="Zoom in"
+                >
+                  <Plus size={12} />
                 </button>
               </div>
-            ) : null}
-          </div>
+            </div>
+            <div className="menuDivider" />
+            <MenuItem onSelect={() => openMenuModal("shortcuts")}>
+              <Keyboard size={16} />
+              Shortcuts
+            </MenuItem>
+            <MenuItem onSelect={() => openMenuModal("snapshots")}>
+              <History size={16} />
+              Snapshot Search
+            </MenuItem>
+            <MenuItem onSelect={() => openMenuModal("about")}>
+              <Info size={16} />
+              About
+            </MenuItem>
+          </Menu>
         </div>
       </footer>
       {openModal === "settings" ? <SettingsModal onClose={() => setOpenModal(null)} /> : null}
