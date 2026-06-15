@@ -2,6 +2,11 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 $scriptExitCode = 0
 
+# run-built: launch the EXISTING built binary without rebuilding, so it starts
+# instantly. This is the daily-use launcher and the one that surfaces
+# production-only failures (strict CSP, file:// paths, packaged layout). It never
+# builds — if you changed source, run rebuild first.
+
 function Set-Utf8Console {
     $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
     [Console]::InputEncoding = $utf8NoBom
@@ -19,13 +24,6 @@ function Write-Step {
     Write-Host "==> $Message" -ForegroundColor Cyan
 }
 
-function Require-Command {
-    param([string]$Name)
-    if (-not (Get-Command $Name -ErrorAction SilentlyContinue)) {
-        throw "Missing required command: $Name"
-    }
-}
-
 function Invoke-Native {
     param(
         [Parameter(Mandatory = $true)][string]$FilePath,
@@ -40,43 +38,30 @@ function Invoke-Native {
     }
 }
 
-function Stop-Port {
-    param([int]$Port)
-    $pids = Get-NetTCPConnection -State Listen -LocalPort $Port -ErrorAction SilentlyContinue |
-        Select-Object -ExpandProperty OwningProcess -Unique
-    foreach ($portPid in $pids) {
-        if ($portPid -and $portPid -ne $PID) {
-            Stop-Process -Id $portPid -Force -ErrorAction SilentlyContinue
-        }
-    }
-}
-
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repoDir = Split-Path -Parent $scriptDir
 
 try {
     Set-Utf8Console
-    Require-Command node
-    Require-Command npm
-    Require-Command cargo
-    Require-Command rustc
 
     Set-Location $repoDir
 
-    Write-Step "Stopping stale development listeners"
-    # 1621 is this app's Vite dev port (bumped from the 1420/1421 Tauri scaffold
-    # default so it never collides with dropkick's launcher port-kill on 1521).
-    Stop-Port 1621
+    # No build, no dependency install here: this launcher must start instantly. If
+    # there is no usable build yet, stop and point at rebuild rather than launching
+    # something stale or empty.
+    if (-not (Test-Path "src-tauri\target\debug\quickdeck.exe")) {
+        throw "No build found — run rebuild first."
+    }
 
-    Write-Step "Installing dependencies required for launch"
-    Invoke-Native -FilePath "npm" -ArgumentList @("install")
+    $builtAt = (Get-Item "src-tauri\target\debug\quickdeck.exe").LastWriteTime.ToString("yyyy-MM-dd HH:mm:ss")
+    Write-Step "Launching the existing built binary (built: $builtAt)"
+    Write-Host "If you changed source since then, run rebuild instead."
 
-    Write-Step "Starting QuickDeck in development mode"
-    Invoke-Native -FilePath "npm" -ArgumentList @("run", "tauri", "dev") -AllowedExitCodes @(0, 130, -1073741510)
+    Invoke-Native -FilePath "src-tauri\target\debug\quickdeck.exe" -AllowedExitCodes @(0, 130, -1073741510)
 }
 catch {
     Write-Host ""
-    Write-Host "quickdeck run failed: $($_.Exception.Message)" -ForegroundColor Red
+    Write-Host "quickdeck run-built failed: $($_.Exception.Message)" -ForegroundColor Red
     $scriptExitCode = 1
 }
 finally {

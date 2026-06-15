@@ -48,19 +48,11 @@ QuickDeck uses Vite dev port `1621` to avoid colliding with other local apps.
 
 ## Scripts
 
-macOS:
+Each launcher is a `scripts/<name>.command` (macOS) / `scripts/<name>.ps1` (Windows PowerShell) pair:
 
-```sh
-scripts/run.command
-```
-
-Windows PowerShell:
-
-```powershell
-scripts/run.ps1
-```
-
-The run scripts install dependencies, free Vite's dev port `1621` by stopping any process currently listening on it, and launch Tauri development mode.
+- **run-dev** — installs dependencies, frees Vite's dev port `1621` by stopping any process currently listening on it, and launches Tauri development mode.
+- **run-built** — launches the existing built binary without rebuilding.
+- **rebuild** — builds fresh (`tauri build --debug`), then launches.
 
 ## Build
 
