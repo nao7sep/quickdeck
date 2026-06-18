@@ -37,7 +37,8 @@ export function LoadErrorScreen({ error }: LoadErrorScreenProps) {
         <p className="loadErrorMessage">{error}</p>
         <p className="loadErrorHint">
           To protect your existing data, QuickDeck will not save changes in this
-          state. Your files live in <code>~/.quickdeck</code>. Quit the app,
+          state. Your files live in the app's data folder (<code>~/.quickdeck</code>{" "}
+          by default, or <code>QUICKDECK_HOME</code> if set). Quit the app,
           repair or move the affected file, then relaunch.
         </p>
         <div className="loadErrorActions">

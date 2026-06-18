@@ -2,6 +2,12 @@
   // Typechecks the test files (their subjects are pulled in via imports). Also
   // includes src's ambient .d.ts (e.g. vite-env.d.ts, type shims) so globals and
   // module declarations resolve the same way they do for the app.
+  //
+  // The tests use Node globals (process, node:fs, node:path). vitest 4 no longer
+  // pulls @types/node into automatic @types inclusion the way vitest 3 did, so
+  // declare it explicitly here. The app's own tsconfig.json intentionally stays
+  // free of node types (browser-only surface); only the test program needs them.
   "extends": "./tsconfig.json",
+  "compilerOptions": { "types": ["node"] },
   "include": ["src/**/*.d.ts", "tests/**/*.ts"]
 }
