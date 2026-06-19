@@ -8,7 +8,7 @@
 
 import type { Pane } from "../types";
 import { createDefaultPane } from "./defaults";
-import { trimSnapshotContent } from "../utils/snapshotContent";
+import { multiline } from "../utils/textCleanup";
 
 // Appends a new pane whose header color is chosen to stay distinct from every
 // existing pane header. The caller supplies the id (generated outside so the
@@ -57,7 +57,7 @@ export function deletePane(panes: Pane[], paneId: string, activePaneId: string):
     return { kind: "blocked-last" };
   }
 
-  if (trimSnapshotContent(pane.content).length > 0) {
+  if (multiline(pane.content).length > 0) {
     return { kind: "blocked-non-empty" };
   }
 

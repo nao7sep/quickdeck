@@ -8,6 +8,7 @@
 import type { AppSettings, Pane } from "../types";
 import { defaultSettings } from "./defaults";
 import { randomPaneColor } from "../utils/paneColors";
+import { singleLine } from "../utils/textCleanup";
 import { ZOOM_MAX, ZOOM_MIN } from "../utils/zoom";
 
 // Inclusive bounds for the numeric settings. Single source of truth for the
@@ -71,8 +72,8 @@ export function normalizeSettings(settings: AppSettings | null): AppSettings {
     zen: asBoolean(settings.zen, defaultSettings.zen),
     topmost: asBoolean(settings.topmost, defaultSettings.topmost),
     editorFontFamily:
-      typeof settings.editorFontFamily === "string" && settings.editorFontFamily.trim().length > 0
-        ? settings.editorFontFamily.trim()
+      typeof settings.editorFontFamily === "string" && singleLine(settings.editorFontFamily).length > 0
+        ? singleLine(settings.editorFontFamily)
         : defaultSettings.editorFontFamily,
     editorFontSize: clampSetting(settings.editorFontSize, "editorFontSize"),
     autosaveDelaySeconds: clampSetting(settings.autosaveDelaySeconds, "autosaveDelaySeconds"),

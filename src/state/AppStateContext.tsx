@@ -12,7 +12,7 @@ import { nanoid } from "nanoid";
 import { createDefaultPane, defaultSettings } from "./defaults";
 import { normalizePanes, normalizeSettings } from "./normalize";
 import { appendPane, deletePane as deletePaneOp, reorderPane } from "./paneOps";
-import { trimSnapshotContent } from "../utils/snapshotContent";
+import { multiline, singleLine } from "../utils/textCleanup";
 import {
   buildSessionState,
   countSnapshots,
@@ -49,6 +49,7 @@ type AppStateContextValue = {
   snapshotJustSavedAt: number | null;
   setActivePaneId: (paneId: string) => void;
   updatePaneTitle: (paneId: string, title: string) => void;
+  commitPaneTitle: (paneId: string) => void;
   updatePaneContent: (paneId: string, content: string) => void;
   addPane: () => void;
   deletePane: (paneId: string) => void;
@@ -191,6 +192,34 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     [markUnsaved],
   );
 
+  // Commit-time cleanup for the pane title: the input stores its value verbatim
+  // while the user types (never cleaned mid-edit), then this runs on blur to
+  // single-line it — so a pasted multi-line value can't leak \r/\n into
+  // session.json. The title is not an identity field, so we normalize rather
+  // than validate. Decide whether anything changes before touching state (the
+  // updater must stay pure under StrictMode's double-invoke), and only mark
+  // unsaved when cleanup actually changes the value, so a blur over an
+  // already-clean title doesn't spuriously dirty the document.
+  const commitPaneTitle = useCallback(
+    (paneId: string) => {
+      const pane = panesRef.current.find((candidate) => candidate.id === paneId);
+      if (!pane) {
+        return;
+      }
+      const cleaned = singleLine(pane.title);
+      if (cleaned === pane.title) {
+        return;
+      }
+      setPanes((current) =>
+        current.map((candidate) =>
+          candidate.id === paneId ? { ...candidate, title: cleaned } : candidate,
+        ),
+      );
+      markUnsaved();
+    },
+    [markUnsaved],
+  );
+
   const updatePaneContent = useCallback(
     (paneId: string, content: string) => {
       setPanes((current) =>
@@ -257,7 +286,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      const trimmed = trimSnapshotContent(content);
+      const trimmed = multiline(content);
       if (trimmed.length === 0) {
         return;
       }
@@ -287,7 +316,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         .map((pane) => ({
           paneId: pane.id,
           trigger,
-          content: trimSnapshotContent(pane.content),
+          content: multiline(pane.content),
         }))
         .filter((snapshot) => snapshot.content.length > 0);
 
@@ -366,6 +395,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       snapshotJustSavedAt,
       setActivePaneId,
       updatePaneTitle,
+      commitPaneTitle,
       updatePaneContent,
       addPane,
       deletePane,
@@ -384,6 +414,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       activePaneId,
       addPane,
       blockingError,
+      commitPaneTitle,
       dataDir,
       deletePane,
       dismissBlockingError,

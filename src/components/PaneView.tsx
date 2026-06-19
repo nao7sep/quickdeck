@@ -16,6 +16,7 @@ export function PaneView({ pane }: PaneViewProps) {
     settings,
     setActivePaneId,
     updatePaneTitle,
+    commitPaneTitle,
     updatePaneContent,
     deletePane,
     recordSnapshot,
@@ -62,6 +63,7 @@ export function PaneView({ pane }: PaneViewProps) {
           value={pane.title}
           spellCheck={false}
           onChange={(event) => updatePaneTitle(pane.id, event.target.value)}
+          onBlur={() => commitPaneTitle(pane.id)}
           onMouseDown={(event) => {
             setActivePaneId(pane.id);
 
