@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { appendPane, deletePane, reorderPane } from "../../src/state/paneOps";
+import { computeWindowMinWidth } from "../../src/utils/layoutMetrics";
 import type { Pane } from "../../src/types";
 
 const HEX = /^#[0-9a-f]{6}$/i;
@@ -73,5 +74,21 @@ describe("deletePane", () => {
     const panes = [pane("a"), pane("b"), pane("c")];
     const outcome = deletePane(panes, "c", "a");
     expect(outcome).toMatchObject({ kind: "deleted", nextActivePaneId: "a" });
+  });
+});
+
+// The window minimum tracks the live pane count (no splitter — panes are
+// equal-stretch siblings whose count changes via Add / Delete), so each added
+// pane must widen the computed floor.
+describe("adding a pane widens the computed window minimum", () => {
+  it("appending grows computeWindowMinWidth", () => {
+    let panes = [pane("a")];
+    let previous = computeWindowMinWidth(panes.length, false);
+    for (let i = 0; i < 4; i += 1) {
+      panes = appendPane(panes, `extra-${i}`);
+      const current = computeWindowMinWidth(panes.length, false);
+      expect(current).toBeGreaterThan(previous);
+      previous = current;
+    }
   });
 });

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { isTauri } from "@tauri-apps/api/core";
-import { getCurrentWindow } from "@tauri-apps/api/window";
+import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import {
   History,
@@ -24,6 +24,7 @@ import { ToastViewport } from "./components/ToastViewport";
 import { matchesShortcut } from "./shortcuts";
 import { logError, logWarn, serializeError } from "./services/logger";
 import { useAppState } from "./state/AppStateContext";
+import { computeWindowMinHeight, computeWindowMinWidth } from "./utils/layoutMetrics";
 import { isZoomIn, isZoomOut, isZoomReset, stepZoomIn, stepZoomOut, ZOOM_DEFAULT } from "./utils/zoom";
 
 type OpenModal = "settings" | "shortcuts" | "about" | "snapshots" | null;
@@ -103,6 +104,31 @@ export function App() {
       .setZoom(settings.zoomLevel)
       .catch((error) => logWarn("set zoom failed", { zoomLevel: settings.zoomLevel, error: serializeError(error) }));
   }, [settings.zoomLevel]);
+
+  // Keep the window minimum tracking the live pane count. QuickDeck has no
+  // splitter — panes are equal-stretch flex siblings whose count changes via
+  // Add / Delete — so the width floor must grow with the panes (and collapse to
+  // one pane in zen mode). The floor is DERIVED in layoutMetrics, the single
+  // source of truth shared with the per-pane CSS minimums; tauri.conf.json's
+  // static minWidth/minHeight only have to cover the very first single-pane
+  // frame before this runs.
+  useEffect(() => {
+    if (!isTauri()) return undefined;
+    const minWidth = computeWindowMinWidth(panes.length, settings.zen);
+    const minHeight = computeWindowMinHeight();
+    getCurrentWindow()
+      .setMinSize(new LogicalSize(minWidth, minHeight))
+      .catch((error) =>
+        logWarn("set window min size failed", {
+          paneCount: panes.length,
+          zen: settings.zen,
+          minWidth,
+          minHeight,
+          error: serializeError(error),
+        }),
+      );
+    return undefined;
+  }, [panes.length, settings.zen]);
 
   // Zoom keyboard shortcuts — separate effect with its own document listener so
   // they work even when a modal is open (zoom should always be accessible).

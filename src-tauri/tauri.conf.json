@@ -15,11 +15,10 @@
         "title": "QuickDeck",
         "width": 1120,
         "height": 760,
-        "minWidth": 600,
-        "minHeight": 360,
+        "minWidth": 280,
+        "minHeight": 284,
         "visible": true,
-        "titleBarStyle": "Transparent",
-        "hiddenTitle": true
+        "titleBarStyle": "Visible"
       }
     ],
     "security": {

@@ -5,6 +5,13 @@
 :root {
   color: var(--text);
   background: transparent;
+  /* color-scheme matches the active theme so native UA controls (form widgets,
+     the platform's default scroll bar before our styling lands) render in the
+     right palette; :root.dark flips it to dark. Per the window-chrome-conventions
+     a web UI needs BOTH this declaration AND the explicit ::-webkit-scrollbar
+     styling below — the declaration alone leaves the platform's default (on some
+     platforms thick and square) bar in place. */
+  color-scheme: light;
   font-family:
     Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
     "Segoe UI", sans-serif;
@@ -15,7 +22,11 @@
   /* Theme tokens — light values. The dark theme (:root.dark) below redefines
      only the white / near-white surfaces and the dark text that sits on them.
      Already-dark surfaces (status bar, modal header, pane headers, gradient
-     buttons) are intentionally not tokenized and stay identical in both. */
+     buttons) are intentionally not tokenized and stay identical in both.
+
+     The window minimum and per-pane minimums are NOT here — they are the single
+     source of truth in src/utils/layoutMetrics.ts and reach the layout via the
+     --pane-min-width / --pane-min-height vars set on .pane below. */
   --border: #e5e7f0;
   --border-strong: #c0c4d6;
   --surface: #ffffff;
@@ -36,6 +47,8 @@
   --warning: #f59e0b;
   --divider-subtle: rgba(0, 0, 0, 0.07);
   --overlay-hover: rgba(0, 0, 0, 0.08);
+  --scrollbar-thumb: rgba(30, 27, 75, 0.28);
+  --scrollbar-thumb-hover: rgba(30, 27, 75, 0.45);
   --kbd-bg: #ffffff;
   --kbd-border: #c4b5fd;
   --kbd-text: #4c1d95;
@@ -61,6 +74,7 @@
 }
 
 :root.dark {
+  color-scheme: dark;
   --border: #34343f;
   --border-strong: #45454f;
   --surface: #20202a;
@@ -79,6 +93,8 @@
   --accent-strong: #ddd0ff;
   --divider-subtle: rgba(255, 255, 255, 0.08);
   --overlay-hover: rgba(255, 255, 255, 0.10);
+  --scrollbar-thumb: rgba(230, 230, 238, 0.26);
+  --scrollbar-thumb-hover: rgba(230, 230, 238, 0.44);
   --kbd-bg: #2a2438;
   --kbd-border: #5b4b8a;
   --kbd-text: #e2d8ff;
@@ -121,6 +137,44 @@ textarea {
 
 button {
   cursor: pointer;
+}
+
+/* ── Scroll Bars ─────────────────────────────────────────────── */
+
+/* One global rule for every overflow container (pane editors, modal bodies, the
+   zen pane switcher, snapshot previews, menus). Per the window-chrome-conventions
+   the bar is a slim ~10px gutter with a fully rounded (pill) thumb inset from the
+   gutter edges — a transparent border with the background clipped to the padding
+   box gives the thumb breathing room rather than filling the gutter edge to edge
+   — over a transparent track, brightening on hover. Colors come from palette
+   tokens that flip with the theme, so a light app never shows a dark bar. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) transparent;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background-color: var(--scrollbar-thumb);
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: var(--scrollbar-thumb-hover);
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
 }
 
 /* ── App Shell ───────────────────────────────────────────────── */
@@ -557,11 +611,22 @@ button {
 /* ── Individual Pane ─────────────────────────────────────────── */
 
 .pane {
+  /* Real per-pane minimum WIDTH (overriding the flex default that lets an item
+     shrink below its content) so no pane is squeezed below a usable width; mirrors
+     PANE_MIN_WIDTH in src/utils/layoutMetrics.ts, which also derives the window
+     minimum from it. flex:1 1 0 still lets panes grow and share width equally.
+     The vertical minimum (PANE_MIN_HEIGHT) is enforced at the WINDOW level only
+     (the window can't shrink below pane-min + status bar) — deliberately NOT a
+     `min-height` here: a pane taller than the deck would overflow and the deck's
+     `overflow:hidden` would clip the footer (the char counts). With the pane
+     filling the deck exactly, the editor (the 1fr row) absorbs all shrink and the
+     auto header/footer rows are always reserved, so the counts never disappear. */
+  --pane-min-width: 280px;
   display: grid;
   grid-template-rows: auto 1fr auto;
   grid-template-columns: minmax(0, 1fr);
   flex: 1 1 0;
-  min-width: 0;
+  min-width: var(--pane-min-width);
   background: var(--pane-bg, #f5f3ff);
   transition: box-shadow 150ms ease;
   overflow: hidden;
