@@ -747,7 +747,7 @@ button {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
   width: min(680px, 100%);
-  max-height: min(760px, calc(100vh - 48px));
+  max-height: 84vh;
   border: 1px solid var(--border);
   border-radius: 16px;
   background: var(--surface);
