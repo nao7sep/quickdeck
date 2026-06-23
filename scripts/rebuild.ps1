@@ -2,12 +2,12 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 $scriptExitCode = 0
 
-# rebuild: produce a fresh PRODUCTION build (Tauri debug binary, --no-bundle) and
-# launch it. Slow — run this after changing source. The build runs the frontend's
-# production type check and bundle (via beforeBuildCommand) and compiles the Rust
-# binary, so type, import, CSP, and packaged-layout errors that run-dev hides
-# surface here. run-built is the fast, no-build launcher for everything after
-# this.
+# rebuild: produce a fresh release build and launch it. Slow — run this after
+# changing source. tauri build runs the frontend's production type check and
+# bundle (via beforeBuildCommand) and compiles the Rust release binary, so type,
+# CSP, and packaged-layout errors that run-dev hides surface here. On Windows the
+# launchable artifact is the release .exe itself, so --no-bundle skips the nsis
+# installer. run-built is the fast, no-build launcher after this.
 
 function Set-Utf8Console {
     $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
@@ -49,6 +49,8 @@ function Invoke-Native {
 
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repoDir = Split-Path -Parent $scriptDir
+$crate = "quickdeck"
+$exePath = Join-Path $repoDir "src-tauri/target/release/$crate.exe"
 
 try {
     Set-Utf8Console
@@ -69,16 +71,19 @@ try {
     Write-Step "Cleaning previous frontend build"
     if (Test-Path "dist") { Remove-Item -Recurse -Force "dist" }
 
-    # tauri build --debug triggers beforeBuildCommand (the frontend `tsc && vite
-    # build`) and then compiles the Rust debug binary; --no-bundle skips the
-    # dmg/nsis packaging we don't want here.
-    Write-Step "Building production frontend and debug binary"
-    Invoke-Native -FilePath "node_modules/.bin/tauri.cmd" -ArgumentList @("build", "--debug", "--no-bundle")
+    # tauri build runs beforeBuildCommand (the frontend `tsc && vite build`) and
+    # compiles the Rust release binary; --no-bundle skips the nsis installer — the
+    # launchable artifact is the release .exe.
+    Write-Step "Building release binary"
+    Invoke-Native -FilePath "node_modules/.bin/tauri.cmd" -ArgumentList @("build", "--no-bundle")
 
-    # Launching the built binary directly loads the production frontend with the
-    # tauri.conf CSP, which tauri dev does not.
-    Write-Step "Launching the built binary"
-    Invoke-Native -FilePath "src-tauri\target\debug\quickdeck.exe" -AllowedExitCodes @(0, 130, -1073741510)
+    if (-not (Test-Path $exePath)) {
+        throw "Build did not produce $crate.exe under src-tauri/target/release/."
+    }
+
+    # GUI app: launch non-blocking via Start-Process.
+    Write-Step "Launching the built app"
+    Start-Process -FilePath $exePath
 }
 catch {
     Write-Host ""

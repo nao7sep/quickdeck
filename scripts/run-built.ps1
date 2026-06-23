@@ -2,10 +2,10 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 $scriptExitCode = 0
 
-# run-built: launch the EXISTING built binary without rebuilding, so it starts
+# run-built: launch the EXISTING built app without rebuilding, so it starts
 # instantly. This is the daily-use launcher and the one that surfaces
-# production-only failures (strict CSP, file:// paths, packaged layout). It never
-# builds — if you changed source, run rebuild first.
+# production-only failures (strict CSP, packaged layout). It never builds — if you
+# changed source, run rebuild first.
 
 function Set-Utf8Console {
     $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
@@ -24,40 +24,29 @@ function Write-Step {
     Write-Host "==> $Message" -ForegroundColor Cyan
 }
 
-function Invoke-Native {
-    param(
-        [Parameter(Mandatory = $true)][string]$FilePath,
-        [string[]]$ArgumentList = @(),
-        [int[]]$AllowedExitCodes = @(0)
-    )
-
-    & $FilePath @ArgumentList
-    $exitCode = if ($null -eq $LASTEXITCODE) { 0 } else { $LASTEXITCODE }
-    if ($AllowedExitCodes -notcontains $exitCode) {
-        throw "Command failed with exit code ${exitCode}: $FilePath $($ArgumentList -join ' ')"
-    }
-}
-
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repoDir = Split-Path -Parent $scriptDir
+$crate = "quickdeck"
+$exePath = Join-Path $repoDir "src-tauri/target/release/$crate.exe"
 
 try {
     Set-Utf8Console
 
     Set-Location $repoDir
 
-    # No build, no dependency install here: this launcher must start instantly. If
-    # there is no usable build yet, stop and point at rebuild rather than launching
-    # something stale or empty.
-    if (-not (Test-Path "src-tauri\target\debug\quickdeck.exe")) {
-        throw "No build found — run rebuild first."
+    # No build here: this launcher must start instantly. If there is no usable
+    # build yet, stop and point at rebuild rather than launching something stale
+    # or empty.
+    if (-not (Test-Path $exePath)) {
+        throw "No build found (src-tauri/target/release/$crate.exe is missing). Run rebuild first."
     }
 
-    $builtAt = (Get-Item "src-tauri\target\debug\quickdeck.exe").LastWriteTime.ToString("yyyy-MM-dd HH:mm:ss")
-    Write-Step "Launching the existing built binary (built: $builtAt)"
+    $builtAt = (Get-Item $exePath).LastWriteTime.ToString("yyyy-MM-dd HH:mm:ss")
+    Write-Step "Launching the existing built app (built: $builtAt)"
     Write-Host "If you changed source since then, run rebuild instead."
 
-    Invoke-Native -FilePath "src-tauri\target\debug\quickdeck.exe" -AllowedExitCodes @(0, 130, -1073741510)
+    # GUI app: launch non-blocking via Start-Process.
+    Start-Process -FilePath $exePath
 }
 catch {
     Write-Host ""

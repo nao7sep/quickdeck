@@ -22,6 +22,7 @@ import { SettingsModal } from "./components/SettingsModal";
 import { ShortcutsModal } from "./components/ShortcutsModal";
 import { ToastViewport } from "./components/ToastViewport";
 import { matchesShortcut } from "./shortcuts";
+import { isComposingEvent } from "./hooks/useComposing";
 import { logError, logWarn, serializeError } from "./services/logger";
 import { useAppState } from "./state/AppStateContext";
 import { computeWindowMinHeight, computeWindowMinWidth } from "./utils/layoutMetrics";
@@ -156,6 +157,13 @@ export function App() {
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
       if (loadStatus !== "ready" || openModal || blockingError) {
+        return;
+      }
+
+      // A command accelerator is a chord the IME passes straight through, so while a pane field is
+      // mid-composition the chord belongs to the pending candidate: stand down and let the user
+      // finish, rather than firing on a not-yet-committed candidate (text-input-ime-conventions).
+      if (isComposingEvent(event)) {
         return;
       }
 
