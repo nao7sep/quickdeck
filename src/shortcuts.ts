@@ -1,3 +1,5 @@
+import { isApplePlatform } from "./utils/zoom";
+
 export type ShortcutId =
   | "toggleDark"
   | "toggleZen"
@@ -21,67 +23,77 @@ export type ShortcutDefinition = {
   description: string;
 };
 
+// The command modifier word is resolved at runtime from the running platform:
+// "Cmd" on macOS, "Ctrl" on Windows/Linux. The live shortcuts UI must show one
+// word — never the combined "Cmd/Ctrl" and never a glyph (keyboard-shortcut
+// conventions). Platform detection is shared with utils/zoom.ts so both surfaces
+// agree on which physical key the user has.
+const mod = isApplePlatform ? "Cmd" : "Ctrl";
+
+// Built once at module load from the resolved modifier. Chord grammar:
+// "+" joins with no spaces, modifier order is Cmd/Ctrl → Alt → Shift → key,
+// keys are spelled in full, and shared-modifier alternatives use a tight "/".
 export const shortcutDefinitions: ShortcutDefinition[] = [
   {
     id: "addPane",
-    keys: "Cmd/Ctrl + N",
+    keys: `${mod}+N`,
     description: "Add pane",
   },
   {
     id: "focusPreviousPane",
-    keys: "Cmd/Ctrl + Left",
+    keys: `${mod}+Left`,
     description: "Focus previous pane",
   },
   {
     id: "focusNextPane",
-    keys: "Cmd/Ctrl + Right",
+    keys: `${mod}+Right`,
     description: "Focus next pane",
   },
   {
     id: "movePaneLeft",
-    keys: "Cmd/Ctrl + Shift + Left",
+    keys: `${mod}+Shift+Left`,
     description: "Move pane left",
   },
   {
     id: "movePaneRight",
-    keys: "Cmd/Ctrl + Shift + Right",
+    keys: `${mod}+Shift+Right`,
     description: "Move pane right",
   },
   {
     id: "toggleDark",
-    keys: "Cmd/Ctrl + D",
+    keys: `${mod}+D`,
     description: "Toggle dark theme",
   },
   {
     id: "toggleZen",
-    keys: "Cmd/Ctrl + K",
+    keys: `${mod}+K`,
     description: "Toggle zen mode",
   },
   {
     id: "toggleTopmost",
-    keys: "Cmd/Ctrl + T",
+    keys: `${mod}+T`,
     description: "Toggle always on top",
   },
   {
-    keys: "Cmd/Ctrl + Equal / Plus / Semicolon",
+    keys: `${mod}+Equal/Plus/Semicolon`,
     description: "Zoom in",
   },
   {
-    keys: "Cmd/Ctrl + Minus",
+    keys: `${mod}+Minus`,
     description: "Zoom out",
   },
   {
-    keys: "Cmd/Ctrl + 0",
+    keys: `${mod}+0`,
     description: "Reset zoom",
   },
   {
     id: "openSettings",
-    keys: "Cmd/Ctrl + Comma",
+    keys: `${mod}+Comma`,
     description: "Open settings",
   },
   {
     id: "openShortcuts",
-    keys: "Cmd/Ctrl + Slash",
+    keys: `${mod}+Slash`,
     description: "Open shortcuts",
   },
   {

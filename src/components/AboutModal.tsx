@@ -21,7 +21,15 @@ export function AboutModal({ onClose }: AboutModalProps) {
   }
 
   return (
-    <ModalBase title="About QuickDeck" onRequestClose={onClose}>
+    <ModalBase
+      title="About QuickDeck"
+      onRequestClose={onClose}
+      footer={
+        <button className="secondaryButton" type="button" onClick={onClose}>
+          Close
+        </button>
+      }
+    >
       <div className="aboutText">
         <p className="aboutTitle">QuickDeck</p>
         <p className="aboutVersion">Version {__APP_VERSION__}</p>

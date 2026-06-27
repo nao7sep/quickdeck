@@ -13,3 +13,6 @@ src-tauri/gen/
 
 # OS files
 .DS_Store
+
+# Coverage reports (generated)
+coverage/

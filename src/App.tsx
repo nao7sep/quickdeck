@@ -26,6 +26,7 @@ import { isComposingEvent } from "./hooks/useComposing";
 import { logError, logWarn, serializeError } from "./services/logger";
 import { useAppState } from "./state/AppStateContext";
 import { computeWindowMinHeight, computeWindowMinWidth } from "./utils/layoutMetrics";
+import { clampPaneIndex } from "./utils/paneIndex";
 import { isZoomIn, isZoomOut, isZoomReset, stepZoomIn, stepZoomOut, ZOOM_DEFAULT } from "./utils/zoom";
 
 type OpenModal = "settings" | "shortcuts" | "about" | "snapshots" | null;
@@ -106,6 +107,15 @@ export function App() {
       .catch((error) => logWarn("set zoom failed", { zoomLevel: settings.zoomLevel, error: serializeError(error) }));
   }, [settings.zoomLevel]);
 
+  // Apply the configured UI font by overriding the `--font-ui` CSS variable on :root; blank reverts
+  // to the styles.css default. The string is handed to CSS verbatim (engine-resolved); the pane
+  // editor keeps its own editorFontFamily.
+  useEffect(() => {
+    const family = settings.uiFontFamily.trim();
+    if (family) document.documentElement.style.setProperty("--font-ui", family);
+    else document.documentElement.style.removeProperty("--font-ui");
+  }, [settings.uiFontFamily]);
+
   // Keep the window minimum tracking the live pane count. QuickDeck has no
   // splitter — panes are equal-stretch flex siblings whose count changes via
   // Add / Delete — so the width floor must grow with the panes (and collapse to
@@ -175,14 +185,14 @@ export function App() {
       if (matchesShortcut(event, "focusPreviousPane")) {
         event.preventDefault();
         const index = panes.findIndex((pane) => pane.id === activePaneId);
-        const previous = panes[Math.max(0, index - 1)];
+        const previous = panes[clampPaneIndex(index - 1, panes.length)];
         setActivePaneId(previous.id);
       }
 
       if (matchesShortcut(event, "focusNextPane")) {
         event.preventDefault();
         const index = panes.findIndex((pane) => pane.id === activePaneId);
-        const next = panes[Math.min(panes.length - 1, index + 1)];
+        const next = panes[clampPaneIndex(index + 1, panes.length)];
         setActivePaneId(next.id);
       }
 

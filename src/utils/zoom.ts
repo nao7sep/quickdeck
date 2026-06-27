@@ -78,7 +78,7 @@ export function stepZoomOut(current: number): number {
 // Primary modifier: Cmd on macOS/iOS, Ctrl on Windows/Linux.
 // navigator.platform is deprecated but still reliable in all current engines
 // including Tauri's webview. @tauri-apps/plugin-os is not used in this project.
-const isApplePlatform = /Mac|iPhone|iPad|iPod/.test(
+export const isApplePlatform = /Mac|iPhone|iPad|iPod/.test(
   typeof navigator === "undefined" ? "" : navigator.platform || navigator.userAgent,
 );
 

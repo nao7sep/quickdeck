@@ -94,6 +94,15 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
             <span>Keep window on top of other windows</span>
           </label>
           <label>
+            <span>UI font</span>
+            <input
+              type="text"
+              value={draft.uiFontFamily}
+              onChange={(event) => setField("uiFontFamily", event.target.value)}
+              placeholder="Default"
+            />
+          </label>
+          <label>
             <span>Editor font family</span>
             <input
               type="text"
@@ -116,6 +125,61 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
               value={draft.editorFontSize}
               onChange={(event) => setField("editorFontSize", Number(event.target.value))}
             />
+          </label>
+          <label>
+            <span>
+              Editor line height{" "}
+              <span className="fieldRange">
+                {SETTINGS_BOUNDS.editorLineHeight.min}–{SETTINGS_BOUNDS.editorLineHeight.max}
+              </span>
+            </span>
+            <input
+              type="number"
+              step={0.1}
+              min={SETTINGS_BOUNDS.editorLineHeight.min}
+              max={SETTINGS_BOUNDS.editorLineHeight.max}
+              value={draft.editorLineHeight}
+              onChange={(event) => setField("editorLineHeight", Number(event.target.value))}
+            />
+          </label>
+          <label>
+            <span>
+              Editor padding (px){" "}
+              <span className="fieldRange">
+                {SETTINGS_BOUNDS.editorPadding.min}–{SETTINGS_BOUNDS.editorPadding.max}
+              </span>
+            </span>
+            <input
+              type="number"
+              min={SETTINGS_BOUNDS.editorPadding.min}
+              max={SETTINGS_BOUNDS.editorPadding.max}
+              value={draft.editorPadding}
+              onChange={(event) => setField("editorPadding", Number(event.target.value))}
+            />
+          </label>
+          <label className="checkboxRow">
+            <input
+              type="checkbox"
+              checked={draft.editorBold}
+              onChange={(event) => setField("editorBold", event.target.checked)}
+            />
+            <span>Bold editor text</span>
+          </label>
+          <label className="checkboxRow">
+            <input
+              type="checkbox"
+              checked={draft.editorItalic}
+              onChange={(event) => setField("editorItalic", event.target.checked)}
+            />
+            <span>Italic editor text</span>
+          </label>
+          <label className="checkboxRow">
+            <input
+              type="checkbox"
+              checked={draft.editorUnderline}
+              onChange={(event) => setField("editorUnderline", event.target.checked)}
+            />
+            <span>Underline editor text</span>
           </label>
           <label>
             <span>

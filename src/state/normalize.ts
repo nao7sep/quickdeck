@@ -17,6 +17,8 @@ import { ZOOM_MAX, ZOOM_MIN } from "../utils/zoom";
 // the form can never accept a value the load path would silently clamp away.
 export const SETTINGS_BOUNDS = {
   editorFontSize: { min: 10, max: 32 },
+  editorLineHeight: { min: 1, max: 3 },
+  editorPadding: { min: 0, max: 64 },
   autosaveDelaySeconds: { min: 1, max: 60 },
   snapshotSearchPageSize: { min: 5, max: 200 },
 } as const;
@@ -49,6 +51,8 @@ function inBounds(value: number, key: BoundedKey): boolean {
 export function isSettingsDraftValid(draft: AppSettings): boolean {
   return (
     inBounds(draft.editorFontSize, "editorFontSize") &&
+    inBounds(draft.editorLineHeight, "editorLineHeight") &&
+    inBounds(draft.editorPadding, "editorPadding") &&
     inBounds(draft.autosaveDelaySeconds, "autosaveDelaySeconds") &&
     inBounds(draft.snapshotSearchPageSize, "snapshotSearchPageSize")
   );
@@ -71,11 +75,22 @@ export function normalizeSettings(settings: AppSettings | null): AppSettings {
     dark: asBoolean(settings.dark, defaultSettings.dark),
     zen: asBoolean(settings.zen, defaultSettings.zen),
     topmost: asBoolean(settings.topmost, defaultSettings.topmost),
+    // UI font is free text and may be blank (blank = the built-in default stack), so unlike the
+    // editor font it never falls back on empty — only a non-string reverts to the default.
+    uiFontFamily:
+      typeof settings.uiFontFamily === "string"
+        ? singleLine(settings.uiFontFamily)
+        : defaultSettings.uiFontFamily,
     editorFontFamily:
       typeof settings.editorFontFamily === "string" && singleLine(settings.editorFontFamily).length > 0
         ? singleLine(settings.editorFontFamily)
         : defaultSettings.editorFontFamily,
     editorFontSize: clampSetting(settings.editorFontSize, "editorFontSize"),
+    editorLineHeight: clampSetting(settings.editorLineHeight, "editorLineHeight"),
+    editorPadding: clampSetting(settings.editorPadding, "editorPadding"),
+    editorBold: asBoolean(settings.editorBold, defaultSettings.editorBold),
+    editorItalic: asBoolean(settings.editorItalic, defaultSettings.editorItalic),
+    editorUnderline: asBoolean(settings.editorUnderline, defaultSettings.editorUnderline),
     autosaveDelaySeconds: clampSetting(settings.autosaveDelaySeconds, "autosaveDelaySeconds"),
     snapshotSearchPageSize: clampSetting(settings.snapshotSearchPageSize, "snapshotSearchPageSize"),
     zoomLevel: clampNumber(settings.zoomLevel, ZOOM_MIN, ZOOM_MAX, defaultSettings.zoomLevel),

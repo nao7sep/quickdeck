@@ -83,8 +83,14 @@ describe("normalizeSettings", () => {
       "dark",
       "zen",
       "topmost",
+      "uiFontFamily",
       "editorFontFamily",
       "editorFontSize",
+      "editorLineHeight",
+      "editorPadding",
+      "editorBold",
+      "editorItalic",
+      "editorUnderline",
       "autosaveDelaySeconds",
       "snapshotSearchPageSize",
       "zoomLevel",
@@ -119,6 +125,30 @@ describe("normalizeSettings", () => {
     expect(normalizeSettings({ ...defaultSettings, editorFontFamily: "  Menlo  " }).editorFontFamily).toBe(
       "Menlo",
     );
+  });
+
+  it("keeps the UI font blank (= default) but trims it; reverts a non-string to the default", () => {
+    // Unlike the editor font, a blank UI font is preserved (blank means the built-in default stack).
+    expect(normalizeSettings({ ...defaultSettings, uiFontFamily: "   " }).uiFontFamily).toBe("");
+    expect(normalizeSettings({ ...defaultSettings, uiFontFamily: "  Iosevka  " }).uiFontFamily).toBe("Iosevka");
+    expect(
+      normalizeSettings({ ...defaultSettings, uiFontFamily: 123 } as unknown as AppSettings).uiFontFamily,
+    ).toBe(defaultSettings.uiFontFamily);
+  });
+
+  it("clamps editor line-height and padding, and coerces the style toggles", () => {
+    const r = normalizeSettings({
+      ...defaultSettings,
+      editorLineHeight: 9,
+      editorPadding: -5,
+      editorBold: true,
+      editorItalic: "yes" as unknown as boolean,
+    });
+    expect(r.editorLineHeight).toBe(SETTINGS_BOUNDS.editorLineHeight.max);
+    expect(r.editorPadding).toBe(SETTINGS_BOUNDS.editorPadding.min);
+    expect(r.editorBold).toBe(true);
+    expect(r.editorItalic).toBe(defaultSettings.editorItalic); // non-boolean → default
+    expect(r.editorUnderline).toBe(false);
   });
 
   it("clamps zoomLevel into the supported range", () => {

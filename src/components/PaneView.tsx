@@ -114,6 +114,11 @@ export function PaneView({ pane }: PaneViewProps) {
         style={{
           fontFamily: settings.editorFontFamily,
           fontSize: `${settings.editorFontSize}px`,
+          lineHeight: settings.editorLineHeight,
+          padding: `${settings.editorPadding}px`,
+          fontWeight: settings.editorBold ? "bold" : "normal",
+          fontStyle: settings.editorItalic ? "italic" : "normal",
+          textDecoration: settings.editorUnderline ? "underline" : "none",
         }}
       />
       <footer className="paneFooter">

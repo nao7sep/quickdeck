@@ -13,6 +13,7 @@ import { createDefaultPane, defaultSettings } from "./defaults";
 import { normalizePanes, normalizeSettings } from "./normalize";
 import { appendPane, deletePane as deletePaneOp, reorderPane } from "./paneOps";
 import { multiline, singleLine } from "../utils/textCleanup";
+import { resolveSaveState } from "../utils/saveRace";
 import {
   buildSessionState,
   countSnapshots,
@@ -357,7 +358,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         saveConfig(settings),
         saveSession(buildSessionState(panes, activePaneId)),
       ]);
-      setSaveState(dirtyCounterRef.current === dirtyAtStart ? "saved" : "unsaved");
+      setSaveState(resolveSaveState(dirtyAtStart, dirtyCounterRef.current));
     } catch (error) {
       setSaveState("error");
       throw error;

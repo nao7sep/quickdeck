@@ -7,7 +7,15 @@ type ShortcutsModalProps = {
 
 export function ShortcutsModal({ onClose }: ShortcutsModalProps) {
   return (
-    <ModalBase title="Shortcuts" onRequestClose={onClose}>
+    <ModalBase
+      title="Shortcuts"
+      onRequestClose={onClose}
+      footer={
+        <button className="secondaryButton" type="button" onClick={onClose}>
+          Close
+        </button>
+      }
+    >
       <div className="shortcutList">
         {shortcutDefinitions.map((shortcut) => (
           <div className="shortcutRow" key={shortcut.description}>
