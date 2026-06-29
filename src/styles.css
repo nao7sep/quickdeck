@@ -213,6 +213,11 @@ button {
 .statusBadge {
   display: inline-flex;
   align-items: center;
+  /* Keep each pill at its natural size on a single line. Without this the pills
+     shrink and their text wraps to a second row when the window is narrow, which
+     breaks the fixed-height bar; letting the bar overflow is the lesser evil. */
+  flex-shrink: 0;
+  white-space: nowrap;
   gap: 5px;
   padding: 4px 12px;
   border-radius: 20px;
