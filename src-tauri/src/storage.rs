@@ -1,7 +1,7 @@
 use std::{
     fs::{self, File},
     io::Write,
-    path::Path,
+    path::{Path, PathBuf},
 };
 
 use chrono::{SecondsFormat, Utc};
@@ -10,6 +10,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use sha2::{Digest, Sha256};
 use tauri::AppHandle;
+use zip::write::SimpleFileOptions;
+use zip::ZipWriter;
 
 use crate::paths::app_data_dir;
 
@@ -371,6 +373,176 @@ fn to_string_error(error: impl std::fmt::Display) -> String {
     error.to_string()
 }
 
+// --- Just-in-case data backup primitives ---------------------------------------
+//
+// These back the fleet-wide startup backup (see data-backup conventions): the
+// backup engine in TypeScript stats candidates via `file_metadata`, walks the
+// home root via `list_files_recursive`, reads durable files as text, then writes
+// one zip via `write_zip_archive` and finally the index via `write_index_json`.
+// The Rust core owns every filesystem touch; the TS side is pure decision logic.
+
+// One file's size and last-modified time (epoch milliseconds). The backup engine
+// compares size + mtime against its index to decide, without reading content,
+// which files changed since the last archive.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FileMetadata {
+    pub size: u64,
+    pub mtime_ms: f64,
+}
+
+pub fn file_metadata(path: &str) -> Result<FileMetadata, String> {
+    let meta = fs::metadata(path).map_err(to_string_error)?;
+    let modified = meta.modified().map_err(to_string_error)?;
+    let mtime_ms = modified
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(to_string_error)?
+        .as_millis() as f64;
+    Ok(FileMetadata {
+        size: meta.len(),
+        mtime_ms,
+    })
+}
+
+// One file found under a walked root: its path relative to that root (always
+// forward-slash separated, so it maps straight onto a zip entry name), plus size
+// and mtime for change detection.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WalkedFile {
+    pub relative_path: String,
+    pub size: u64,
+    pub mtime_ms: f64,
+}
+
+fn walk_dir(root: &Path, dir: &Path, out: &mut Vec<WalkedFile>) {
+    let entries = match fs::read_dir(dir) {
+        Ok(entries) => entries,
+        Err(_) => return, // Unreadable subtree: skip it, best-effort.
+    };
+    for entry in entries.flatten() {
+        let file_type = match entry.file_type() {
+            Ok(t) => t,
+            Err(_) => continue,
+        };
+        // is_dir/is_file are both false for a symlink, so symlinks are skipped —
+        // no symlink following, no walk loops.
+        if file_type.is_dir() {
+            walk_dir(root, &entry.path(), out);
+        } else if file_type.is_file() {
+            let meta = match entry.metadata() {
+                Ok(m) => m,
+                Err(_) => continue,
+            };
+            let mtime_ms = match meta
+                .modified()
+                .ok()
+                .and_then(|m| m.duration_since(std::time::UNIX_EPOCH).ok())
+            {
+                Some(d) => d.as_millis() as f64,
+                None => continue,
+            };
+            let path = entry.path();
+            let relative_path = match path.strip_prefix(root) {
+                Ok(rel) => rel.to_string_lossy().replace('\\', "/"),
+                Err(_) => continue,
+            };
+            out.push(WalkedFile {
+                relative_path,
+                size: meta.len(),
+                mtime_ms,
+            });
+        }
+    }
+}
+
+// Recursively lists every regular file under `root` with its size and mtime. A
+// missing root yields an empty list (first run). Exclusions are applied by the
+// backup engine in TypeScript, so this returns everything it can read.
+pub fn list_files_recursive(root: &str) -> Vec<WalkedFile> {
+    let mut files = Vec::new();
+    let root_path = Path::new(root);
+    if root_path.exists() {
+        walk_dir(root_path, root_path, &mut files);
+    }
+    files
+}
+
+// Builds the zip entirely in memory so the construction (entry names, contents,
+// compression, finalization) can be tested without touching disk.
+fn build_zip_bytes(entries: &[(String, String)]) -> Result<Vec<u8>, String> {
+    let mut zip = ZipWriter::new(std::io::Cursor::new(Vec::<u8>::new()));
+    let options = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+
+    for (entry_name, content) in entries {
+        zip.start_file(entry_name, options)
+            .map_err(|e| format!("Failed to add {} to zip: {}", entry_name, e))?;
+        zip.write_all(content.as_bytes())
+            .map_err(|e| format!("Failed to write {} to zip: {}", entry_name, e))?;
+    }
+
+    let cursor = zip
+        .finish()
+        .map_err(|e| format!("Failed to finalize zip: {}", e))?;
+    Ok(cursor.into_inner())
+}
+
+// Writes a zip archive of (entry_name, content) text pairs to `output_path`,
+// creating the parent directory if needed. Entry names are supplied by the caller
+// and must already be unique (case-insensitively) — this primitive does no path
+// mapping and no de-duplication of its own. The archive is staged to a temp path
+// and atomically renamed into place, so the index (written only after this
+// returns) can never reference a torn, half-written archive. Returns the path.
+pub fn write_zip_archive(entries: Vec<(String, String)>, output_path: &str) -> Result<String, String> {
+    if let Some(parent) = Path::new(output_path).parent() {
+        ensure_backups_dir(parent)?;
+    }
+    let bytes = build_zip_bytes(&entries)?;
+    let tmp_path = format!("{}.tmp", output_path);
+    fs::write(&tmp_path, &bytes).map_err(|e| format!("Failed to write backup file: {}", e))?;
+    fs::rename(&tmp_path, output_path)
+        .map_err(|e| format!("Failed to finalize backup file: {}", e))?;
+    Ok(output_path.to_string())
+}
+
+// Reads a file's raw text content. Missing/unreadable is an Err so the backup
+// collector can skip that file best-effort.
+pub fn read_text_file(path: &str) -> Result<String, String> {
+    fs::read_to_string(path).map_err(to_string_error)
+}
+
+// Writes the backup index (or any JSON) atomically to `path`, reusing the same
+// temp-then-rename durability floor as config/state. The backups directory is
+// created lazily (0700 on POSIX) so the index and archives never downgrade a
+// secret's owner-only protection.
+pub fn write_index_json(path: &str, value: &JsonValue) -> Result<(), String> {
+    let target = Path::new(path);
+    if let Some(parent) = target.parent() {
+        ensure_backups_dir(parent)?;
+    }
+    atomic_write_json(target, value)
+}
+
+// Creates the backups directory if missing and restricts it to owner-only on
+// POSIX (0700), matching the secrets floor so an archived secret is never
+// world-readable. A no-op on Windows.
+fn ensure_backups_dir(dir: &Path) -> Result<(), String> {
+    fs::create_dir_all(dir).map_err(to_string_error)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let perms = fs::Permissions::from_mode(0o700);
+        fs::set_permissions(dir, perms).map_err(to_string_error)?;
+    }
+    Ok(())
+}
+
+// Resolves the app's absolute data root, so the webview never reconstructs it
+// (it cannot read QUICKDECK_HOME). The backup service calls this once at startup.
+pub fn data_root(app: &AppHandle) -> Result<PathBuf, String> {
+    app_data_dir(app)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -699,5 +871,127 @@ mod tests {
     fn count_rows(conn: &Connection) -> i64 {
         conn.query_row("select count(*) from snapshots", [], |row| row.get(0))
             .unwrap()
+    }
+
+    // --- backup primitives -------------------------------------------------
+
+    #[test]
+    fn file_metadata_reports_size_and_mtime() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("doc.json");
+        fs::write(&path, b"hello").unwrap();
+        let meta = file_metadata(path.to_str().unwrap()).unwrap();
+        assert_eq!(meta.size, 5);
+        assert!(meta.mtime_ms > 0.0);
+    }
+
+    #[test]
+    fn file_metadata_errors_for_missing_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("nope.json");
+        assert!(file_metadata(path.to_str().unwrap()).is_err());
+    }
+
+    #[test]
+    fn list_files_recursive_returns_empty_for_missing_root() {
+        let dir = tempfile::tempdir().unwrap();
+        let missing = dir.path().join("does-not-exist");
+        assert!(list_files_recursive(missing.to_str().unwrap()).is_empty());
+    }
+
+    #[test]
+    fn list_files_recursive_walks_nested_files_with_relative_forward_slash_paths() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("state.json"), b"{}").unwrap();
+        let nested = dir.path().join("logs").join("inner");
+        fs::create_dir_all(&nested).unwrap();
+        fs::write(nested.join("a.log"), b"x").unwrap();
+
+        let mut result = list_files_recursive(dir.path().to_str().unwrap());
+        result.sort_by(|a, b| a.relative_path.cmp(&b.relative_path));
+        let paths: Vec<&str> = result.iter().map(|f| f.relative_path.as_str()).collect();
+        assert_eq!(paths, vec!["logs/inner/a.log", "state.json"]);
+        let nested_entry = result
+            .iter()
+            .find(|f| f.relative_path == "logs/inner/a.log")
+            .unwrap();
+        assert_eq!(nested_entry.size, 1);
+    }
+
+    #[test]
+    fn build_zip_bytes_produces_a_readable_in_memory_archive() {
+        use std::io::Read;
+        let entries = vec![
+            ("config.json".to_string(), "hello".to_string()),
+            ("state.json".to_string(), "world".to_string()),
+        ];
+        let bytes = build_zip_bytes(&entries).unwrap();
+        let mut archive = zip::ZipArchive::new(std::io::Cursor::new(bytes)).unwrap();
+        assert_eq!(archive.len(), 2);
+        let mut content = String::new();
+        archive
+            .by_name("config.json")
+            .unwrap()
+            .read_to_string(&mut content)
+            .unwrap();
+        assert_eq!(content, "hello");
+    }
+
+    #[test]
+    fn write_zip_archive_writes_a_readable_zip_and_creates_parent() {
+        use std::io::Read;
+        let dir = tempfile::tempdir().unwrap();
+        let output = dir.path().join("backups").join("backup-x.zip");
+        let entries = vec![
+            ("config.json".to_string(), "hello".to_string()),
+            ("state.json".to_string(), "world".to_string()),
+        ];
+        let returned = write_zip_archive(entries, output.to_str().unwrap()).unwrap();
+        assert_eq!(returned, output.to_str().unwrap());
+        assert!(output.exists());
+        // No stray temp file remains beside the finished archive.
+        assert!(!output.with_extension("zip.tmp").exists());
+
+        let f = File::open(&output).unwrap();
+        let mut archive = zip::ZipArchive::new(f).unwrap();
+        assert_eq!(archive.len(), 2);
+        let mut state = String::new();
+        archive
+            .by_name("state.json")
+            .unwrap()
+            .read_to_string(&mut state)
+            .unwrap();
+        assert_eq!(state, "world");
+    }
+
+    #[test]
+    fn read_text_file_reads_content_and_errors_when_missing() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("f.txt");
+        fs::write(&path, "héllo\nworld").unwrap();
+        assert_eq!(read_text_file(path.to_str().unwrap()).unwrap(), "héllo\nworld");
+        assert!(read_text_file(dir.path().join("nope.txt").to_str().unwrap()).is_err());
+    }
+
+    #[test]
+    fn write_index_json_creates_backups_dir_and_writes_object() {
+        let dir = tempfile::tempdir().unwrap();
+        let index_path = dir.path().join("backups").join("index.json");
+        let value = serde_json::json!({ "entries": [] });
+        write_index_json(index_path.to_str().unwrap(), &value).unwrap();
+        assert!(index_path.exists());
+        let read_back = read_json_optional(&index_path).unwrap();
+        assert_eq!(read_back, Some(value));
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = fs::metadata(index_path.parent().unwrap())
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o777;
+            assert_eq!(mode, 0o700);
+        }
     }
 }

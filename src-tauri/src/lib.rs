@@ -3,7 +3,10 @@ mod paths;
 pub mod storage;
 
 use serde_json::{json, Map, Value as JsonValue};
-use storage::{LoadedAppData, SnapshotInput, SnapshotSearchResult, SnapshotWriteResult};
+use storage::{
+    FileMetadata, LoadedAppData, SnapshotInput, SnapshotSearchResult, SnapshotWriteResult,
+    WalkedFile,
+};
 use tauri::{AppHandle, RunEvent};
 
 #[tauri::command]
@@ -112,6 +115,64 @@ fn count_snapshots(app: AppHandle) -> Result<u64, String> {
     )
 }
 
+// --- Just-in-case data backup commands -----------------------------------------
+//
+// Filesystem primitives for the startup backup. The TypeScript engine drives
+// them: stat candidates, walk the home root, read durable files, write one zip,
+// then write the index. Each returns an Err on failure so the best-effort engine
+// records a skip rather than aborting.
+
+#[tauri::command]
+fn file_metadata(path: String) -> Result<FileMetadata, String> {
+    logging::boundary(
+        "file_metadata",
+        json!({ "path": path }),
+        || storage::file_metadata(&path),
+        |meta| json!({ "size": meta.size, "mtimeMs": meta.mtime_ms }),
+    )
+}
+
+#[tauri::command]
+fn list_files_recursive(root: String) -> Result<Vec<WalkedFile>, String> {
+    logging::boundary(
+        "list_files_recursive",
+        json!({ "root": root }),
+        || Ok(storage::list_files_recursive(&root)),
+        |files| json!({ "count": files.len() }),
+    )
+}
+
+#[tauri::command]
+fn write_zip_archive(entries: Vec<(String, String)>, output_path: String) -> Result<String, String> {
+    let total_bytes: usize = entries.iter().map(|(_, content)| content.len()).sum();
+    logging::boundary(
+        "write_zip_archive",
+        json!({ "outputPath": output_path, "entries": entries.len(), "bytes": total_bytes }),
+        || storage::write_zip_archive(entries, &output_path),
+        |path| json!({ "outputPath": path }),
+    )
+}
+
+#[tauri::command]
+fn read_text_file(path: String) -> Result<String, String> {
+    logging::boundary(
+        "read_text_file",
+        json!({ "path": path }),
+        || storage::read_text_file(&path),
+        |text| json!({ "bytes": text.len() }),
+    )
+}
+
+#[tauri::command]
+fn write_index_json(path: String, index: JsonValue) -> Result<(), String> {
+    logging::boundary(
+        "write_index_json",
+        json!({ "path": path }),
+        || storage::write_index_json(&path, &index),
+        |_| json!({}),
+    )
+}
+
 // Receives a structured log object from the sandboxed webview and writes it to
 // the session file. The frontend stamps `time`; the Rust core owns the file.
 #[tauri::command]
@@ -141,6 +202,11 @@ pub fn run() {
             create_snapshots,
             search_snapshots,
             count_snapshots,
+            file_metadata,
+            list_files_recursive,
+            write_zip_archive,
+            read_text_file,
+            write_index_json,
             log_event,
         ])
         .build(tauri::generate_context!())
