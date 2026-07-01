@@ -513,8 +513,8 @@ pub fn read_text_file(path: &str) -> Result<String, String> {
 
 // Writes the backup index (or any JSON) atomically to `path`, reusing the same
 // temp-then-rename durability floor as config/state. The backups directory is
-// created lazily (0700 on POSIX) so the index and archives never downgrade a
-// secret's owner-only protection.
+// created lazily with default modes; secrets are excluded from backups, so no
+// owner-only permission hardening is applied here.
 pub fn write_index_json(path: &str, value: &JsonValue) -> Result<(), String> {
     let target = Path::new(path);
     if let Some(parent) = target.parent() {
@@ -523,17 +523,10 @@ pub fn write_index_json(path: &str, value: &JsonValue) -> Result<(), String> {
     atomic_write_json(target, value)
 }
 
-// Creates the backups directory if missing and restricts it to owner-only on
-// POSIX (0700), matching the secrets floor so an archived secret is never
-// world-readable. A no-op on Windows.
+// Creates the backups directory if missing. Secrets are excluded from backups,
+// so the directory uses default modes with no owner-only permission hardening.
 fn ensure_backups_dir(dir: &Path) -> Result<(), String> {
     fs::create_dir_all(dir).map_err(to_string_error)?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let perms = fs::Permissions::from_mode(0o700);
-        fs::set_permissions(dir, perms).map_err(to_string_error)?;
-    }
     Ok(())
 }
 
@@ -982,16 +975,5 @@ mod tests {
         assert!(index_path.exists());
         let read_back = read_json_optional(&index_path).unwrap();
         assert_eq!(read_back, Some(value));
-
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let mode = fs::metadata(index_path.parent().unwrap())
-                .unwrap()
-                .permissions()
-                .mode()
-                & 0o777;
-            assert_eq!(mode, 0o700);
-        }
     }
 }
