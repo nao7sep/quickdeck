@@ -1,25 +1,16 @@
 name: Release
 
-# QuickDeck is developed and primarily used on macOS. Windows is a secondary
-# target that cannot be cross-compiled from a Mac, so both platforms are built
-# here in CI: macOS on a macos-latest runner, Windows on a windows-latest one.
+# Per the app-release-conventions: test gate -> per-OS package -> attach to a
+# DRAFT release. CI stays minimal — the .dmg / setup.exe / portable-zip packaging
+# lives in scripts/package.sh (macOS) and scripts/package.ps1 (Windows), which run
+# `tauri build`. Nothing is published automatically; a draft is created for the
+# pushed tag, verified, then published by hand (gh release edit --draft=false).
 #
-# fail-fast is disabled so a Windows build failure never blocks the macOS one.
+# Windows can't be cross-compiled from a Mac, so both platforms build in CI.
 #
-# The per-platform builds are gated on a single `test` job that runs the frontend
-# test suite (which includes the version-consistency check across the manifests).
-# A failing test therefore blocks the release before any installer is built.
-#
-# Two ways to trigger:
-#   - Push a tag like v0.1.0  -> builds both platforms and attaches ONLY the two
-#     installers (macOS .dmg + Windows .exe) to a single DRAFT GitHub Release for
-#     that tag (test it, then publish the draft).
-#   - Run manually from the Actions tab ("Run workflow") -> builds both and
-#     uploads the installers as run artifacts, without creating a release.
-#
-# Tauri hardcodes its bundle filenames ({productName}_{version}_{arch}...), so we
-# rename the outputs to the minimal `quickdeck-<version>[-setup].<ext>` pattern
-# before attaching them — matching ImageQueue's release naming and workflow.
+#   - push a tag `v*` -> build both platforms, attach installers + portables to a
+#     single draft release for that tag.
+#   - manual dispatch -> build only (no release), for a smoke check.
 
 on:
   push:
@@ -27,113 +18,59 @@ on:
       - "v*"
   workflow_dispatch:
 
-# Needed for the gh CLI to create/upload the draft release.
 permissions:
   contents: write
 
 jobs:
-  # Gate the release on the frontend test suite. This is platform-independent, so
-  # it runs once on Linux and both build jobs depend on it; a failure (including a
-  # version drift across the manifests) blocks the release before anything builds.
+  # Gate: the frontend test suite (which includes the version-consistency check
+  # across the manifests). Platform-independent, so it runs once and both build
+  # jobs depend on it — a failure blocks the release before anything is built.
   test:
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Setup Node
-        uses: actions/setup-node@v6
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: lts/*
-
-      - name: Install frontend dependencies
-        run: npm ci
-
-      - name: Run frontend tests
-        run: npm test
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
 
   build:
     needs: test
     strategy:
-      fail-fast: false
+      fail-fast: false # a Windows failure never cancels the macOS build
       matrix:
         include:
-          - platform: macos-latest
-            artifact-name: quickdeck-macos
-          - platform: windows-latest
-            artifact-name: quickdeck-windows
-    runs-on: ${{ matrix.platform }}
+          - os: macos-latest
+            package: bash scripts/package.sh
+          - os: windows-latest
+            package: pwsh scripts/package.ps1
+    runs-on: ${{ matrix.os }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Setup Node
-        uses: actions/setup-node@v6
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: lts/*
-
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache Rust build
-        uses: Swatinem/rust-cache@v2
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri -> target
+      - run: npm ci
 
-      - name: Install frontend dependencies
-        run: npm ci
+      # One command per OS — runs `tauri build` and emits the installer + portable
+      # into dist/.
+      - name: Package (host OS)
+        run: ${{ matrix.package }}
 
-      # Build only — no release here. We rename + attach the installers below so
-      # they follow the minimal naming pattern (tauri-action with no tagName just
-      # builds and skips releasing).
-      - name: Build app
-        uses: tauri-apps/tauri-action@v0
-
-      # Tauri names bundles {productName}_{version}_{arch}[-setup].{ext}; copy the
-      # one installer per platform to the minimal `quickdeck-<version>` form. The
-      # version is read from tauri.conf.json — the same field the bundle and the
-      # in-app About dialog derive from — so the installer filename matches the
-      # version reported inside the app. The gating `test` job has already
-      # confirmed that field is present and valid semver.
-      - name: Rename installers to the minimal pattern
-        shell: bash
-        run: |
-          VERSION=$(node -p "require('./src-tauri/tauri.conf.json').version")
-          mkdir -p artifacts
-          shopt -s nullglob
-          for f in src-tauri/target/release/bundle/dmg/*.dmg; do
-            cp "$f" "artifacts/quickdeck-${VERSION}.dmg"
-          done
-          for f in src-tauri/target/release/bundle/nsis/*.exe; do
-            cp "$f" "artifacts/quickdeck-${VERSION}-setup.exe"
-          done
-          ls -la artifacts
-
-      # Tag pushes: attach this platform's installer to the shared draft release.
-      # The first matrix job to finish creates the draft; the other's create is a
-      # no-op (|| true). --clobber makes re-running the same tag idempotent.
-      - name: Attach installer to the draft release (tag pushes)
+      - name: Attach to draft release
         if: github.ref_type == 'tag'
-        shell: bash
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ github.ref_name }}
-        run: |
-          shopt -s nullglob
-          files=(artifacts/*.dmg artifacts/*-setup.exe)
-          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --draft \
-            --title "QuickDeck $TAG" \
-            --notes "QuickDeck $TAG — macOS (.dmg) and Windows (.exe) installers." \
-            2>/dev/null || true
-          gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" "${files[@]}" --clobber
-
-      # Manual runs: no release, just the installers as downloadable artifacts.
-      - name: Upload installers as run artifacts (manual runs)
-        if: github.ref_type != 'tag'
-        uses: actions/upload-artifact@v7
+        uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b # v3.0.1
         with:
-          name: ${{ matrix.artifact-name }}
-          if-no-files-found: error
-          path: |
+          draft: true
+          prerelease: true # 0.x is pre-release
+          files: |
             artifacts/*.dmg
             artifacts/*-setup.exe
+            artifacts/*-mac.zip
+            artifacts/*-win.zip
