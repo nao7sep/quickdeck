@@ -141,6 +141,21 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
           dataDir: data.dataDir,
         });
 
+        // Materialize config.json on first run so the settings file exists on disk immediately,
+        // not only after the first change (storage-path conventions, "Materializing settings on
+        // first run"). data.config is null only when the file is absent — the Rust loader returns
+        // None iff it does not exist — so this is create-if-absent (an existing config is never
+        // overwritten), persisting the real normalized defaults through the normal save_config path
+        // rather than a hand-built literal. A write failure is logged, not fatal. state.json is left
+        // alone (volatile UI state). Skipped if the effect was canceled before we got here.
+        if (!canceled && data.config === null) {
+          try {
+            await saveConfig(effectiveSettings);
+          } catch (error) {
+            logWarn("failed to create config.json on first run", { error: serializeError(error) });
+          }
+        }
+
         try {
           const initialCount = await countSnapshots();
           if (!canceled) {
