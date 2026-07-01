@@ -13,6 +13,16 @@ use tauri::AppHandle;
 
 use crate::paths::app_data_dir;
 
+// The three files the data directory holds, each named in exactly one place so
+// the on-disk layout has a single source of truth.
+//
+// - `config.json`      — durable user settings.
+// - `state.json`       — throwaway UI/window/session state, safe to delete.
+// - `snapshots.sqlite3` — the snapshot store.
+pub const CONFIG_FILE_NAME: &str = "config.json";
+pub const STATE_FILE_NAME: &str = "state.json";
+pub const SNAPSHOTS_DB_FILE_NAME: &str = "snapshots.sqlite3";
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LoadedAppData {
@@ -56,8 +66,8 @@ pub struct SnapshotSearchResult {
 
 pub fn load_app_data(app: &AppHandle) -> Result<LoadedAppData, String> {
     let data_dir = app_data_dir(app)?;
-    let config = read_json_optional(&data_dir.join("config.json"))?;
-    let session = read_json_optional(&data_dir.join("session.json"))?;
+    let config = read_json_optional(&data_dir.join(CONFIG_FILE_NAME))?;
+    let session = read_json_optional(&data_dir.join(STATE_FILE_NAME))?;
     ensure_snapshot_db(&data_dir)?;
 
     Ok(LoadedAppData {
@@ -70,12 +80,12 @@ pub fn load_app_data(app: &AppHandle) -> Result<LoadedAppData, String> {
 
 pub fn save_config(app: &AppHandle, config: JsonValue) -> Result<(), String> {
     let data_dir = app_data_dir(app)?;
-    atomic_write_json(&data_dir.join("config.json"), &config)
+    atomic_write_json(&data_dir.join(CONFIG_FILE_NAME), &config)
 }
 
 pub fn save_session(app: &AppHandle, session: JsonValue) -> Result<(), String> {
     let data_dir = app_data_dir(app)?;
-    atomic_write_json(&data_dir.join("session.json"), &session)
+    atomic_write_json(&data_dir.join(STATE_FILE_NAME), &session)
 }
 
 pub fn create_snapshot(
@@ -308,12 +318,12 @@ fn atomic_write_json(path: &Path, value: &JsonValue) -> Result<(), String> {
 
 fn open_snapshot_db(data_dir: &Path) -> Result<Connection, String> {
     ensure_snapshot_db(data_dir)?;
-    Connection::open(data_dir.join("snapshots.sqlite3")).map_err(to_string_error)
+    Connection::open(data_dir.join(SNAPSHOTS_DB_FILE_NAME)).map_err(to_string_error)
 }
 
 fn ensure_snapshot_db(data_dir: &Path) -> Result<(), String> {
     fs::create_dir_all(data_dir).map_err(to_string_error)?;
-    let conn = Connection::open(data_dir.join("snapshots.sqlite3")).map_err(to_string_error)?;
+    let conn = Connection::open(data_dir.join(SNAPSHOTS_DB_FILE_NAME)).map_err(to_string_error)?;
     init_schema(&conn)
 }
 

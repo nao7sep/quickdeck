@@ -4,7 +4,7 @@ import { logWarn, serializeError } from "../services/logger";
 
 // Non-dismissible halt shown when persisted state could not be loaded.
 //
-// When config.json or session.json fails to read or parse, the app must not
+// When config.json or state.json fails to read or parse, the app must not
 // fall through to the editor. Doing so would let the default in-memory state
 // be autosaved over the user's existing files on the first edit. Instead the
 // shell renders this screen until the user quits and repairs the data

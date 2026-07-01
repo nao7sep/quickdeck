@@ -196,7 +196,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   // Commit-time cleanup for the pane title: the input stores its value verbatim
   // while the user types (never cleaned mid-edit), then this runs on blur to
   // single-line it — so a pasted multi-line value can't leak \r/\n into
-  // session.json. The title is not an identity field, so we normalize rather
+  // state.json. The title is not an identity field, so we normalize rather
   // than validate. Decide whether anything changes before touching state (the
   // updater must stay pure under StrictMode's double-invoke), and only mark
   // unsaved when cleanup actually changes the value, so a blur over an

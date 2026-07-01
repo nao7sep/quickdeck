@@ -1,6 +1,6 @@
 mod logging;
 mod paths;
-mod storage;
+pub mod storage;
 
 use serde_json::{json, Map, Value as JsonValue};
 use storage::{LoadedAppData, SnapshotInput, SnapshotSearchResult, SnapshotWriteResult};

@@ -13,7 +13,7 @@ describe("singleLine (pane title on commit)", () => {
 
   it("flattens a pasted multi-line value into one line (default)", () => {
     // The defect this fixes: a pasted multi-line title must not leak \r/\n into
-    // session.json.
+    // state.json.
     expect(singleLine("first line\nsecond line")).toBe("first line second line");
     expect(singleLine("a\r\nb")).toBe("a b");
     expect(singleLine("aaa\n \n\nbbb")).toBe("aaa bbb");
