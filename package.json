@@ -1,7 +1,7 @@
 {
   "name": "quickdeck",
   "private": true,
-  "version": "0.1.1",
+  "version": "0.1.0",
   "description": "A local-first multi-pane plain text workspace.",
   "author": "Yoshinao Inoguchi <nao7sep@gmail.com>",
   "license": "MIT",
