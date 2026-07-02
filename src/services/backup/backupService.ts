@@ -7,7 +7,7 @@
 // session can touch them.
 
 import { isTauri } from "@tauri-apps/api/core";
-import { logError, logInfo, logWarn, serializeError } from "../logger";
+import { logDebug, logError, logInfo, logWarn, serializeError } from "../logger";
 import { runBackup } from "./backupEngine";
 import type { BackupInputs } from "./backupCollector";
 import type { BackupReport } from "./backupTypes";
@@ -46,7 +46,8 @@ function logReport(report: BackupReport): void {
     return;
   }
   if (report.nothingChanged) {
-    logInfo("backup: nothing changed");
+    // The common outcome; at debug so a normal no-op run is silent in production.
+    logDebug("backup: nothing changed");
     return;
   }
   logInfo("backup created", {
