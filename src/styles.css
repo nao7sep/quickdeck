@@ -143,6 +143,12 @@ button {
   cursor: pointer;
 }
 
+/* A disabled button shows the plain arrow, never the hand — a dead button must
+   not invite a click. Overrides the global button pointer above. */
+button:disabled {
+  cursor: default;
+}
+
 /* ── Scroll Bars ─────────────────────────────────────────────── */
 
 /* One global rule for every overflow container (pane editors, modal bodies, the
