@@ -12,8 +12,9 @@ import type { BackupCandidate, BackupIndex, BackupIndexEntry } from "./backupTyp
 // mtime, and hashing every file on every launch is the cost this avoids.
 export const MTIME_MATCH_TOLERANCE_MS = 2000;
 
-// The latest index row per archivePath. archivedAt is a "yyyymmdd-hhmmss-utc"
-// stamp, so a plain lexicographic max is chronological.
+// The latest index row per archivePath. archivedAt is a "yyyymmdd-hhmmss-fff-utc"
+// stamp (older rows may be the pre-millisecond "yyyymmdd-hhmmss-utc", left as-is),
+// so a plain lexicographic max is chronological.
 function latestByPath(index: BackupIndex): Map<string, BackupIndexEntry> {
   const latest = new Map<string, BackupIndexEntry>();
   for (const entry of index.entries) {

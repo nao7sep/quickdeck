@@ -6,7 +6,10 @@
 // archived file per run in which that file changed; the latest row per
 // archivePath (by archivedAt) describes the most recent capture.
 export interface BackupIndexEntry {
-  archivedAt: string; // run stamp "yyyymmdd-hhmmss-utc"; also the zip's stem
+  // Run stamp "yyyymmdd-hhmmss-fff-utc" (also the zip's stem). Rows written before
+  // milliseconds were adopted carry the second-precision "yyyymmdd-hhmmss-utc" and
+  // stay valid as-is — never migrated or rewritten.
+  archivedAt: string;
   archivePath: string; // entry path inside the archive (forward-slash)
   sizeBytes: number;
   lastWriteUtc: string; // ISO 8601, truncated to whole seconds

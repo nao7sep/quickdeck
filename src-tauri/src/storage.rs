@@ -286,21 +286,35 @@ fn read_json_optional(path: &Path) -> Result<Option<JsonValue>, String> {
         .map_err(to_string_error)
 }
 
+// The atomic-write temp name for `path`: `<stem>-<discriminator>.tmp`, alongside
+// `path` in the same directory (never a different placement). The discriminator
+// is meant to be a nanoid, per house style, but this Rust core has no nanoid
+// utility of its own (the `nanoid` package is a frontend-only dependency, not
+// reachable from here) and this rollout does not add a crate dependency for it —
+// so a nanosecond timestamp, the uniqueness source this file already used, fills
+// the discriminator slot instead.
+fn temp_path_for(path: &Path) -> Result<PathBuf, String> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| format!("missing parent directory for {}", path.display()))?;
+    let stem = path
+        .file_stem()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| format!("invalid file name for {}", path.display()))?;
+    Ok(parent.join(format!(
+        "{}-{}.tmp",
+        stem,
+        Utc::now().timestamp_nanos_opt().unwrap_or(0)
+    )))
+}
+
 fn atomic_write_json(path: &Path, value: &JsonValue) -> Result<(), String> {
     let parent = path
         .parent()
         .ok_or_else(|| format!("missing parent directory for {}", path.display()))?;
     fs::create_dir_all(parent).map_err(to_string_error)?;
 
-    let file_name = path
-        .file_name()
-        .and_then(|name| name.to_str())
-        .ok_or_else(|| format!("invalid file name for {}", path.display()))?;
-    let tmp_path = parent.join(format!(
-        ".{}.{}.tmp",
-        file_name,
-        Utc::now().timestamp_nanos_opt().unwrap_or(0)
-    ));
+    let tmp_path = temp_path_for(path)?;
     let bytes = serde_json::to_vec_pretty(value).map_err(to_string_error)?;
 
     {
@@ -494,11 +508,12 @@ fn build_zip_bytes(entries: &[(String, String)]) -> Result<Vec<u8>, String> {
 // and atomically renamed into place, so the index (written only after this
 // returns) can never reference a torn, half-written archive. Returns the path.
 pub fn write_zip_archive(entries: Vec<(String, String)>, output_path: &str) -> Result<String, String> {
-    if let Some(parent) = Path::new(output_path).parent() {
+    let target = Path::new(output_path);
+    if let Some(parent) = target.parent() {
         ensure_backups_dir(parent)?;
     }
     let bytes = build_zip_bytes(&entries)?;
-    let tmp_path = format!("{}.tmp", output_path);
+    let tmp_path = temp_path_for(target)?;
     fs::write(&tmp_path, &bytes).map_err(|e| format!("Failed to write backup file: {}", e))?;
     fs::rename(&tmp_path, output_path)
         .map_err(|e| format!("Failed to finalize backup file: {}", e))?;
@@ -509,6 +524,15 @@ pub fn write_zip_archive(entries: Vec<(String, String)>, output_path: &str) -> R
 // collector can skip that file best-effort.
 pub fn read_text_file(path: &str) -> Result<String, String> {
     fs::read_to_string(path).map_err(to_string_error)
+}
+
+// Reports whether `path` already exists (file or directory). The backup engine
+// probes this before finalizing an archive's name, to detect a same-millisecond
+// collision with a prior `backup-<archivedAt>.zip` (e.g. two instances of the app
+// starting at once) and pick the next free stamp instead — the no-clobber create
+// in the data-backup conventions. Never used for any other decision.
+pub fn path_exists(path: &str) -> bool {
+    Path::new(path).exists()
 }
 
 // Writes the backup index (or any JSON) atomically to `path`, reusing the same
@@ -844,6 +868,31 @@ mod tests {
         atomic_write_json(&path, &value).unwrap();
         let read_back = read_json_optional(&path).unwrap();
         assert_eq!(read_back, Some(value));
+
+        // No stray temp file remains beside the finished target — the rename left
+        // exactly one file in the directory, named exactly "config.json".
+        let entries: Vec<_> = fs::read_dir(dir.path())
+            .unwrap()
+            .map(|e| e.unwrap().file_name())
+            .collect();
+        assert_eq!(entries, vec![std::ffi::OsString::from("config.json")]);
+    }
+
+    #[test]
+    fn temp_path_for_uses_stem_discriminator_dot_tmp_shape_in_the_same_directory() {
+        // <stem>-<discriminator>.tmp — the derived-filename grammar: one final
+        // extension, the discriminator hyphen-joined onto the target's stem
+        // (never dot-appended after the full "config.json"), alongside the target.
+        let path = Path::new("/data/config.json");
+        let tmp = temp_path_for(path).unwrap();
+        assert_eq!(tmp.parent(), path.parent());
+
+        let tmp_name = tmp.file_name().and_then(|n| n.to_str()).unwrap();
+        assert!(tmp_name.starts_with("config-"), "unexpected tmp name: {tmp_name}");
+        assert!(tmp_name.ends_with(".tmp"), "unexpected tmp name: {tmp_name}");
+        assert!(!tmp_name.contains("config.json"), "old shape leaked in: {tmp_name}");
+        let discriminator = &tmp_name["config-".len()..tmp_name.len() - ".tmp".len()];
+        assert!(!discriminator.is_empty(), "discriminator missing: {tmp_name}");
     }
 
     #[test]
@@ -942,8 +991,15 @@ mod tests {
         let returned = write_zip_archive(entries, output.to_str().unwrap()).unwrap();
         assert_eq!(returned, output.to_str().unwrap());
         assert!(output.exists());
-        // No stray temp file remains beside the finished archive.
-        assert!(!output.with_extension("zip.tmp").exists());
+        // No stray temp file remains beside the finished archive — the backups
+        // directory holds exactly the one finished zip, named exactly "backup-x.zip"
+        // (not the old "backup-x.zip.tmp" dot-appended shape, and not the new
+        // "backup-x-<discriminator>.tmp" shape either).
+        let entries: Vec<_> = fs::read_dir(output.parent().unwrap())
+            .unwrap()
+            .map(|e| e.unwrap().file_name())
+            .collect();
+        assert_eq!(entries, vec![std::ffi::OsString::from("backup-x.zip")]);
 
         let f = File::open(&output).unwrap();
         let mut archive = zip::ZipArchive::new(f).unwrap();
@@ -964,6 +1020,17 @@ mod tests {
         fs::write(&path, "héllo\nworld").unwrap();
         assert_eq!(read_text_file(path.to_str().unwrap()).unwrap(), "héllo\nworld");
         assert!(read_text_file(dir.path().join("nope.txt").to_str().unwrap()).is_err());
+    }
+
+    #[test]
+    fn path_exists_reports_presence_and_absence() {
+        let dir = tempfile::tempdir().unwrap();
+        let present = dir.path().join("here.zip");
+        fs::write(&present, b"x").unwrap();
+        let missing = dir.path().join("not-here.zip");
+
+        assert!(path_exists(present.to_str().unwrap()));
+        assert!(!path_exists(missing.to_str().unwrap()));
     }
 
     #[test]

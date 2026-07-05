@@ -1,15 +1,18 @@
 // Time helpers for the backup. Pure and UTC-only so they are deterministic under
 // test — the caller passes the instant in as epoch milliseconds.
 
-// Formats an instant as "yyyymmdd-hhmmss-utc" in UTC. This is the run stamp and
-// also the archive's stem (backup-<stamp>.zip), so it is filename-safe and sorts
+// Formats an instant as "yyyymmdd-hhmmss-fff-utc" in UTC — the machine-paced
+// millisecond form (timestamp-conventions), since this stamp is assigned by the
+// app itself rather than authored by a person. This is the run stamp and also
+// the archive's stem (backup-<stamp>.zip), so it is filename-safe and sorts
 // chronologically as a plain string.
 export function backupTimestamp(nowMs: number): string {
   const d = new Date(nowMs);
-  const pad = (n: number) => String(n).padStart(2, "0");
+  const pad = (n: number, width = 2) => String(n).padStart(width, "0");
   return (
     `${d.getUTCFullYear()}${pad(d.getUTCMonth() + 1)}${pad(d.getUTCDate())}` +
-    `-${pad(d.getUTCHours())}${pad(d.getUTCMinutes())}${pad(d.getUTCSeconds())}-utc`
+    `-${pad(d.getUTCHours())}${pad(d.getUTCMinutes())}${pad(d.getUTCSeconds())}` +
+    `-${pad(d.getUTCMilliseconds(), 3)}-utc`
   );
 }
 

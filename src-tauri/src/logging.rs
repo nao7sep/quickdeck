@@ -1,6 +1,6 @@
 //! Per-session, append-only, JSON-Lines session logger.
 //!
-//! One file per process launch under `~/.quickdeck/logs/<yyyymmdd-hhmmss-utc>.log`.
+//! One file per process launch under `~/.quickdeck/logs/<yyyymmdd-hhmmss-fff-utc>.log`.
 //! The privileged Rust core owns the file; the sandboxed webview forwards
 //! structured log objects via the `log_event` command (see `lib.rs`). Each line
 //! is one JSON object with a fixed envelope (`time`, `level`, `message`) plus
@@ -126,13 +126,21 @@ pub fn init(app: &AppHandle, version: &str) {
     );
 }
 
+// Formats `now` as the session-log filename stem: `yyyymmdd-hhmmss-fff-utc`, the
+// machine-paced millisecond form (see timestamp-conventions). Pure and
+// injectable so the shape is unit-testable without spinning up an AppHandle.
+fn session_stamp(now: chrono::DateTime<Utc>) -> String {
+    format!("{}-{:03}-utc", now.format("%Y%m%d-%H%M%S"), now.timestamp_subsec_millis())
+}
+
 fn open_session_file(app: &AppHandle) -> Result<File, String> {
     let dir = paths::logs_dir(app)?;
-    // UTC session-start stamp and nothing else — strictly `yyyymmdd-hhmmss-utc.log`
+    // UTC session-start stamp and nothing else — strictly `yyyymmdd-hhmmss-fff-utc.log`
     // (see timestamp-conventions). `create_new` so a launch never appends into an
-    // existing file; a same-second collision between two launches is accepted, not
-    // engineered around — the create simply fails and `init` degrades to stderr.
-    let stamp = Utc::now().format("%Y%m%d-%H%M%S-utc").to_string();
+    // existing file; a same-millisecond collision between two launches is
+    // accepted, not engineered around — the create simply fails and `init`
+    // degrades to stderr.
+    let stamp = session_stamp(Utc::now());
     let path = dir.join(format!("{stamp}.log"));
     OpenOptions::new()
         .create_new(true)
@@ -406,6 +414,20 @@ mod tests {
 
     fn map(value: Value) -> Map<String, Value> {
         into_map(value)
+    }
+
+    // --- session_stamp ------------------------------------------------------
+
+    #[test]
+    fn session_stamp_is_yyyymmdd_hhmmss_fff_utc() {
+        let now: chrono::DateTime<Utc> = "2026-06-10T03:15:42.123Z".parse().unwrap();
+        assert_eq!(session_stamp(now), "20260610-031542-123-utc");
+    }
+
+    #[test]
+    fn session_stamp_zero_pads_milliseconds() {
+        let now: chrono::DateTime<Utc> = "2026-01-05T03:04:09.007Z".parse().unwrap();
+        assert_eq!(session_stamp(now), "20260105-030409-007-utc");
     }
 
     #[test]

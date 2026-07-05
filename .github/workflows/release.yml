@@ -23,8 +23,9 @@ permissions:
 
 jobs:
   # Gate: the frontend test suite (which includes the version-consistency check
-  # across the manifests). Platform-independent, so it runs once and both build
-  # jobs depend on it — a failure blocks the release before anything is built.
+  # across the manifests) plus the Rust core's own test suite. Platform-independent,
+  # so it runs once and both build jobs depend on it — a failure blocks the
+  # release before anything is built.
   test:
     runs-on: macos-latest
     steps:
@@ -32,9 +33,16 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: lts/*
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
+      - name: Rust tests
+        working-directory: src-tauri
+        run: cargo test
 
   build:
     needs: test

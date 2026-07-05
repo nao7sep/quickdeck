@@ -163,6 +163,19 @@ fn read_text_file(path: String) -> Result<String, String> {
     )
 }
 
+// Existence probe backing the backup engine's no-clobber archive create: before
+// settling on an archivedAt stamp, it checks whether that stamp's zip name is
+// already taken and advances to the next millisecond if so (see storage.rs).
+#[tauri::command]
+fn path_exists(path: String) -> Result<bool, String> {
+    logging::boundary(
+        "path_exists",
+        json!({ "path": path }),
+        || Ok(storage::path_exists(&path)),
+        |exists| json!({ "exists": exists }),
+    )
+}
+
 #[tauri::command]
 fn write_index_json(path: String, index: JsonValue) -> Result<(), String> {
     logging::boundary(
@@ -206,6 +219,7 @@ pub fn run() {
             list_files_recursive,
             write_zip_archive,
             read_text_file,
+            path_exists,
             write_index_json,
             log_event,
         ])

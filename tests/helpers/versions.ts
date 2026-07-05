@@ -36,3 +36,25 @@ export function parseCargoPackageVersion(tomlText: string): string {
   }
   return match[1];
 }
+
+// Cargo.lock is a series of `[[package]]` array-of-tables, one per crate in the
+// dependency graph, plus a leading top-level `version = <lockfile format>` line
+// that is NOT a package version and must never be matched. This reads the
+// `version` field of the one `[[package]]` block whose `name` equals
+// `packageName` — used to pin the lockfile's own record of this crate's own
+// version, a copy distinct from (and easy to leave stale relative to)
+// Cargo.toml's declaration.
+export function parseCargoLockPackageVersion(tomlText: string, packageName: string): string {
+  const blocks = tomlText.split(/\n(?=\[\[package\]\])/);
+  for (const block of blocks) {
+    if (!block.startsWith("[[package]]")) continue;
+    const nameMatch = /^[ \t]*name[ \t]*=[ \t]*["']([^"']+)["']/m.exec(block);
+    if (nameMatch?.[1] !== packageName) continue;
+    const versionMatch = /^[ \t]*version[ \t]*=[ \t]*["']([^"']+)["']/m.exec(block);
+    if (!versionMatch) {
+      throw new Error(`No version in the [[package]] block for "${packageName}"`);
+    }
+    return versionMatch[1];
+  }
+  throw new Error(`No [[package]] block named "${packageName}"`);
+}

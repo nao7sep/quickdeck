@@ -4,7 +4,7 @@
 // mutating store:
 //   - logs/     : session logs, not user data (fleet floor).
 //   - backups/  : our own archives and index (never back up the backups).
-//   - *.tmp     : atomic-write temp files (".{name}.{ts}.tmp") mid-rename (floor).
+//   - *.tmp     : atomic-write temp files ("<stem>-<discriminator>.tmp") mid-rename (floor).
 //   - snapshots.sqlite3 (+ -wal / -shm sidecars): the monolithic SQLite snapshot
 //     store — excluded on principle (size/mtime churn on every write, carries its
 //     own atomic-commit/journaling integrity; high cost, low value). App-specific.

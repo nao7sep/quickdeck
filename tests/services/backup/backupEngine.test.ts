@@ -60,12 +60,13 @@ vi.mock("../../../src/services/backup/backupFs", () => ({
     put(outputPath, JSON.stringify(entries.map(([name]) => name)));
     return outputPath;
   },
+  pathExists: async (path: string) => fs.has(path),
 }));
 
 // Imported after the mock is registered.
 let runBackup: typeof import("../../../src/services/backup/backupEngine").runBackup;
 
-const NOW = Date.UTC(2026, 6, 1, 8, 0, 0); // -> 20260701-080000-utc
+const NOW = Date.UTC(2026, 6, 1, 8, 0, 0, 250); // -> 20260701-080000-250-utc
 const INDEX_PATH = "/home/backups/index.json";
 
 function baseInputs(): BackupInputs {
@@ -106,11 +107,11 @@ describe("runBackup", () => {
     expect(report.fatal).toBeNull();
     expect(report.nothingChanged).toBe(false);
     expect(report.indexWasReset).toBe(false);
-    expect(report.archiveFileName).toBe("backup-20260701-080000-utc.zip");
+    expect(report.archiveFileName).toBe("backup-20260701-080000-250-utc.zip");
     // config.json + state.json only. snapshots.sqlite3(+wal/shm) and logs/ excluded.
     expect(report.filesArchived).toBe(2);
 
-    const archived = archivedNames("backup-20260701-080000-utc.zip");
+    const archived = archivedNames("backup-20260701-080000-250-utc.zip");
     expect([...archived].sort()).toEqual(["config.json", "state.json"]);
     // The monolithic SQLite store and its sidecars are NOT in the archive.
     expect(archived).not.toContain("snapshots.sqlite3");
@@ -119,7 +120,7 @@ describe("runBackup", () => {
 
     // Archive is written before the index (crash-safety invariant).
     expect(callOrder).toEqual([
-      "zip:/home/backups/backup-20260701-080000-utc.zip",
+      "zip:/home/backups/backup-20260701-080000-250-utc.zip",
       `index:${INDEX_PATH}`,
     ]);
 
@@ -129,7 +130,9 @@ describe("runBackup", () => {
     expect(Array.isArray(index.entries)).toBe(true);
     expect(index.entries).toHaveLength(2);
     expect(index.entries[0]).toMatchObject({
-      archivedAt: "20260701-080000-utc",
+      // Millisecond-precision archivedAt (yyyymmdd-hhmmss-fff-utc), not the old
+      // second-precision "20260701-080000-utc".
+      archivedAt: "20260701-080000-250-utc",
       lastWriteUtc: "1970-01-01T00:00:01Z",
     });
   });
@@ -156,7 +159,7 @@ describe("runBackup", () => {
 
     const report = await runBackup(baseInputs(), NOW + 60_000);
     expect(report.filesArchived).toBe(1);
-    expect(archivedNames("backup-20260701-080100-utc.zip")).toEqual(["state.json"]);
+    expect(archivedNames("backup-20260701-080100-250-utc.zip")).toEqual(["state.json"]);
     // Index now holds the original 2 rows plus the one new capture.
     expect(readIndex().entries).toHaveLength(3);
   });
@@ -168,6 +171,31 @@ describe("runBackup", () => {
     const report = await runBackup(baseInputs(), NOW);
     expect(report.indexWasReset).toBe(true);
     expect(report.filesArchived).toBe(2);
+  });
+
+  it("advances the archivedAt stamp when the target archive name is already taken", async () => {
+    seedFiles();
+    // Pre-occupy the name this run would naturally stamp — e.g. a second
+    // instance of the app that already wrote a backup this same millisecond.
+    put("/home/backups/backup-20260701-080000-250-utc.zip", "[]");
+
+    const report = await runBackup(baseInputs(), NOW);
+    expect(report.fatal).toBeNull();
+    // Advanced by exactly 1 ms past the colliding stamp.
+    expect(report.archiveFileName).toBe("backup-20260701-080000-251-utc.zip");
+
+    // The winning stamp names both the zip and the index rows — never a mismatch.
+    expect(archivedNames("backup-20260701-080000-251-utc.zip").sort()).toEqual([
+      "config.json",
+      "state.json",
+    ]);
+    const index = readIndex();
+    expect(index.entries.every((entry) => entry.archivedAt === "20260701-080000-251-utc")).toBe(
+      true,
+    );
+
+    // The pre-occupied name is untouched — no clobber.
+    expect(archivedNames("backup-20260701-080000-250-utc.zip")).toEqual([]);
   });
 
   it("records a skip for an unreadable file but still backs up the rest", async () => {

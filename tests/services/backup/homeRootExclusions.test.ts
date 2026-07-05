@@ -13,7 +13,7 @@ describe("isExcludedHomeFile", () => {
     expect(isExcludedHomeFile("logs/20260701-000000-utc.log")).toBe(true);
     expect(isExcludedHomeFile("backups/index.json")).toBe(true);
     expect(isExcludedHomeFile("backups/backup-20260701-000000-utc.zip")).toBe(true);
-    expect(isExcludedHomeFile(".config.json.123.tmp")).toBe(true);
+    expect(isExcludedHomeFile("config-1a2b3c4d5e6f.tmp")).toBe(true);
   });
 
   it("excludes the monolithic SQLite snapshot store and its WAL sidecars", () => {

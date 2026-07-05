@@ -37,6 +37,13 @@ export async function readTextFileContent(path: string): Promise<string> {
   return await invoke<string>("read_text_file", { path });
 }
 
+// Reports whether `path` already exists. The engine uses this to detect a
+// same-millisecond archive-name collision before finalizing archivedAt (the
+// no-clobber create) — never for any other decision.
+export async function pathExists(path: string): Promise<boolean> {
+  return await invoke<boolean>("path_exists", { path });
+}
+
 // Writes a zip archive of [entryName, content] text pairs to `outputPath` (atomic
 // temp + rename on the Rust side), creating the backups directory if needed. Entry
 // names must already be unique (case-insensitively). Returns the output path.

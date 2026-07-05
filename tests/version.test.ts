@@ -1,9 +1,14 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { SEMVER, parseCargoPackageVersion, parseJsonVersion } from "./helpers/versions";
+import {
+  SEMVER,
+  parseCargoLockPackageVersion,
+  parseCargoPackageVersion,
+  parseJsonVersion,
+} from "./helpers/versions";
 
-// The app version is declared in four manifests, each of which its own tool
+// The app version is declared in five manifests, each of which its own tool
 // requires to carry a literal value:
 //
 //   - src-tauri/tauri.conf.json  the version the bundle/installer carries and
@@ -15,8 +20,12 @@ import { SEMVER, parseCargoPackageVersion, parseJsonVersion } from "./helpers/ve
 //     version in two places and goes stale if package.json is bumped without a
 //     reinstall.
 //   - src-tauri/Cargo.toml        the Rust crate version.
+//   - src-tauri/Cargo.lock        cargo's lockfile, which carries its own copy
+//     of the quickdeck crate's version in its `[[package]] name = "quickdeck"`
+//     block and goes stale if Cargo.toml is bumped without a `cargo` command
+//     (e.g. `cargo build`, `cargo check`, `cargo test`) re-resolving the lock.
 //
-// Every user-facing surface derives from tauri.conf.json, so the other three
+// Every user-facing surface derives from tauri.conf.json, so the other four
 // only have to stay equal to it. This file is the guard that they do, and the
 // release workflow runs the test suite (.github/workflows/release.yml: the build
 // job needs the test job), so a drift fails the suite and blocks the release
@@ -57,5 +66,11 @@ describe("app version is consistent across manifests", () => {
 
   it("src-tauri/Cargo.toml matches the canonical version", () => {
     expect(parseCargoPackageVersion(read("src-tauri/Cargo.toml"))).toBe(canonicalVersion());
+  });
+
+  it("src-tauri/Cargo.lock's own quickdeck package entry matches the canonical version", () => {
+    expect(
+      parseCargoLockPackageVersion(read("src-tauri/Cargo.lock"), "quickdeck"),
+    ).toBe(canonicalVersion());
   });
 });

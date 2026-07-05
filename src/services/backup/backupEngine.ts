@@ -10,6 +10,7 @@ import {
   writeIndex,
   writeZipArchive,
   readTextFileContent,
+  pathExists,
   joinPath,
 } from "./backupFs";
 import type {
@@ -28,6 +29,27 @@ const INDEX_FILE_NAME = "index.json";
 
 function describeError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+// Picks the archivedAt stamp this run will use: `backupTimestamp(nowMs)`, unless
+// that stamp's `backup-<archivedAt>.zip` already exists in `backupsDir` — a
+// same-millisecond collision, most commonly two instances of the app starting at
+// once — in which case it advances one millisecond and checks again, looping
+// until it finds a free name (the no-clobber create in the data-backup
+// conventions). The winning stamp is used for both the archive's file name and
+// its index rows, so the two can never disagree.
+async function resolveArchiveStamp(
+  backupsDir: string,
+  nowMs: number,
+): Promise<{ archivedAt: string; archiveFileName: string }> {
+  let candidateMs = nowMs;
+  for (;;) {
+    const archivedAt = backupTimestamp(candidateMs);
+    const archiveFileName = `backup-${archivedAt}.zip`;
+    const taken = await pathExists(joinPath(backupsDir, archiveFileName));
+    if (!taken) return { archivedAt, archiveFileName };
+    candidateMs += 1;
+  }
 }
 
 // Loads the index. A missing index is a normal first run (empty). A corrupt or
@@ -96,8 +118,7 @@ export async function runBackup(
       };
     }
 
-    const archivedAt = backupTimestamp(nowMs);
-    const archiveFileName = `backup-${archivedAt}.zip`;
+    const { archivedAt, archiveFileName } = await resolveArchiveStamp(backupsDir, nowMs);
 
     // Archive first...
     await writeZipArchive(entries, joinPath(backupsDir, archiveFileName));
