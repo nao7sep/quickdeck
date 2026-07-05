@@ -1,4 +1,5 @@
 mod logging;
+mod nanoid;
 mod paths;
 pub mod storage;
 
