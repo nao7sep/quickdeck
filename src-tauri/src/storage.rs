@@ -432,6 +432,7 @@ fn to_string_error(error: impl std::fmt::Display) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serial_test::serial;
 
     fn mem_db() -> Connection {
         let conn = Connection::open_in_memory().expect("open in-memory db");
@@ -740,6 +741,7 @@ mod tests {
     }
 
     #[test]
+    #[serial(backup_store)]
     fn write_then_read_json_roundtrips() {
         // Reset the store singleton so it opens against this test's throwaway root
         // (the singleton re-opens per root; teardown mirrors the reference's
@@ -768,6 +770,7 @@ mod tests {
     }
 
     #[test]
+    #[serial(backup_store)]
     fn atomic_write_records_byte_identical_bytes_through_the_choke_point() {
         // End-to-end at the choke point: the bytes recorded into backups.sqlite3 are
         // byte-identical to what the atomic write put on disk — pretty JSON plus the

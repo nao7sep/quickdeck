@@ -24,4 +24,12 @@ getrandom = "0.4.3"
 tauri-plugin-opener = "2.5.4"
 
 [dev-dependencies]
+# Serializes the tests that share process-global state — the backup-store
+# singleton (`static STORE` in backup_store.rs) and the process-global env vars
+# some paths tests mutate. `cargo test` runs tests in parallel threads within one
+# process, so those tests would otherwise race; `#[serial(...)]` with a shared key
+# makes each such group mutually exclusive while unrelated tests still parallelize.
+# Default features (async runtime + logging) are unused here; only the synchronous
+# `#[serial]` attribute is needed.
+serial_test = { version = "3.5.0", default-features = false }
 tempfile = "3.27.0"

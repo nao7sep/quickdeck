@@ -235,6 +235,7 @@ pub fn close_backup_store() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serial_test::serial;
 
     /// A fresh in-file store in a throwaway directory, with the singleton reset so
     /// each test opens against its own root (mirrors the JS teardown that closes
@@ -267,6 +268,7 @@ mod tests {
     }
 
     #[test]
+    #[serial(backup_store)]
     fn content_blob_is_byte_identical_including_crlf_and_non_utf8() {
         let dir = tempfile::tempdir().unwrap();
         let store = fresh_store(dir.path());
@@ -286,6 +288,7 @@ mod tests {
     }
 
     #[test]
+    #[serial(backup_store)]
     fn written_at_utc_is_serialized_iso_ms_not_the_filename_stamp() {
         let dir = tempfile::tempdir().unwrap();
         let store = fresh_store(dir.path());
@@ -310,6 +313,7 @@ mod tests {
     }
 
     #[test]
+    #[serial(backup_store)]
     fn unchanged_resave_is_deduped_and_writes_no_row() {
         let dir = tempfile::tempdir().unwrap();
         let store = fresh_store(dir.path());
@@ -321,6 +325,7 @@ mod tests {
     }
 
     #[test]
+    #[serial(backup_store)]
     fn a_changed_save_and_a_revert_each_insert_a_row() {
         let dir = tempfile::tempdir().unwrap();
         let store = fresh_store(dir.path());
@@ -342,6 +347,7 @@ mod tests {
     }
 
     #[test]
+    #[serial(backup_store)]
     fn distinct_paths_do_not_dedup_against_each_other() {
         let dir = tempfile::tempdir().unwrap();
         let store = fresh_store(dir.path());
@@ -356,6 +362,7 @@ mod tests {
     }
 
     #[test]
+    #[serial(backup_store)]
     fn record_is_best_effort_when_the_store_cannot_be_opened() {
         // Inject a store failure: point the store file at a path whose parent is a
         // regular FILE, so create_dir_all / open cannot succeed. record must not

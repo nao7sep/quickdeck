@@ -130,6 +130,7 @@ pub fn logs_dir(app: &AppHandle) -> Result<PathBuf, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serial_test::serial;
 
     #[test]
     fn default_root_is_home_dot_quickdeck() {
@@ -172,6 +173,7 @@ mod tests {
     }
 
     #[test]
+    #[serial(env)]
     fn expands_environment_references_in_the_override() {
         let home = PathBuf::from("/home/tester");
         std::env::set_var("QUICKDECK_TEST_BASE", "/mnt/disk2");
@@ -187,6 +189,7 @@ mod tests {
     }
 
     #[test]
+    #[serial(env)]
     fn override_that_expands_to_empty_is_rejected() {
         let home = PathBuf::from("/home/tester");
         std::env::remove_var("QUICKDECK_UNSET_FOR_TEST");
