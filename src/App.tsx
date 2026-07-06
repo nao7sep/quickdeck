@@ -24,7 +24,6 @@ import { ToastViewport } from "./components/ToastViewport";
 import { matchesShortcut } from "./shortcuts";
 import { isComposingEvent } from "./hooks/useComposing";
 import { logError, logWarn, serializeError } from "./services/logger";
-import { runBackupInBackground } from "./services/backup/backupService";
 import { useAppState } from "./state/AppStateContext";
 import { computeWindowMinHeight, computeWindowMinWidth } from "./utils/layoutMetrics";
 import { clampPaneIndex } from "./utils/paneIndex";
@@ -37,7 +36,6 @@ export function App() {
     panes,
     activePaneId,
     blockingError,
-    dataDir,
     dismissBlockingError,
     loadError,
     loadStatus,
@@ -67,20 +65,10 @@ export function App() {
     return () => window.clearTimeout(timeoutId);
   }, [snapshotJustSavedAt]);
 
-  // Just-in-case startup backup: once the app's data has loaded, fire a single
-  // best-effort, silent, background backup of the ~/.quickdeck home root (see the
-  // fleet-wide data-backup conventions). It never blocks the window, never shows
-  // an error, and never crashes — the service swallows and logs everything. The
-  // ref guards against a second run when loadStatus/dataDir change or StrictMode
-  // double-invokes this effect in development.
-  const backupStartedRef = useRef(false);
-  useEffect(() => {
-    if (loadStatus !== "ready" || backupStartedRef.current) {
-      return;
-    }
-    backupStartedRef.current = true;
-    runBackupInBackground(dataDir);
-  }, [loadStatus, dataDir]);
+  // The just-in-case data backup is now a write-through store owned entirely by
+  // the Rust core (see src-tauri/src/backup_store.rs): every managed-text save
+  // records its bytes strictly after the atomic rename lands. There is no startup
+  // scan and no frontend backup edge — the old startup-scan ZIP engine is retired.
 
   const openMenuModal = useCallback((modal: OpenModal) => {
     setOpenModal(modal);

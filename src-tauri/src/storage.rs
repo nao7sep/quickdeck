@@ -10,17 +10,23 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use sha2::{Digest, Sha256};
 use tauri::AppHandle;
-use zip::write::SimpleFileOptions;
-use zip::ZipWriter;
 
 use crate::paths::app_data_dir;
 
 // The three files the data directory holds, each named in exactly one place so
 // the on-disk layout has a single source of truth.
 //
-// - `config.json`      — durable user settings.
-// - `state.json`       — throwaway UI/window/session state, safe to delete.
-// - `snapshots.sqlite3` — the snapshot store.
+// - `config.json`      — durable user settings.               RECORDED (managed text)
+// - `state.json`       — pane CONTENT + UI/session state.     RECORDED (managed text)
+// - `snapshots.sqlite3` — the snapshot store.                 not recorded (binary + append-safe)
+// - `backups.sqlite3`   — the write-through backup store.     not recorded (the store itself)
+// - `logs/`             — per-session logs.                   not recorded (append-mode, by construction)
+//
+// Every managed-*text* write goes through `atomic_write_json`, which — strictly
+// AFTER the atomic rename lands — records the exact bytes it just wrote into
+// `backups.sqlite3` (see backup_store.rs). Only these two managed-text files reach
+// that choke point; the enumeration of every write site under ~/.quickdeck and its
+// record/no-record decision lives beside each write below.
 pub const CONFIG_FILE_NAME: &str = "config.json";
 pub const STATE_FILE_NAME: &str = "state.json";
 pub const SNAPSHOTS_DB_FILE_NAME: &str = "snapshots.sqlite3";
@@ -81,13 +87,19 @@ pub fn load_app_data(app: &AppHandle) -> Result<LoadedAppData, String> {
 }
 
 pub fn save_config(app: &AppHandle, config: JsonValue) -> Result<(), String> {
+    // records: config.json is durable user settings — managed text, recorded on
+    // every save (data-backup conventions).
     let data_dir = app_data_dir(app)?;
-    atomic_write_json(&data_dir.join(CONFIG_FILE_NAME), &config)
+    atomic_write_json(&data_dir, &data_dir.join(CONFIG_FILE_NAME), &config)
 }
 
 pub fn save_session(app: &AppHandle, session: JsonValue) -> Result<(), String> {
+    // records: state.json holds the pane CONTENT (the user's durable text) alongside
+    // UI/session state — managed text, recorded on every save. The geometry/UI churn
+    // is deliberately absorbed by the store's per-path content dedup, NOT excluded as
+    // "volatile" (data-backup conventions: durable text is recorded, dedup handles churn).
     let data_dir = app_data_dir(app)?;
-    atomic_write_json(&data_dir.join(STATE_FILE_NAME), &session)
+    atomic_write_json(&data_dir, &data_dir.join(STATE_FILE_NAME), &session)
 }
 
 pub fn create_snapshot(
@@ -246,6 +258,11 @@ fn create_snapshot_with_connection(
         &content_hash[..12]
     );
 
+    // not recorded: this writes into snapshots.sqlite3, a binary SQLite file that is
+    // effectively appended (near-zero accidental-truncation risk) and is itself the
+    // app's own recovery mechanism — two independent reasons it is not written through
+    // the managed-text backup layer (data-backup conventions). It also never touches
+    // atomic_write_json, so it never reaches the record hook by construction.
     conn.execute(
         "insert into snapshots (id, pane_id, created_at_utc, trigger, content_hash, content)
          values (?1, ?2, ?3, ?4, ?5, ?6)",
@@ -302,19 +319,37 @@ fn temp_path_for(path: &Path) -> Result<PathBuf, String> {
     Ok(parent.join(format!("{}-{}.tmp", stem, crate::nanoid::generate()?)))
 }
 
-fn atomic_write_json(path: &Path, value: &JsonValue) -> Result<(), String> {
+// The single managed-text atomic-write choke point for config.json and state.json,
+// and — crucially — the ONE place the data-backup hook lives. A managed-text write
+// that bypasses this helper is a silent backup gap; there is deliberately no second
+// atomic-write path in the app.
+//
+// Writes `value` to a same-directory `<stem>-<nanoid>.tmp` (the derived-filename
+// grammar), then atomically renames it over `path`, so a crash mid-write cannot
+// corrupt the target. STRICTLY AFTER the rename lands — the file is exactly where it
+// belongs — it best-effort records the exact bytes just written into `backups.sqlite3`
+// under `data_dir` (the caller's resolved root, from the single resolver). Recording
+// before the rename would risk a "backup of a save that never happened": if the rename
+// then failed, the history would hold a version that never reached disk. The recorded
+// `bytes` is the same buffer written above — never a re-read of the file (which would
+// risk capturing a concurrent writer's content). The record never throws back into
+// this write and never affects the save's success (see backup_store.rs).
+fn atomic_write_json(data_dir: &Path, path: &Path, value: &JsonValue) -> Result<(), String> {
     let parent = path
         .parent()
         .ok_or_else(|| format!("missing parent directory for {}", path.display()))?;
     fs::create_dir_all(parent).map_err(to_string_error)?;
 
     let tmp_path = temp_path_for(path)?;
-    let bytes = serde_json::to_vec_pretty(value).map_err(to_string_error)?;
+    // The exact bytes that land on disk: pretty JSON plus the single trailing
+    // newline. Building the whole buffer once (rather than two write_all calls)
+    // is what lets the backup record a blob byte-identical to the file.
+    let mut bytes = serde_json::to_vec_pretty(value).map_err(to_string_error)?;
+    bytes.push(b'\n');
 
     {
         let mut file = File::create(&tmp_path).map_err(to_string_error)?;
         file.write_all(&bytes).map_err(to_string_error)?;
-        file.write_all(b"\n").map_err(to_string_error)?;
         file.sync_all().map_err(to_string_error)?;
     }
 
@@ -322,6 +357,15 @@ fn atomic_write_json(path: &Path, value: &JsonValue) -> Result<(), String> {
     if let Ok(directory) = File::open(parent) {
         let _ = directory.sync_all();
     }
+
+    // After the rename: the file is exactly where it belongs, so record the bytes we
+    // just wrote. Best-effort — record() catches, logs once, and swallows every
+    // failure, so a backup problem can never break the save that already succeeded.
+    crate::backup_store::record(
+        &data_dir.join(crate::backup_store::BACKUPS_DB_FILE_NAME),
+        path,
+        &bytes,
+    );
 
     Ok(())
 }
@@ -332,6 +376,10 @@ fn open_snapshot_db(data_dir: &Path) -> Result<Connection, String> {
 }
 
 fn ensure_snapshot_db(data_dir: &Path) -> Result<(), String> {
+    // not recorded: snapshots.sqlite3 (+ its -wal/-shm sidecars) is a binary,
+    // append-safe store and the app's own recovery mechanism — excluded from the
+    // managed-text backup layer, and separate from backups.sqlite3 (data-backup
+    // conventions).
     fs::create_dir_all(data_dir).map_err(to_string_error)?;
     let conn = Connection::open(data_dir.join(SNAPSHOTS_DB_FILE_NAME)).map_err(to_string_error)?;
     init_schema(&conn)
@@ -379,179 +427,6 @@ fn escape_like(term: &str) -> String {
 
 fn to_string_error(error: impl std::fmt::Display) -> String {
     error.to_string()
-}
-
-// --- Just-in-case data backup primitives ---------------------------------------
-//
-// These back the fleet-wide startup backup (see data-backup conventions): the
-// backup engine in TypeScript stats candidates via `file_metadata`, walks the
-// home root via `list_files_recursive`, reads durable files as text, then writes
-// one zip via `write_zip_archive` and finally the index via `write_index_json`.
-// The Rust core owns every filesystem touch; the TS side is pure decision logic.
-
-// One file's size and last-modified time (epoch milliseconds). The backup engine
-// compares size + mtime against its index to decide, without reading content,
-// which files changed since the last archive.
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct FileMetadata {
-    pub size: u64,
-    pub mtime_ms: f64,
-}
-
-pub fn file_metadata(path: &str) -> Result<FileMetadata, String> {
-    let meta = fs::metadata(path).map_err(to_string_error)?;
-    let modified = meta.modified().map_err(to_string_error)?;
-    let mtime_ms = modified
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_err(to_string_error)?
-        .as_millis() as f64;
-    Ok(FileMetadata {
-        size: meta.len(),
-        mtime_ms,
-    })
-}
-
-// One file found under a walked root: its path relative to that root (always
-// forward-slash separated, so it maps straight onto a zip entry name), plus size
-// and mtime for change detection.
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct WalkedFile {
-    pub relative_path: String,
-    pub size: u64,
-    pub mtime_ms: f64,
-}
-
-fn walk_dir(root: &Path, dir: &Path, out: &mut Vec<WalkedFile>) {
-    let entries = match fs::read_dir(dir) {
-        Ok(entries) => entries,
-        Err(_) => return, // Unreadable subtree: skip it, best-effort.
-    };
-    for entry in entries.flatten() {
-        let file_type = match entry.file_type() {
-            Ok(t) => t,
-            Err(_) => continue,
-        };
-        // is_dir/is_file are both false for a symlink, so symlinks are skipped —
-        // no symlink following, no walk loops.
-        if file_type.is_dir() {
-            walk_dir(root, &entry.path(), out);
-        } else if file_type.is_file() {
-            let meta = match entry.metadata() {
-                Ok(m) => m,
-                Err(_) => continue,
-            };
-            let mtime_ms = match meta
-                .modified()
-                .ok()
-                .and_then(|m| m.duration_since(std::time::UNIX_EPOCH).ok())
-            {
-                Some(d) => d.as_millis() as f64,
-                None => continue,
-            };
-            let path = entry.path();
-            let relative_path = match path.strip_prefix(root) {
-                Ok(rel) => rel.to_string_lossy().replace('\\', "/"),
-                Err(_) => continue,
-            };
-            out.push(WalkedFile {
-                relative_path,
-                size: meta.len(),
-                mtime_ms,
-            });
-        }
-    }
-}
-
-// Recursively lists every regular file under `root` with its size and mtime. A
-// missing root yields an empty list (first run). Exclusions are applied by the
-// backup engine in TypeScript, so this returns everything it can read.
-pub fn list_files_recursive(root: &str) -> Vec<WalkedFile> {
-    let mut files = Vec::new();
-    let root_path = Path::new(root);
-    if root_path.exists() {
-        walk_dir(root_path, root_path, &mut files);
-    }
-    files
-}
-
-// Builds the zip entirely in memory so the construction (entry names, contents,
-// compression, finalization) can be tested without touching disk.
-fn build_zip_bytes(entries: &[(String, String)]) -> Result<Vec<u8>, String> {
-    let mut zip = ZipWriter::new(std::io::Cursor::new(Vec::<u8>::new()));
-    let options = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
-
-    for (entry_name, content) in entries {
-        zip.start_file(entry_name, options)
-            .map_err(|e| format!("Failed to add {} to zip: {}", entry_name, e))?;
-        zip.write_all(content.as_bytes())
-            .map_err(|e| format!("Failed to write {} to zip: {}", entry_name, e))?;
-    }
-
-    let cursor = zip
-        .finish()
-        .map_err(|e| format!("Failed to finalize zip: {}", e))?;
-    Ok(cursor.into_inner())
-}
-
-// Writes a zip archive of (entry_name, content) text pairs to `output_path`,
-// creating the parent directory if needed. Entry names are supplied by the caller
-// and must already be unique (case-insensitively) — this primitive does no path
-// mapping and no de-duplication of its own. The archive is staged to a temp path
-// and atomically renamed into place, so the index (written only after this
-// returns) can never reference a torn, half-written archive. Returns the path.
-pub fn write_zip_archive(entries: Vec<(String, String)>, output_path: &str) -> Result<String, String> {
-    let target = Path::new(output_path);
-    if let Some(parent) = target.parent() {
-        ensure_backups_dir(parent)?;
-    }
-    let bytes = build_zip_bytes(&entries)?;
-    let tmp_path = temp_path_for(target)?;
-    fs::write(&tmp_path, &bytes).map_err(|e| format!("Failed to write backup file: {}", e))?;
-    fs::rename(&tmp_path, output_path)
-        .map_err(|e| format!("Failed to finalize backup file: {}", e))?;
-    Ok(output_path.to_string())
-}
-
-// Reads a file's raw text content. Missing/unreadable is an Err so the backup
-// collector can skip that file best-effort.
-pub fn read_text_file(path: &str) -> Result<String, String> {
-    fs::read_to_string(path).map_err(to_string_error)
-}
-
-// Reports whether `path` already exists (file or directory). The backup engine
-// probes this before finalizing an archive's name, to detect a same-millisecond
-// collision with a prior `backup-<archivedAt>.zip` (e.g. two instances of the app
-// starting at once) and pick the next free stamp instead — the no-clobber create
-// in the data-backup conventions. Never used for any other decision.
-pub fn path_exists(path: &str) -> bool {
-    Path::new(path).exists()
-}
-
-// Writes the backup index (or any JSON) atomically to `path`, reusing the same
-// temp-then-rename durability floor as config/state. The backups directory is
-// created lazily with default modes; secrets are excluded from backups, so no
-// owner-only permission hardening is applied here.
-pub fn write_index_json(path: &str, value: &JsonValue) -> Result<(), String> {
-    let target = Path::new(path);
-    if let Some(parent) = target.parent() {
-        ensure_backups_dir(parent)?;
-    }
-    atomic_write_json(target, value)
-}
-
-// Creates the backups directory if missing. Secrets are excluded from backups,
-// so the directory uses default modes with no owner-only permission hardening.
-fn ensure_backups_dir(dir: &Path) -> Result<(), String> {
-    fs::create_dir_all(dir).map_err(to_string_error)?;
-    Ok(())
-}
-
-// Resolves the app's absolute data root, so the webview never reconstructs it
-// (it cannot read QUICKDECK_HOME). The backup service calls this once at startup.
-pub fn data_root(app: &AppHandle) -> Result<PathBuf, String> {
-    app_data_dir(app)
 }
 
 #[cfg(test)]
@@ -853,23 +728,73 @@ mod tests {
 
     // --- JSON file IO ------------------------------------------------------
 
+    // The backup store writes `backups.sqlite3` (+ its -wal/-shm sidecars) into the
+    // same throwaway root the atomic write targets, so any assertion over the root's
+    // contents must filter those out — they are the store, not a stray temp. Mirrors
+    // the reference's store-file filter test-migration.
+    fn is_store_file(name: &std::ffi::OsStr) -> bool {
+        let name = name.to_string_lossy();
+        name == crate::backup_store::BACKUPS_DB_FILE_NAME
+            || name.starts_with(crate::backup_store::BACKUPS_DB_FILE_NAME)
+                && (name.ends_with("-wal") || name.ends_with("-shm"))
+    }
+
     #[test]
     fn write_then_read_json_roundtrips() {
+        // Reset the store singleton so it opens against this test's throwaway root
+        // (the singleton re-opens per root; teardown mirrors the reference's
+        // close-the-store-between-throwaway-roots migration).
+        crate::backup_store::close_backup_store();
+
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("config.json");
         let value = serde_json::json!({ "zoomLevel": 1.2, "zen": true });
 
-        atomic_write_json(&path, &value).unwrap();
+        atomic_write_json(dir.path(), &path, &value).unwrap();
         let read_back = read_json_optional(&path).unwrap();
         assert_eq!(read_back, Some(value));
 
         // No stray temp file remains beside the finished target — the rename left
-        // exactly one file in the directory, named exactly "config.json".
+        // exactly one managed file, named exactly "config.json" (the backup store's
+        // own files are filtered out; they are the store, not stray debris).
         let entries: Vec<_> = fs::read_dir(dir.path())
             .unwrap()
             .map(|e| e.unwrap().file_name())
+            .filter(|name| !is_store_file(name))
             .collect();
         assert_eq!(entries, vec![std::ffi::OsString::from("config.json")]);
+
+        crate::backup_store::close_backup_store();
+    }
+
+    #[test]
+    fn atomic_write_records_byte_identical_bytes_through_the_choke_point() {
+        // End-to-end at the choke point: the bytes recorded into backups.sqlite3 are
+        // byte-identical to what the atomic write put on disk — pretty JSON plus the
+        // single trailing newline — proving the hook fires after the rename and reuses
+        // the in-hand bytes rather than re-reading (or re-serializing) the file.
+        crate::backup_store::close_backup_store();
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.json");
+        let value = serde_json::json!({ "zoomLevel": 1.2, "zen": true });
+
+        atomic_write_json(dir.path(), &path, &value).unwrap();
+
+        let on_disk = fs::read(&path).unwrap();
+        let store = dir.path().join(crate::backup_store::BACKUPS_DB_FILE_NAME);
+        let conn = Connection::open(&store).unwrap();
+        let recorded: Vec<u8> = conn
+            .query_row(
+                "SELECT content FROM backups WHERE path = ?1 ORDER BY id DESC LIMIT 1",
+                params![path.to_string_lossy()],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(recorded, on_disk, "recorded blob must equal the file's bytes");
+        assert_eq!(recorded.last(), Some(&b'\n'), "the trailing newline must be recorded too");
+
+        crate::backup_store::close_backup_store();
     }
 
     #[test]
@@ -930,134 +855,5 @@ mod tests {
     fn count_rows(conn: &Connection) -> i64 {
         conn.query_row("select count(*) from snapshots", [], |row| row.get(0))
             .unwrap()
-    }
-
-    // --- backup primitives -------------------------------------------------
-
-    #[test]
-    fn file_metadata_reports_size_and_mtime() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("doc.json");
-        fs::write(&path, b"hello").unwrap();
-        let meta = file_metadata(path.to_str().unwrap()).unwrap();
-        assert_eq!(meta.size, 5);
-        assert!(meta.mtime_ms > 0.0);
-    }
-
-    #[test]
-    fn file_metadata_errors_for_missing_file() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("nope.json");
-        assert!(file_metadata(path.to_str().unwrap()).is_err());
-    }
-
-    #[test]
-    fn list_files_recursive_returns_empty_for_missing_root() {
-        let dir = tempfile::tempdir().unwrap();
-        let missing = dir.path().join("does-not-exist");
-        assert!(list_files_recursive(missing.to_str().unwrap()).is_empty());
-    }
-
-    #[test]
-    fn list_files_recursive_walks_nested_files_with_relative_forward_slash_paths() {
-        let dir = tempfile::tempdir().unwrap();
-        fs::write(dir.path().join("state.json"), b"{}").unwrap();
-        let nested = dir.path().join("logs").join("inner");
-        fs::create_dir_all(&nested).unwrap();
-        fs::write(nested.join("a.log"), b"x").unwrap();
-
-        let mut result = list_files_recursive(dir.path().to_str().unwrap());
-        result.sort_by(|a, b| a.relative_path.cmp(&b.relative_path));
-        let paths: Vec<&str> = result.iter().map(|f| f.relative_path.as_str()).collect();
-        assert_eq!(paths, vec!["logs/inner/a.log", "state.json"]);
-        let nested_entry = result
-            .iter()
-            .find(|f| f.relative_path == "logs/inner/a.log")
-            .unwrap();
-        assert_eq!(nested_entry.size, 1);
-    }
-
-    #[test]
-    fn build_zip_bytes_produces_a_readable_in_memory_archive() {
-        use std::io::Read;
-        let entries = vec![
-            ("config.json".to_string(), "hello".to_string()),
-            ("state.json".to_string(), "world".to_string()),
-        ];
-        let bytes = build_zip_bytes(&entries).unwrap();
-        let mut archive = zip::ZipArchive::new(std::io::Cursor::new(bytes)).unwrap();
-        assert_eq!(archive.len(), 2);
-        let mut content = String::new();
-        archive
-            .by_name("config.json")
-            .unwrap()
-            .read_to_string(&mut content)
-            .unwrap();
-        assert_eq!(content, "hello");
-    }
-
-    #[test]
-    fn write_zip_archive_writes_a_readable_zip_and_creates_parent() {
-        use std::io::Read;
-        let dir = tempfile::tempdir().unwrap();
-        let output = dir.path().join("backups").join("backup-x.zip");
-        let entries = vec![
-            ("config.json".to_string(), "hello".to_string()),
-            ("state.json".to_string(), "world".to_string()),
-        ];
-        let returned = write_zip_archive(entries, output.to_str().unwrap()).unwrap();
-        assert_eq!(returned, output.to_str().unwrap());
-        assert!(output.exists());
-        // No stray temp file remains beside the finished archive — the backups
-        // directory holds exactly the one finished zip, named exactly "backup-x.zip"
-        // (not the old "backup-x.zip.tmp" dot-appended shape, and not the new
-        // "backup-x-<discriminator>.tmp" shape either).
-        let entries: Vec<_> = fs::read_dir(output.parent().unwrap())
-            .unwrap()
-            .map(|e| e.unwrap().file_name())
-            .collect();
-        assert_eq!(entries, vec![std::ffi::OsString::from("backup-x.zip")]);
-
-        let f = File::open(&output).unwrap();
-        let mut archive = zip::ZipArchive::new(f).unwrap();
-        assert_eq!(archive.len(), 2);
-        let mut state = String::new();
-        archive
-            .by_name("state.json")
-            .unwrap()
-            .read_to_string(&mut state)
-            .unwrap();
-        assert_eq!(state, "world");
-    }
-
-    #[test]
-    fn read_text_file_reads_content_and_errors_when_missing() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("f.txt");
-        fs::write(&path, "héllo\nworld").unwrap();
-        assert_eq!(read_text_file(path.to_str().unwrap()).unwrap(), "héllo\nworld");
-        assert!(read_text_file(dir.path().join("nope.txt").to_str().unwrap()).is_err());
-    }
-
-    #[test]
-    fn path_exists_reports_presence_and_absence() {
-        let dir = tempfile::tempdir().unwrap();
-        let present = dir.path().join("here.zip");
-        fs::write(&present, b"x").unwrap();
-        let missing = dir.path().join("not-here.zip");
-
-        assert!(path_exists(present.to_str().unwrap()));
-        assert!(!path_exists(missing.to_str().unwrap()));
-    }
-
-    #[test]
-    fn write_index_json_creates_backups_dir_and_writes_object() {
-        let dir = tempfile::tempdir().unwrap();
-        let index_path = dir.path().join("backups").join("index.json");
-        let value = serde_json::json!({ "entries": [] });
-        write_index_json(index_path.to_str().unwrap(), &value).unwrap();
-        assert!(index_path.exists());
-        let read_back = read_json_optional(&index_path).unwrap();
-        assert_eq!(read_back, Some(value));
     }
 }

@@ -134,6 +134,10 @@ fn session_stamp(now: chrono::DateTime<Utc>) -> String {
 }
 
 fn open_session_file(app: &AppHandle) -> Result<File, String> {
+    // not recorded: session logs under logs/ are append-mode and never written
+    // through the managed-text atomic path, so they never reach the backup record
+    // hook — excluded by construction (data-backup conventions). They are runtime
+    // logs, not user data.
     let dir = paths::logs_dir(app)?;
     // UTC session-start stamp and nothing else — strictly `yyyymmdd-hhmmss-fff-utc.log`
     // (see timestamp-conventions). `create_new` so a launch never appends into an
@@ -182,6 +186,14 @@ pub fn log_forwarded(
 // message racing the window teardown.
 pub fn log_shutdown() {
     write_event(Level::Info, "shutdown", now_iso(), Map::new());
+}
+
+// A single Rust-side warning. Used by the write-through backup store (backup_store.rs)
+// to log its one best-effort failure line — the store must never surface an error,
+// so it logs exactly one `warn` and swallows the rest. `fields` is any JSON object
+// (a non-object payload is wrapped, never lost); the timestamp is stamped here.
+pub fn warn(message: &str, fields: Value) {
+    write_event(Level::Warn, message, now_iso(), into_map(fields));
 }
 
 // --- Boundary instrumentation --------------------------------------------------
