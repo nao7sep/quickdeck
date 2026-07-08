@@ -23,7 +23,7 @@ Prebuilt builds for **macOS (Apple Silicon)** and **Windows (x64)** are on the [
 - **macOS (Apple Silicon)** or **Windows (x64)** to run a prebuilt download.
 - To build and run from source: Node.js, npm, and a Rust toolchain with Cargo (QuickDeck is a Tauri app).
 
-## Getting started
+## Run from source
 
 Double-click the launcher for your platform:
 
