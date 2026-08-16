@@ -17,7 +17,8 @@ use crate::paths::app_data_dir;
 // the on-disk layout has a single source of truth.
 //
 // - `config.json`      — durable user settings.               RECORDED (managed text)
-// - `state.json`       — pane CONTENT + UI/session state.     RECORDED (managed text)
+// - `state.json`       — UI/session state (view only).        RECORDED (managed text)
+// - `panes.json`       — the panes' TEXT — the user's work.   RECORDED (managed text)
 // - `snapshots.sqlite3` — the snapshot store.                 not recorded (binary + append-safe)
 // - `backups.sqlite3`   — the write-through backup store.     not recorded (the store itself)
 // - `logs/`             — per-session logs.                   not recorded (append-mode, by construction)
@@ -29,13 +30,23 @@ use crate::paths::app_data_dir;
 // record/no-record decision lives beside each write below.
 pub const CONFIG_FILE_NAME: &str = "config.json";
 pub const STATE_FILE_NAME: &str = "state.json";
+pub const PANES_FILE_NAME: &str = "panes.json";
 pub const SNAPSHOTS_DB_FILE_NAME: &str = "snapshots.sqlite3";
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LoadedAppData {
     pub config: Option<JsonValue>,
-    pub session: Option<JsonValue>,
+    // Where a corrupt config.json was set aside, so the frontend can report it
+    // (an unreported quarantine is a silent reset — storage-path conventions).
+    pub config_quarantined_to: Option<String>,
+    pub state: Option<JsonValue>,
+    pub state_quarantined_to: Option<String>,
+    pub panes: Option<JsonValue>,
+    // Set when panes.json is present but unreadable: the user's text halts the
+    // pane surface (file left exactly in place) while config and state still
+    // load — per-store failure isolation.
+    pub panes_error: Option<String>,
     pub data_dir: String,
     // Whether developer-only debug logging is on. Set by the command layer
     // (see lib.rs) from logging::debug_enabled(); storage leaves it false.
@@ -74,13 +85,29 @@ pub struct SnapshotSearchResult {
 
 pub fn load_app_data(app: &AppHandle) -> Result<LoadedAppData, String> {
     let data_dir = app_data_dir(app)?;
-    let config = read_json_optional(&data_dir.join(CONFIG_FILE_NAME))?;
-    let session = read_json_optional(&data_dir.join(STATE_FILE_NAME))?;
+    // Per-store failure isolation (persisted-store-separation, Independent
+    // recovery): each store takes its own branch, so a corrupt settings file
+    // can never make the panes' text unreachable. Config and state are
+    // rebuildable and quarantine-then-reset; panes.json carries the user's
+    // work product and halts — its error rides in the result so the other
+    // stores still load and the halt surface can offer a reset.
+    let (config, config_quarantined_to) =
+        read_rebuildable_store(&data_dir.join(CONFIG_FILE_NAME))?;
+    let (state, state_quarantined_to) =
+        read_rebuildable_store(&data_dir.join(STATE_FILE_NAME))?;
+    let (panes, panes_error) = match read_json_optional(&data_dir.join(PANES_FILE_NAME)) {
+        Ok(value) => (value, None),
+        Err(message) => (None, Some(message)),
+    };
     ensure_snapshot_db(&data_dir)?;
 
     Ok(LoadedAppData {
         config,
-        session,
+        config_quarantined_to,
+        state,
+        state_quarantined_to,
+        panes,
+        panes_error,
         data_dir: data_dir.to_string_lossy().into_owned(),
         debug_enabled: false,
     })
@@ -93,13 +120,40 @@ pub fn save_config(app: &AppHandle, config: JsonValue) -> Result<(), String> {
     atomic_write_json(&data_dir, &data_dir.join(CONFIG_FILE_NAME), &config)
 }
 
-pub fn save_session(app: &AppHandle, session: JsonValue) -> Result<(), String> {
-    // records: state.json holds the pane CONTENT (the user's durable text) alongside
-    // UI/session state — managed text, recorded on every save. The geometry/UI churn
-    // is deliberately absorbed by the store's per-path content dedup, NOT excluded as
-    // "volatile" (data-backup conventions: durable text is recorded, dedup handles churn).
+pub fn save_state(app: &AppHandle, state: JsonValue) -> Result<(), String> {
+    // records: state.json is pure view/session state (active pane, zoom) —
+    // managed text, recorded on every save; the store's per-path content dedup
+    // absorbs the churn (data-backup conventions).
     let data_dir = app_data_dir(app)?;
-    atomic_write_json(&data_dir, &data_dir.join(STATE_FILE_NAME), &session)
+    atomic_write_json(&data_dir, &data_dir.join(STATE_FILE_NAME), &state)
+}
+
+pub fn save_panes(app: &AppHandle, panes: JsonValue) -> Result<(), String> {
+    // records: panes.json holds the panes' text — the user's durable work
+    // product — managed text, recorded on every save (data-backup conventions).
+    let data_dir = app_data_dir(app)?;
+    atomic_write_json(&data_dir, &data_dir.join(PANES_FILE_NAME), &panes)
+}
+
+// The user-commanded reset behind the panes halt surface: sets the corrupt
+// panes.json aside to its `.invalid` name (the same quarantine every
+// rebuildable store performs automatically) and returns where it went, so the
+// report can name it. The rename either lands or its failure propagates —
+// never a silent fall-through to defaults over the preserved bytes
+// (storage-path conventions: halting requires exactly this reset offer).
+pub fn quarantine_corrupt_panes(app: &AppHandle) -> Result<String, String> {
+    let data_dir = app_data_dir(app)?;
+    let path = data_dir.join(PANES_FILE_NAME);
+    let quarantined = quarantine_name(&path);
+    fs::rename(&path, &quarantined).map_err(to_string_error)?;
+    crate::logging::warn(
+        "corrupt panes.json set aside on user command",
+        serde_json::json!({
+            "file": path.to_string_lossy(),
+            "quarantinedTo": quarantined.to_string_lossy(),
+        }),
+    );
+    Ok(quarantined.to_string_lossy().into_owned())
 }
 
 pub fn create_snapshot(
@@ -301,6 +355,58 @@ fn read_json_optional(path: &Path) -> Result<Option<JsonValue>, String> {
     serde_json::from_str(&content)
         .map(Some)
         .map_err(to_string_error)
+}
+
+// `<stem>-<yyyymmdd-hhmmss-fff-utc>.invalid` beside the source — the
+// derived-filename grammar with a moment discriminator (storage-path
+// conventions' quarantine name), stamped by the one shared formatter.
+fn quarantine_name(path: &Path) -> PathBuf {
+    let stem = path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("store");
+    path.with_file_name(format!(
+        "{stem}-{}.invalid",
+        crate::logging::session_stamp(Utc::now())
+    ))
+}
+
+// Reads a REBUILDABLE store (config, view state): missing → None; parseable →
+// Some; present-but-corrupt (unreadable bytes or unparseable JSON — a bytes
+// parse, so UTF-8 garbage counts) → quarantine aside and return the `.invalid`
+// path so the caller reports it, then None so launch proceeds and first-run
+// materialization reseeds. The quarantine rename runs OUTSIDE the parse-failure
+// handling: its own failure propagates as a load error rather than falling
+// through to a default write over the preserved bytes (storage-path
+// conventions). panes.json never takes this path — it holds the user's text
+// and uses the halting reader above.
+fn read_rebuildable_store(path: &Path) -> Result<(Option<JsonValue>, Option<String>), String> {
+    let bytes = match fs::read(path) {
+        Ok(bytes) => bytes,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok((None, None)),
+        Err(err) => return Err(to_string_error(err)),
+    };
+    match serde_json::from_slice::<JsonValue>(&bytes) {
+        Ok(value) => Ok((Some(value), None)),
+        Err(parse_err) => {
+            let quarantined = quarantine_name(path);
+            fs::rename(path, &quarantined).map_err(|rename_err| {
+                format!(
+                    "could not quarantine corrupt {}: {rename_err} (parse error: {parse_err})",
+                    path.display()
+                )
+            })?;
+            crate::logging::warn(
+                "corrupt store quarantined; continuing with defaults",
+                serde_json::json!({
+                    "file": path.to_string_lossy(),
+                    "quarantinedTo": quarantined.to_string_lossy(),
+                    "error": { "message": parse_err.to_string() },
+                }),
+            );
+            Ok((None, Some(quarantined.to_string_lossy().into_owned())))
+        }
+    }
 }
 
 // The atomic-write temp name for `path`: `<stem>-<discriminator>.tmp`, alongside
@@ -873,6 +979,60 @@ mod tests {
         let first = temp_path_for(path).unwrap();
         let second = temp_path_for(path).unwrap();
         assert_ne!(first, second);
+    }
+
+    #[test]
+    fn rebuildable_store_quarantines_corrupt_and_continues() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.json");
+        fs::write(&path, b"{ corrupt bytes").unwrap();
+
+        let (value, quarantined_to) = read_rebuildable_store(&path).unwrap();
+        assert_eq!(value, None);
+        let quarantined_to = quarantined_to.expect("quarantine path reported");
+        assert!(quarantined_to.ends_with("-utc.invalid"), "{quarantined_to}");
+
+        // The original was renamed aside with its exact bytes, never reset.
+        assert!(!path.exists());
+        assert_eq!(fs::read(&quarantined_to).unwrap(), b"{ corrupt bytes");
+    }
+
+    #[test]
+    fn rebuildable_store_quarantines_non_utf8_too() {
+        // Binary garbage is corruption: the reader parses bytes, so it takes
+        // the quarantine path rather than an I/O halt.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("state.json");
+        fs::write(&path, [0xff, 0xfe, 0x00, 0x01]).unwrap();
+
+        let (value, quarantined_to) = read_rebuildable_store(&path).unwrap();
+        assert_eq!(value, None);
+        assert!(quarantined_to.is_some());
+        assert!(!path.exists());
+    }
+
+    #[test]
+    fn rebuildable_store_passes_valid_and_missing_through() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.json");
+        assert_eq!(read_rebuildable_store(&path).unwrap(), (None, None));
+        fs::write(&path, br#"{"dark":true}"#).unwrap();
+        let (value, quarantined_to) = read_rebuildable_store(&path).unwrap();
+        assert_eq!(value, Some(serde_json::json!({"dark": true})));
+        assert_eq!(quarantined_to, None);
+        assert!(path.exists(), "a valid store stays in place");
+    }
+
+    #[test]
+    fn corrupt_panes_store_halts_and_is_left_in_place() {
+        // panes.json carries the user's text: the halting reader errors and the
+        // file is left exactly where it is (storage-path conventions).
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("panes.json");
+        fs::write(&path, b"{ corrupt bytes").unwrap();
+
+        assert!(read_json_optional(&path).is_err());
+        assert_eq!(fs::read(&path).unwrap(), b"{ corrupt bytes");
     }
 
     #[test]

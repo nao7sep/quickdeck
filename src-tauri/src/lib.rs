@@ -25,7 +25,9 @@ fn load_app_data(app: AppHandle) -> Result<LoadedAppData, String> {
         |data| {
             json!({
                 "hasConfig": data.config.is_some(),
-                "hasSession": data.session.is_some(),
+                "hasState": data.state.is_some(),
+                "hasPanes": data.panes.is_some(),
+                "panesError": data.panes_error,
                 "dataDir": data.data_dir,
                 "debugEnabled": data.debug_enabled,
             })
@@ -44,12 +46,32 @@ fn save_config(app: AppHandle, config: JsonValue) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn save_session(app: AppHandle, session: JsonValue) -> Result<(), String> {
+fn save_state(app: AppHandle, state: JsonValue) -> Result<(), String> {
     logging::boundary(
-        "save_session",
+        "save_state",
         json!({}),
-        || storage::save_session(&app, session),
+        || storage::save_state(&app, state),
         |_| json!({}),
+    )
+}
+
+#[tauri::command]
+fn save_panes(app: AppHandle, panes: JsonValue) -> Result<(), String> {
+    logging::boundary(
+        "save_panes",
+        json!({}),
+        || storage::save_panes(&app, panes),
+        |_| json!({}),
+    )
+}
+
+#[tauri::command]
+fn quarantine_corrupt_panes(app: AppHandle) -> Result<String, String> {
+    logging::boundary(
+        "quarantine_corrupt_panes",
+        json!({}),
+        || storage::quarantine_corrupt_panes(&app),
+        |quarantined| json!({ "quarantinedTo": quarantined }),
     )
 }
 
@@ -140,7 +162,9 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             load_app_data,
             save_config,
-            save_session,
+            save_state,
+            save_panes,
+            quarantine_corrupt_panes,
             create_snapshot,
             create_snapshots,
             search_snapshots,

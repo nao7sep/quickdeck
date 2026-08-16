@@ -16,13 +16,16 @@ import { appendPane, deletePane as deletePaneOp, reorderPane } from "./paneOps";
 import { multiline, singleLine } from "../utils/textCleanup";
 import { resolveSaveState } from "../utils/saveRace";
 import {
-  buildSessionState,
+  buildPanesFile,
+  buildStateFile,
   countSnapshots,
   createSnapshot,
   createSnapshots,
   loadAppData,
+  quarantineCorruptPanes,
   saveConfig,
-  saveSession,
+  savePanes,
+  saveState as persistState,
 } from "../services/persistence";
 import { logError, logInfo, logWarn, serializeError, setDebugEnabled } from "../services/logger";
 import type {
@@ -50,6 +53,7 @@ type AppStateContextValue = {
   dataDir: string;
   loadStatus: LoadStatus;
   loadError: string | null;
+  loadErrorIsCorruptPanes: boolean;
   snapshotCount: number;
   snapshotJustSavedAt: number | null;
   setActivePaneId: (paneId: string) => void;
@@ -61,6 +65,10 @@ type AppStateContextValue = {
   movePane: (paneId: string, direction: -1 | 1) => void;
   updateSettings: (settings: AppSettings) => void;
   setZoomLevel: (zoomLevel: number) => void;
+  // The user-commanded reset behind the corrupt-panes halt screen: sets
+  // panes.json aside and reloads (storage-path conventions — a halting store
+  // is clearable from the surface that reported the failure).
+  resetCorruptPanes: () => Promise<void>;
   saveNow: () => Promise<void>;
   recordSnapshot: (paneId: string, trigger: SnapshotTrigger, content: string) => void;
   snapshotAllPanes: (trigger: SnapshotTrigger) => Promise<void>;
@@ -84,6 +92,9 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const [dataDir, setDataDir] = useState("Loading...");
   const [loadStatus, setLoadStatus] = useState<LoadStatus>("loading");
   const [loadError, setLoadError] = useState<string | null>(null);
+  // True when the failure is specifically a corrupt panes.json — the one halt
+  // whose screen offers the explicit set-aside reset.
+  const [loadErrorIsCorruptPanes, setLoadErrorIsCorruptPanes] = useState(false);
   const [snapshotCount, setSnapshotCount] = useState(0);
   const [snapshotJustSavedAt, setSnapshotJustSavedAt] = useState<number | null>(null);
   const panesRef = useRef(panes);
@@ -125,86 +136,135 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     setBlockingError(null);
   }, []);
 
-  useEffect(() => {
-    let canceled = false;
+  const canceledRef = useRef(false);
 
-    async function loadPersistedState() {
-      try {
-        const data = await loadAppData();
-        if (canceled) {
-          return;
-        }
+  const loadPersistedState = useCallback(async () => {
+    try {
+      const data = await loadAppData();
+      if (canceledRef.current) {
+        return;
+      }
 
-        // Adopt the authoritative debug gate before logging anything else.
-        setDebugEnabled(data.debugEnabled);
-        setDataDir(data.dataDir);
-        const effectiveSettings = normalizeSettings(data.config);
-        setSettings(effectiveSettings);
-        // Startup baseline: record the key effective configuration.
-        logInfo("config loaded", {
-          settings: effectiveSettings,
-          hasSession: data.session !== null,
-          dataDir: data.dataDir,
-        });
+      // Adopt the authoritative debug gate before logging anything else.
+      setDebugEnabled(data.debugEnabled);
+      setDataDir(data.dataDir);
 
-        // Materialize config.json on first run so the settings file exists on disk immediately,
-        // not only after the first change (storage-path conventions, "Materializing settings on
-        // first run"). data.config is null only when the file is absent — the Rust loader returns
-        // None iff it does not exist — so this is create-if-absent (an existing config is never
-        // overwritten), persisting the real normalized defaults through the normal save_config path
-        // rather than a hand-built literal. A write failure is logged, not fatal. state.json is left
-        // alone (volatile UI state). Skipped if the effect was canceled before we got here.
-        if (!canceled && data.config === null) {
-          try {
-            await saveConfig(effectiveSettings);
-          } catch (error) {
-            logWarn("failed to create config.json on first run", { error: serializeError(error) });
-          }
-        }
+      // panes.json carries the user's text: present-but-unreadable HALTS the
+      // app (the file is left exactly in place; the error screen offers the
+      // explicit set-aside reset) while config and state still loaded — each
+      // store fails on its own branch (persisted-store-separation).
+      if (data.panesError !== null) {
+        logError("panes load failed", { error: data.panesError });
+        setLoadErrorIsCorruptPanes(true);
+        setLoadError(
+          `Your pane text file (panes.json) could not be read and has been left exactly where it is:\n${data.panesError}`,
+        );
+        setLoadStatus("failed");
+        return;
+      }
 
+      const effectiveSettings = normalizeSettings(data.config);
+      setSettings(effectiveSettings);
+      // Startup baseline: record the key effective configuration.
+      logInfo("config loaded", {
+        settings: effectiveSettings,
+        hasState: data.state !== null,
+        hasPanes: data.panes !== null,
+        dataDir: data.dataDir,
+      });
+
+      // A quarantine without a report is a silent reset with extra steps
+      // (storage-path conventions): name what was set aside and what the app
+      // started with instead. The dialog is dismissible — the app recovered.
+      if (data.configQuarantinedTo !== null || data.stateQuarantinedTo !== null) {
+        const setAside = [data.configQuarantinedTo, data.stateQuarantinedTo]
+          .filter((path): path is string => path !== null)
+          .join("\n");
+        showBlockingError(
+          "A Settings File Was Reset",
+          "A file was unreadable and has been set aside so nothing is lost:\n\n" +
+            `${setAside}\n\n` +
+            "QuickDeck started with defaults for it. Your pane text is untouched.",
+        );
+      }
+
+      // Materialize config.json on first run so the settings file exists on disk immediately,
+      // not only after the first change (storage-path conventions, "Materializing settings on
+      // first run"). data.config is null when the file is absent — either never created, or just
+      // quarantined aside (which renames it away) — so this is create-if-absent (an existing
+      // config is never overwritten), persisting the real normalized defaults through the normal
+      // save_config path rather than a hand-built literal. A write failure is logged, not fatal.
+      if (!canceledRef.current && data.config === null) {
         try {
-          const initialCount = await countSnapshots();
-          if (!canceled) {
-            setSnapshotCount(initialCount);
-          }
+          await saveConfig(effectiveSettings);
         } catch (error) {
-          // Snapshot count is informational only — recover and continue — but a
-          // failure here is still an unexpected error worth recording.
-          logWarn("snapshot count failed", { error: serializeError(error) });
-        }
-
-        setZoomLevelState(normalizeZoomLevel(data.session?.zoomLevel));
-
-        const loadedPanes = normalizePanes(data.session?.panes);
-        if (loadedPanes.length > 0) {
-          setPanes(loadedPanes);
-          const loadedActivePane = loadedPanes.some((pane) => pane.id === data.session?.activePaneId)
-            ? data.session?.activePaneId
-            : loadedPanes[0].id;
-          setActivePaneId(loadedActivePane ?? loadedPanes[0].id);
-        }
-
-        setSaveState("saved");
-        setLoadStatus("ready");
-      } catch (error) {
-        if (!canceled) {
-          // Halt: do not transition into a state where any write path can run.
-          // The App shell renders a non-dismissible error screen for "failed",
-          // so the user's existing files on disk are never overwritten by the
-          // default in-memory state.
-          logError("load failed", { error: serializeError(error) });
-          setLoadError(String(error));
-          setLoadStatus("failed");
+          logWarn("failed to create config.json on first run", { error: serializeError(error) });
         }
       }
+
+      try {
+        const initialCount = await countSnapshots();
+        if (!canceledRef.current) {
+          setSnapshotCount(initialCount);
+        }
+      } catch (error) {
+        // Snapshot count is informational only — recover and continue — but a
+        // failure here is still an unexpected error worth recording.
+        logWarn("snapshot count failed", { error: serializeError(error) });
+      }
+
+      setZoomLevelState(normalizeZoomLevel(data.state?.zoomLevel));
+
+      const loadedPanes = normalizePanes(data.panes?.panes);
+      if (loadedPanes.length > 0) {
+        setPanes(loadedPanes);
+        const loadedActivePane = loadedPanes.some((pane) => pane.id === data.state?.activePaneId)
+          ? data.state?.activePaneId
+          : loadedPanes[0].id;
+        setActivePaneId(loadedActivePane ?? loadedPanes[0].id);
+      }
+
+      setSaveState("saved");
+      setLoadStatus("ready");
+    } catch (error) {
+      if (!canceledRef.current) {
+        // Halt: do not transition into a state where any write path can run.
+        // The App shell renders a non-dismissible error screen for "failed",
+        // so the user's existing files on disk are never overwritten by the
+        // default in-memory state.
+        logError("load failed", { error: serializeError(error) });
+        setLoadErrorIsCorruptPanes(false);
+        setLoadError(String(error));
+        setLoadStatus("failed");
+      }
     }
+  }, [showBlockingError]);
 
+  useEffect(() => {
+    canceledRef.current = false;
     void loadPersistedState();
-
     return () => {
-      canceled = true;
+      canceledRef.current = true;
     };
-  }, []);
+  }, [loadPersistedState]);
+
+  // The reset the corrupt-panes halt screen offers: quarantine panes.json on
+  // the user's command (the rename either lands or the error surfaces), then
+  // reload — the absent store comes back as the default single pane.
+  const resetCorruptPanes = useCallback(async () => {
+    try {
+      const quarantinedTo = await quarantineCorruptPanes();
+      logInfo("corrupt panes.json set aside on user command", { quarantinedTo });
+      setLoadErrorIsCorruptPanes(false);
+      setLoadError(null);
+      setLoadStatus("loading");
+      await loadPersistedState();
+    } catch (error) {
+      logError("panes reset failed", { error: serializeError(error) });
+      setLoadError(`The file could not be set aside: ${String(error)}`);
+      setLoadStatus("failed");
+    }
+  }, [loadPersistedState]);
 
   const updatePaneTitle = useCallback(
     (paneId: string, title: string) => {
@@ -390,7 +450,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     try {
       await Promise.all([
         saveConfig(settings),
-        saveSession(buildSessionState(panes, activePaneId, zoomLevel)),
+        persistState(buildStateFile(activePaneId, zoomLevel)),
+        savePanes(buildPanesFile(panes)),
       ]);
       setSaveState(resolveSaveState(dirtyAtStart, dirtyCounterRef.current));
     } catch (error) {
@@ -427,6 +488,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       dataDir,
       loadStatus,
       loadError,
+      loadErrorIsCorruptPanes,
       snapshotCount,
       snapshotJustSavedAt,
       setActivePaneId,
@@ -438,6 +500,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       movePane,
       updateSettings,
       setZoomLevel,
+      resetCorruptPanes,
       saveNow,
       recordSnapshot,
       snapshotAllPanes,
@@ -457,10 +520,12 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       dismissBlockingError,
       dismissToast,
       loadError,
+      loadErrorIsCorruptPanes,
       loadStatus,
       movePane,
       panes,
       recordSnapshot,
+      resetCorruptPanes,
       saveNow,
       saveState,
       setZoomLevel,

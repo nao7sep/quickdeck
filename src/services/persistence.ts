@@ -1,9 +1,10 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import type { AppSettings, Pane, SnapshotTrigger } from "../types";
 
-export type SessionState = {
+// Pure view/session state — its own store (state.json), quarantined-then-reset
+// on corruption because every field is rebuildable by use.
+export type StateFile = {
   version: 1;
-  panes: Pane[];
   activePaneId: string;
   // The webview zoom — a view adjustment, so it is state, never config
   // (persisted-store-separation conventions).
@@ -11,9 +12,24 @@ export type SessionState = {
   updatedAtUtc: string;
 };
 
+// The panes' text and identity — the user's work product, its own store
+// (panes.json) that HALTS on corruption rather than quarantining.
+export type PanesFile = {
+  version: 1;
+  panes: Pane[];
+  updatedAtUtc: string;
+};
+
 export type LoadedAppData = {
   config: AppSettings | null;
-  session: SessionState | null;
+  // Where a corrupt config.json was set aside; the app reports it to the user.
+  configQuarantinedTo: string | null;
+  state: StateFile | null;
+  stateQuarantinedTo: string | null;
+  panes: PanesFile | null;
+  // Set when panes.json is present but unreadable: the pane surface halts
+  // (file left in place) while config and state still load.
+  panesError: string | null;
   dataDir: string;
   // Whether developer-only debug logging is on (resolved by the Rust core).
   debugEnabled: boolean;
@@ -41,16 +57,19 @@ export type SnapshotSearchResult = {
   hasMore: boolean;
 };
 
-export function buildSessionState(
-  panes: Pane[],
-  activePaneId: string,
-  zoomLevel: number,
-): SessionState {
+export function buildStateFile(activePaneId: string, zoomLevel: number): StateFile {
+  return {
+    version: 1,
+    activePaneId,
+    zoomLevel,
+    updatedAtUtc: new Date().toISOString(),
+  };
+}
+
+export function buildPanesFile(panes: Pane[]): PanesFile {
   return {
     version: 1,
     panes,
-    activePaneId,
-    zoomLevel,
     updatedAtUtc: new Date().toISOString(),
   };
 }
@@ -59,7 +78,11 @@ export async function loadAppData(): Promise<LoadedAppData> {
   if (!isTauri()) {
     return {
       config: null,
-      session: null,
+      configQuarantinedTo: null,
+      state: null,
+      stateQuarantinedTo: null,
+      panes: null,
+      panesError: null,
       dataDir: "Browser preview",
       debugEnabled: import.meta.env.DEV,
     };
@@ -76,12 +99,26 @@ export async function saveConfig(config: AppSettings): Promise<void> {
   await invoke("save_config", { config });
 }
 
-export async function saveSession(session: SessionState): Promise<void> {
+export async function saveState(state: StateFile): Promise<void> {
   if (!isTauri()) {
     return;
   }
 
-  await invoke("save_session", { session });
+  await invoke("save_state", { state });
+}
+
+export async function savePanes(panes: PanesFile): Promise<void> {
+  if (!isTauri()) {
+    return;
+  }
+
+  await invoke("save_panes", { panes });
+}
+
+// The user-commanded reset behind the corrupt-panes halt: the Rust core sets
+// panes.json aside to its `.invalid` name and returns where it went.
+export async function quarantineCorruptPanes(): Promise<string> {
+  return invoke<string>("quarantine_corrupt_panes");
 }
 
 export async function createSnapshot(input: SnapshotWriteInput): Promise<SnapshotWriteResult> {

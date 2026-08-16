@@ -39,6 +39,8 @@ export function App() {
     blockingError,
     dismissBlockingError,
     loadError,
+    loadErrorIsCorruptPanes,
+    resetCorruptPanes,
     loadStatus,
     saveState,
     settings,
@@ -384,7 +386,12 @@ export function App() {
   }, []);
 
   if (loadStatus === "failed") {
-    return <LoadErrorScreen error={loadError ?? "Unknown error while loading saved data."} />;
+    return (
+      <LoadErrorScreen
+        error={loadError ?? "Unknown error while loading saved data."}
+        onSetAsideAndReset={loadErrorIsCorruptPanes ? () => void resetCorruptPanes() : undefined}
+      />
+    );
   }
 
   const visiblePanes = settings.zen

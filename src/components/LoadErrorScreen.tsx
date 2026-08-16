@@ -12,9 +12,14 @@ import { logWarn, serializeError } from "../services/logger";
 
 type LoadErrorScreenProps = {
   error: string;
+  // Present only for the corrupt-panes halt: the user-commanded reset that
+  // sets the unreadable file aside (preserving its bytes) and starts fresh —
+  // a halting store must be clearable from the surface that reported the
+  // failure (storage-path conventions).
+  onSetAsideAndReset?: () => void;
 };
 
-export function LoadErrorScreen({ error }: LoadErrorScreenProps) {
+export function LoadErrorScreen({ error, onSetAsideAndReset }: LoadErrorScreenProps) {
   function quit() {
     if (isTauri()) {
       void getCurrentWindow()
@@ -42,6 +47,11 @@ export function LoadErrorScreen({ error }: LoadErrorScreenProps) {
           repair or move the affected file, then relaunch.
         </p>
         <div className="loadErrorActions">
+          {onSetAsideAndReset && (
+            <button type="button" className="secondaryButton" onClick={onSetAsideAndReset}>
+              Set the file aside and start fresh
+            </button>
+          )}
           <button type="button" className="primaryButton" onClick={quit}>
             Quit
           </button>

@@ -129,7 +129,9 @@ pub fn init(app: &AppHandle, version: &str) {
 // Formats `now` as the session-log filename stem: `yyyymmdd-hhmmss-fff-utc`, the
 // machine-paced millisecond form (see timestamp-conventions). Pure and
 // injectable so the shape is unit-testable without spinning up an AppHandle.
-fn session_stamp(now: chrono::DateTime<Utc>) -> String {
+// pub(crate): also the moment discriminator for other derived-sibling names
+// (storage's quarantine `<stem>-<stamp>.invalid`) — one formatter, never two.
+pub(crate) fn session_stamp(now: chrono::DateTime<Utc>) -> String {
     format!("{}-{:03}-utc", now.format("%Y%m%d-%H%M%S"), now.timestamp_subsec_millis())
 }
 
