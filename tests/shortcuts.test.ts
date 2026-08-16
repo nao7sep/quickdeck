@@ -22,16 +22,16 @@ describe("matchesShortcut", () => {
     expect(matchesShortcut(key("k", { ctrlKey: true, shiftKey: true }), "toggleZen")).toBe(false);
   });
 
-  it("distinguishes focus (no shift) from move (shift) on arrow keys", () => {
-    const left = key("ArrowLeft", { ctrlKey: true });
-    const shiftLeft = key("ArrowLeft", { ctrlKey: true, shiftKey: true });
+  it("distinguishes focus (no shift) from move (shift) on the bracket keys", () => {
+    const left = key("[", { ctrlKey: true });
+    const shiftLeft = key("{", { ctrlKey: true, shiftKey: true });
     expect(matchesShortcut(left, "focusPreviousPane")).toBe(true);
     expect(matchesShortcut(left, "movePaneLeft")).toBe(false);
     expect(matchesShortcut(shiftLeft, "movePaneLeft")).toBe(true);
     expect(matchesShortcut(shiftLeft, "focusPreviousPane")).toBe(false);
 
-    const right = key("ArrowRight", { metaKey: true });
-    const shiftRight = key("ArrowRight", { metaKey: true, shiftKey: true });
+    const right = key("]", { metaKey: true });
+    const shiftRight = key("}", { metaKey: true, shiftKey: true });
     expect(matchesShortcut(right, "focusNextPane")).toBe(true);
     expect(matchesShortcut(shiftRight, "movePaneRight")).toBe(true);
   });
@@ -85,5 +85,20 @@ describe("shortcutDefinitions", () => {
     // Zoom is matched in utils/zoom.ts, not matchesShortcut, so it carries no id.
     const idless = shortcutDefinitions.filter((s) => s.id === undefined).map((s) => s.description);
     expect(idless).toEqual(["Zoom in", "Zoom out", "Reset zoom"]);
+  });
+});
+
+describe("the pane chords avoid Cocoa's text keymap", () => {
+  it("uses bracket keys, not arrows — Cmd+Arrow is line navigation in a text field", () => {
+    // QuickDeck's only surface is a textarea, so an arrow-bound pane chord was
+    // advertised in the help modal and never fired.
+    expect(matchesShortcut(key("ArrowLeft", { metaKey: true }), "focusPreviousPane")).toBe(false);
+    expect(matchesShortcut(key("ArrowRight", { metaKey: true }), "focusNextPane")).toBe(false);
+  });
+
+  it("accepts both shifted forms of the bracket, like the slash chord", () => {
+    // Shift+[ delivers "{" on US layouts and "[" on some others.
+    expect(matchesShortcut(key("[", { metaKey: true, shiftKey: true }), "movePaneLeft")).toBe(true);
+    expect(matchesShortcut(key("}", { metaKey: true, shiftKey: true }), "movePaneRight")).toBe(true);
   });
 });

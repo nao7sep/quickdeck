@@ -77,15 +77,17 @@ describe("shadowsMacTextEditing (platform-dependent)", () => {
     vi.unstubAllGlobals();
   });
 
-  it("on macOS, flags bare-Ctrl Cocoa letters and Cmd/Ctrl arrow chords", async () => {
+  it("on macOS, flags bare-Ctrl Cocoa letters", async () => {
     const { shadowsMacTextEditing } = await importWithPlatform("mac");
     // Ctrl+K is Cocoa kill-line; Ctrl+N next-line; Ctrl+Slash is bound too.
     expect(shadowsMacTextEditing(key("k", { ctrlKey: true }))).toBe(true);
     expect(shadowsMacTextEditing(key("n", { ctrlKey: true }))).toBe(true);
     expect(shadowsMacTextEditing(key("/", { ctrlKey: true }))).toBe(true);
-    // Cmd+Left/Right are line navigation; the pane chords shadow them.
-    expect(shadowsMacTextEditing(key("ArrowLeft", { metaKey: true }))).toBe(true);
-    expect(shadowsMacTextEditing(key("ArrowRight", { ctrlKey: true }))).toBe(true);
+    // Arrows are NOT listed: Cmd+Left/Right are Cocoa line navigation, which is
+    // exactly why the pane chords were rebound to the bracket keys instead of
+    // being bound and then suppressed here.
+    expect(shadowsMacTextEditing(key("ArrowLeft", { metaKey: true }))).toBe(false);
+    expect(shadowsMacTextEditing(key("[", { metaKey: true }))).toBe(false);
     // The Cmd half of a letter chord is unbound and must fire.
     expect(shadowsMacTextEditing(key("k", { metaKey: true }))).toBe(false);
     // Zoom symbols are genuinely unbound in Cocoa and stay global.
@@ -96,6 +98,5 @@ describe("shadowsMacTextEditing (platform-dependent)", () => {
   it("never fires off macOS — there is no Cocoa keymap to shadow", async () => {
     const { shadowsMacTextEditing } = await importWithPlatform("windows");
     expect(shadowsMacTextEditing(key("k", { ctrlKey: true }))).toBe(false);
-    expect(shadowsMacTextEditing(key("ArrowLeft", { ctrlKey: true }))).toBe(false);
   });
 });

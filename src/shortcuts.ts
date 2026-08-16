@@ -41,22 +41,22 @@ export const shortcutDefinitions: ShortcutDefinition[] = [
   },
   {
     id: "focusPreviousPane",
-    keys: `${mod}+Left`,
+    keys: `${mod}+LeftBracket`,
     description: "Focus previous pane",
   },
   {
     id: "focusNextPane",
-    keys: `${mod}+Right`,
+    keys: `${mod}+RightBracket`,
     description: "Focus next pane",
   },
   {
     id: "movePaneLeft",
-    keys: `${mod}+Shift+Left`,
+    keys: `${mod}+Shift+LeftBracket`,
     description: "Move pane left",
   },
   {
     id: "movePaneRight",
-    keys: `${mod}+Shift+Right`,
+    keys: `${mod}+Shift+RightBracket`,
     description: "Move pane right",
   },
   {
@@ -122,20 +122,29 @@ export function matchesShortcut(event: KeyboardEvent, id: ShortcutId): boolean {
     return commandOrControl && !event.shiftKey && event.key.toLowerCase() === "n";
   }
 
+  // The pane chords are bracket keys, not arrows. macOS binds Cmd+Left/Right to
+  // moveToLeftEndOfLine:/moveToRightEndOfLine: inside a text field, and QuickDeck's
+  // only surface IS a text field (a pane activates by focusing its editor) — so the
+  // arrow forms were advertised in the help modal and never fired, the bound-but-inert
+  // half the conventions forbid. The bracket keys are unbound in Cocoa's keymap, so
+  // these work everywhere and line navigation keeps working in the editor.
+  //
+  // Shift+[ delivers "{" on US layouts and "[" on some others; both are accepted for
+  // the same command, exactly as the "/" chord accepts its shifted form.
   if (id === "focusPreviousPane") {
-    return commandOrControl && !event.shiftKey && event.key === "ArrowLeft";
+    return commandOrControl && !event.shiftKey && event.key === "[";
   }
 
   if (id === "focusNextPane") {
-    return commandOrControl && !event.shiftKey && event.key === "ArrowRight";
+    return commandOrControl && !event.shiftKey && event.key === "]";
   }
 
   if (id === "movePaneLeft") {
-    return commandOrControl && event.shiftKey && event.key === "ArrowLeft";
+    return commandOrControl && event.shiftKey && (event.key === "{" || event.key === "[");
   }
 
   if (id === "movePaneRight") {
-    return commandOrControl && event.shiftKey && event.key === "ArrowRight";
+    return commandOrControl && event.shiftKey && (event.key === "}" || event.key === "]");
   }
 
   if (id === "openSettings") {

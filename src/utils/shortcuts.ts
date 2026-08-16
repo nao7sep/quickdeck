@@ -38,15 +38,12 @@ const COCOA_CTRL_TEXT_KEYS = new Set([
 /**
  * True when this chord shadows a macOS text-editing binding and must stand
  * down while the event target is editable (keyboard-shortcut-conventions):
- * bare-Ctrl chords on Cocoa text keys, and Cmd/Ctrl+Arrow left/right —
- * line navigation and its Shift-extending selection forms — which quickdeck
- * binds for pane focus and pane reorder.
+ * bare-Ctrl chords on Cocoa text keys. The pane chords no longer need an arrow
+ * clause here: they were rebound to the bracket keys precisely because Cmd+Arrow
+ * is Cocoa's line navigation and QuickDeck's only surface is a text field.
  */
 export function shadowsMacTextEditing(event: KeyboardEvent): boolean {
   if (!isApplePlatform) return false;
-  if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
-    return event.metaKey || event.ctrlKey;
-  }
   if (event.metaKey || !event.ctrlKey) return false;
   const key = event.key.length === 1 ? event.key.toLowerCase() : event.key;
   return COCOA_CTRL_TEXT_KEYS.has(key);
