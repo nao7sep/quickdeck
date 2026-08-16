@@ -41,22 +41,22 @@ export const shortcutDefinitions: ShortcutDefinition[] = [
   },
   {
     id: "focusPreviousPane",
-    keys: `${mod}+LeftBracket`,
+    keys: `${mod}+PageUp`,
     description: "Focus previous pane",
   },
   {
     id: "focusNextPane",
-    keys: `${mod}+RightBracket`,
+    keys: `${mod}+PageDown`,
     description: "Focus next pane",
   },
   {
     id: "movePaneLeft",
-    keys: `${mod}+Shift+LeftBracket`,
+    keys: `${mod}+Shift+PageUp`,
     description: "Move pane left",
   },
   {
     id: "movePaneRight",
-    keys: `${mod}+Shift+RightBracket`,
+    keys: `${mod}+Shift+PageDown`,
     description: "Move pane right",
   },
   {
@@ -122,29 +122,23 @@ export function matchesShortcut(event: KeyboardEvent, id: ShortcutId): boolean {
     return commandOrControl && !event.shiftKey && event.key.toLowerCase() === "n";
   }
 
-  // The pane chords are bracket keys, not arrows. macOS binds Cmd+Left/Right to
-  // moveToLeftEndOfLine:/moveToRightEndOfLine: inside a text field, and QuickDeck's
-  // only surface IS a text field (a pane activates by focusing its editor) — so the
-  // arrow forms were advertised in the help modal and never fired, the bound-but-inert
-  // half the conventions forbid. The bracket keys are unbound in Cocoa's keymap, so
-  // these work everywhere and line navigation keeps working in the editor.
-  //
-  // Shift+[ delivers "{" on US layouts and "[" on some others; both are accepted for
-  // the same command, exactly as the "/" chord accepts its shifted form.
+  // PageUp/PageDown are layout-independent named keys. Printable punctuation is
+  // unsuitable here: brackets require Option or AltGr on common layouts, while
+  // command matching must reject AltGr so typing cannot fire an accelerator.
   if (id === "focusPreviousPane") {
-    return commandOrControl && !event.shiftKey && event.key === "[";
+    return commandOrControl && !event.shiftKey && event.key === "PageUp";
   }
 
   if (id === "focusNextPane") {
-    return commandOrControl && !event.shiftKey && event.key === "]";
+    return commandOrControl && !event.shiftKey && event.key === "PageDown";
   }
 
   if (id === "movePaneLeft") {
-    return commandOrControl && event.shiftKey && (event.key === "{" || event.key === "[");
+    return commandOrControl && event.shiftKey && event.key === "PageUp";
   }
 
   if (id === "movePaneRight") {
-    return commandOrControl && event.shiftKey && (event.key === "}" || event.key === "]");
+    return commandOrControl && event.shiftKey && event.key === "PageDown";
   }
 
   if (id === "openSettings") {

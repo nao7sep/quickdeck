@@ -84,10 +84,10 @@ describe("shadowsMacTextEditing (platform-dependent)", () => {
     expect(shadowsMacTextEditing(key("n", { ctrlKey: true }))).toBe(true);
     expect(shadowsMacTextEditing(key("/", { ctrlKey: true }))).toBe(true);
     // Arrows are NOT listed: Cmd+Left/Right are Cocoa line navigation, which is
-    // exactly why the pane chords were rebound to the bracket keys instead of
-    // being bound and then suppressed here.
+    // exactly why pane navigation uses layout-independent PageUp/PageDown keys
+    // instead of being bound and then suppressed here.
     expect(shadowsMacTextEditing(key("ArrowLeft", { metaKey: true }))).toBe(false);
-    expect(shadowsMacTextEditing(key("[", { metaKey: true }))).toBe(false);
+    expect(shadowsMacTextEditing(key("PageUp", { metaKey: true }))).toBe(false);
     // The Cmd half of a letter chord is unbound and must fire.
     expect(shadowsMacTextEditing(key("k", { metaKey: true }))).toBe(false);
     // Zoom symbols are genuinely unbound in Cocoa and stay global.

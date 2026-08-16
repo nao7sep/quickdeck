@@ -22,16 +22,16 @@ describe("matchesShortcut", () => {
     expect(matchesShortcut(key("k", { ctrlKey: true, shiftKey: true }), "toggleZen")).toBe(false);
   });
 
-  it("distinguishes focus (no shift) from move (shift) on the bracket keys", () => {
-    const left = key("[", { ctrlKey: true });
-    const shiftLeft = key("{", { ctrlKey: true, shiftKey: true });
+  it("distinguishes focus (no shift) from move (shift) on PageUp/PageDown", () => {
+    const left = key("PageUp", { ctrlKey: true });
+    const shiftLeft = key("PageUp", { ctrlKey: true, shiftKey: true });
     expect(matchesShortcut(left, "focusPreviousPane")).toBe(true);
     expect(matchesShortcut(left, "movePaneLeft")).toBe(false);
     expect(matchesShortcut(shiftLeft, "movePaneLeft")).toBe(true);
     expect(matchesShortcut(shiftLeft, "focusPreviousPane")).toBe(false);
 
-    const right = key("]", { metaKey: true });
-    const shiftRight = key("}", { metaKey: true, shiftKey: true });
+    const right = key("PageDown", { metaKey: true });
+    const shiftRight = key("PageDown", { metaKey: true, shiftKey: true });
     expect(matchesShortcut(right, "focusNextPane")).toBe(true);
     expect(matchesShortcut(shiftRight, "movePaneRight")).toBe(true);
   });
@@ -88,17 +88,18 @@ describe("shortcutDefinitions", () => {
   });
 });
 
-describe("the pane chords avoid Cocoa's text keymap", () => {
-  it("uses bracket keys, not arrows — Cmd+Arrow is line navigation in a text field", () => {
+describe("the pane chords avoid Cocoa's text keymap and printable layout keys", () => {
+  it("uses PageUp/PageDown, not arrows — Cmd+Arrow is line navigation in a text field", () => {
     // QuickDeck's only surface is a textarea, so an arrow-bound pane chord was
     // advertised in the help modal and never fired.
     expect(matchesShortcut(key("ArrowLeft", { metaKey: true }), "focusPreviousPane")).toBe(false);
     expect(matchesShortcut(key("ArrowRight", { metaKey: true }), "focusNextPane")).toBe(false);
   });
 
-  it("accepts both shifted forms of the bracket, like the slash chord", () => {
-    // Shift+[ delivers "{" on US layouts and "[" on some others.
-    expect(matchesShortcut(key("[", { metaKey: true, shiftKey: true }), "movePaneLeft")).toBe(true);
-    expect(matchesShortcut(key("}", { metaKey: true, shiftKey: true }), "movePaneRight")).toBe(true);
+  it("does not depend on brackets that require Alt/AltGr on common layouts", () => {
+    expect(matchesShortcut(key("[", { metaKey: true, altKey: true }), "focusPreviousPane")).toBe(false);
+    expect(matchesShortcut(key("]", { ctrlKey: true, altKey: true }), "focusNextPane")).toBe(false);
+    expect(matchesShortcut(key("PageUp", { metaKey: true }), "focusPreviousPane")).toBe(true);
+    expect(matchesShortcut(key("PageDown", { ctrlKey: true }), "focusNextPane")).toBe(true);
   });
 });

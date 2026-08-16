@@ -27,9 +27,9 @@ export function ShortcutsModal({ onClose }: ShortcutsModalProps) {
       {/* The catalogue-matches-bindings rule: a chord that stands down in some
           context says so (keyboard-shortcut-conventions). */}
       <p className="shortcutNote">
-        On macOS, chords that overlap the system's text-editing keys — the Ctrl
-        halves of letter chords, and the pane chords on Left/Right — yield to
-        the text field while you are typing in one.
+        On macOS, Ctrl chords that overlap the system's text-editing keys yield
+        to the text field while you are typing in one; their Cmd forms remain
+        available.
       </p>
     </ModalBase>
   );
