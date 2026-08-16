@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { matchesShortcut, shortcutDefinitions } from "../src/shortcuts";
 
 type Mods = { ctrlKey?: boolean; metaKey?: boolean; shiftKey?: boolean; altKey?: boolean };
@@ -85,6 +85,37 @@ describe("shortcutDefinitions", () => {
     // Zoom is matched in utils/zoom.ts, not matchesShortcut, so it carries no id.
     const idless = shortcutDefinitions.filter((s) => s.id === undefined).map((s) => s.description);
     expect(idless).toEqual(["Zoom in", "Zoom out", "Reset zoom"]);
+  });
+
+  describe("platform pane-key labels", () => {
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    async function paneKeys(platform: string): Promise<Record<string, string>> {
+      vi.stubGlobal("navigator", { platform, userAgent: platform });
+      vi.resetModules();
+      const { shortcutDefinitions: definitions } = await import("../src/shortcuts");
+      return Object.fromEntries(
+        definitions.flatMap((definition) =>
+          definition.id ? [[definition.id, definition.keys]] : [],
+        ),
+      );
+    }
+
+    it("shows the physical Fn+Arrow form on macOS", async () => {
+      const keys = await paneKeys("MacIntel");
+      expect(keys.focusPreviousPane).toBe("Cmd+Fn+Up");
+      expect(keys.focusNextPane).toBe("Cmd+Fn+Down");
+      expect(keys.movePaneLeft).toBe("Cmd+Shift+Fn+Up");
+      expect(keys.movePaneRight).toBe("Cmd+Shift+Fn+Down");
+    });
+
+    it("shows PageUp/PageDown where those are the platform keys", async () => {
+      const keys = await paneKeys("Win32");
+      expect(keys.focusPreviousPane).toBe("Ctrl+PageUp");
+      expect(keys.focusNextPane).toBe("Ctrl+PageDown");
+    });
   });
 });
 

@@ -1,4 +1,4 @@
-import { hasMod, primaryModWord } from "./utils/shortcuts";
+import { hasMod, isApplePlatform, primaryModWord } from "./utils/shortcuts";
 
 export type ShortcutId =
   | "toggleDark"
@@ -29,6 +29,8 @@ export type ShortcutDefinition = {
 // conventions). Both the word and the matching predicate come from the one
 // leaf module, so the label and the binding cannot disagree.
 const mod = primaryModWord;
+const pageUp = isApplePlatform ? "Fn+Up" : "PageUp";
+const pageDown = isApplePlatform ? "Fn+Down" : "PageDown";
 
 // Built once at module load from the resolved modifier. Chord grammar:
 // "+" joins with no spaces, modifier order is Cmd/Ctrl → Alt → Shift → key,
@@ -41,22 +43,22 @@ export const shortcutDefinitions: ShortcutDefinition[] = [
   },
   {
     id: "focusPreviousPane",
-    keys: `${mod}+PageUp`,
+    keys: `${mod}+${pageUp}`,
     description: "Focus previous pane",
   },
   {
     id: "focusNextPane",
-    keys: `${mod}+PageDown`,
+    keys: `${mod}+${pageDown}`,
     description: "Focus next pane",
   },
   {
     id: "movePaneLeft",
-    keys: `${mod}+Shift+PageUp`,
+    keys: `${mod}+Shift+${pageUp}`,
     description: "Move pane left",
   },
   {
     id: "movePaneRight",
-    keys: `${mod}+Shift+PageDown`,
+    keys: `${mod}+Shift+${pageDown}`,
     description: "Move pane right",
   },
   {
