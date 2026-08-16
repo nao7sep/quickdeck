@@ -141,6 +141,24 @@ pub fn save_panes(app: &AppHandle, panes: JsonValue) -> Result<(), String> {
 // report can name it. The rename either lands or its failure propagates —
 // never a silent fall-through to defaults over the preserved bytes
 // (storage-path conventions: halting requires exactly this reset offer).
+pub fn quarantine_corrupt_config(app: &AppHandle) -> Result<String, String> {
+    // The frontend detects a shape-failed config (valid JSON, wrong types) and
+    // takes the same corrupt branch the bytes-level reader takes: set the file
+    // aside, reseed, report (storage-path conventions' shape-failure clause).
+    let data_dir = app_data_dir(app)?;
+    let path = data_dir.join(CONFIG_FILE_NAME);
+    let quarantined = quarantine_name(&path);
+    fs::rename(&path, &quarantined).map_err(to_string_error)?;
+    crate::logging::warn(
+        "shape-failed config.json quarantined",
+        serde_json::json!({
+            "file": path.to_string_lossy(),
+            "quarantinedTo": quarantined.to_string_lossy(),
+        }),
+    );
+    Ok(quarantined.to_string_lossy().into_owned())
+}
+
 pub fn quarantine_corrupt_panes(app: &AppHandle) -> Result<String, String> {
     let data_dir = app_data_dir(app)?;
     let path = data_dir.join(PANES_FILE_NAME);

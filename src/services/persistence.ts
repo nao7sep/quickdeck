@@ -121,6 +121,13 @@ export async function quarantineCorruptPanes(): Promise<string> {
   return invoke<string>("quarantine_corrupt_panes");
 }
 
+// The shape-failure branch for config.json: valid JSON whose fields fail the
+// shape check is corrupt too, so the load path sets it aside before reseeding
+// (storage-path conventions).
+export async function quarantineCorruptConfig(): Promise<string> {
+  return invoke<string>("quarantine_corrupt_config");
+}
+
 export async function createSnapshot(input: SnapshotWriteInput): Promise<SnapshotWriteResult> {
   if (!isTauri()) {
     return { inserted: false, id: null };

@@ -10,7 +10,7 @@ import {
 } from "react";
 import { nanoid } from "nanoid";
 import { createDefaultPane, defaultSettings } from "./defaults";
-import { normalizePanes, normalizeSettings, normalizeZoomLevel } from "./normalize";
+import { normalizePanes, normalizeSettings, normalizeZoomLevel, settingsShapeIssues } from "./normalize";
 import { ZOOM_DEFAULT } from "../utils/zoom";
 import { appendPane, deletePane as deletePaneOp, reorderPane } from "./paneOps";
 import { multiline, singleLine } from "../utils/textCleanup";
@@ -22,6 +22,7 @@ import {
   createSnapshot,
   createSnapshots,
   loadAppData,
+  quarantineCorruptConfig,
   quarantineCorruptPanes,
   saveConfig,
   savePanes,
@@ -163,6 +164,39 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         return;
       }
 
+      // A store whose recorded schema version is newer than this build wrote
+      // it is intact data, not corruption: report it by name and leave it
+      // exactly in place — never quarantined, never reset (storage-path
+      // conventions). No set-aside offer on this halt.
+      const panesVersion = (data.panes as { version?: unknown } | null)?.version;
+      if (typeof panesVersion === "number" && panesVersion > 1) {
+        logError("panes.json is from a newer build", { version: panesVersion });
+        setLoadErrorIsCorruptPanes(false);
+        setLoadError(
+          `Your pane text file (panes.json) was written by a newer version of QuickDeck (format ${panesVersion}) and has been left exactly in place. Update QuickDeck to open it.`,
+        );
+        setLoadStatus("failed");
+        return;
+      }
+
+      // Valid JSON whose fields fail the shape check is corrupt too: set the
+      // file aside BEFORE the first write-back, reseed from the normalized
+      // reading, and report — flushing a coerced reading over the original
+      // would destroy the user's bytes on a file that never looked corrupt
+      // (storage-path conventions' shape-failure clause). Unknown keys are not
+      // shape failures: they are dropped by the known-keys rebuild and logged.
+      let configShapeQuarantinedTo: string | null = null;
+      if (data.config !== null) {
+        const issues = settingsShapeIssues(data.config);
+        if (issues.length > 0) {
+          configShapeQuarantinedTo = await quarantineCorruptConfig();
+          logWarn("shape-failed config.json quarantined; reseeding normalized values", {
+            issues,
+            quarantinedTo: configShapeQuarantinedTo,
+          });
+        }
+      }
+
       const effectiveSettings = normalizeSettings(data.config);
       setSettings(effectiveSettings);
       // Startup baseline: record the key effective configuration.
@@ -176,8 +210,12 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       // A quarantine without a report is a silent reset with extra steps
       // (storage-path conventions): name what was set aside and what the app
       // started with instead. The dialog is dismissible — the app recovered.
-      if (data.configQuarantinedTo !== null || data.stateQuarantinedTo !== null) {
-        const setAside = [data.configQuarantinedTo, data.stateQuarantinedTo]
+      if (
+        data.configQuarantinedTo !== null ||
+        data.stateQuarantinedTo !== null ||
+        configShapeQuarantinedTo !== null
+      ) {
+        const setAside = [data.configQuarantinedTo, data.stateQuarantinedTo, configShapeQuarantinedTo]
           .filter((path): path is string => path !== null)
           .join("\n");
         showBlockingError(
@@ -194,7 +232,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       // quarantined aside (which renames it away) — so this is create-if-absent (an existing
       // config is never overwritten), persisting the real normalized defaults through the normal
       // save_config path rather than a hand-built literal. A write failure is logged, not fatal.
-      if (!canceledRef.current && data.config === null) {
+      if (!canceledRef.current && (data.config === null || configShapeQuarantinedTo !== null)) {
         try {
           await saveConfig(effectiveSettings);
         } catch (error) {

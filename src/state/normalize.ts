@@ -100,6 +100,43 @@ export function normalizeSettings(settings: AppSettings | null): AppSettings {
 // setting in config.json (persisted-store-separation conventions), so it is
 // normalized apart from settings. Anything loaded (absent, hand-edited, out of
 // range) lands back on a sane level.
+// Wrong-typed PRESENT fields in a loaded config — the shape failures that make
+// the file corrupt (storage-path conventions: a file that parses but does not
+// fit its shape takes the corrupt branch, because flushing a coerced reading
+// back would destroy the user's bytes on a file that never looked corrupt).
+// An ABSENT field takes its default and is not an issue; an unknown key is
+// dropped by the known-keys rebuild and reported by the caller's log, not
+// treated as corruption (pre-release update-in-place tolerates retired keys).
+export function settingsShapeIssues(loaded: unknown): string[] {
+  if (loaded === null || typeof loaded !== "object" || Array.isArray(loaded)) {
+    return ["config is not a JSON object"];
+  }
+  const source = loaded as Record<string, unknown>;
+  const issues: string[] = [];
+  const expect = (key: string, check: (v: unknown) => boolean, type: string) => {
+    if (key in source && !check(source[key])) {
+      issues.push(`${key} is not a ${type}`);
+    }
+  };
+  const isBool = (v: unknown) => typeof v === "boolean";
+  const isNum = (v: unknown) => typeof v === "number" && Number.isFinite(v);
+  const isStr = (v: unknown) => typeof v === "string";
+  expect("dark", isBool, "boolean");
+  expect("zen", isBool, "boolean");
+  expect("topmost", isBool, "boolean");
+  expect("uiFontFamily", isStr, "string");
+  expect("editorFontFamily", isStr, "string");
+  expect("editorFontSize", isNum, "finite number");
+  expect("editorLineHeight", isNum, "finite number");
+  expect("editorPadding", isNum, "finite number");
+  expect("editorBold", isBool, "boolean");
+  expect("editorItalic", isBool, "boolean");
+  expect("editorUnderline", isBool, "boolean");
+  expect("autosaveDelaySeconds", isNum, "finite number");
+  expect("snapshotSearchPageSize", isNum, "finite number");
+  return issues;
+}
+
 export function normalizeZoomLevel(value: unknown): number {
   return clampNumber(
     typeof value === "number" ? value : Number.NaN,

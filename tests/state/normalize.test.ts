@@ -6,6 +6,7 @@ import {
   normalizePanes,
   normalizeSettings,
   normalizeZoomLevel,
+  settingsShapeIssues,
 } from "../../src/state/normalize";
 import { defaultSettings } from "../../src/state/defaults";
 import { ZOOM_DEFAULT, ZOOM_MAX, ZOOM_MIN } from "../../src/utils/zoom";
@@ -284,5 +285,26 @@ describe("normalizePanes", () => {
     const result = normalizePanes(panes);
     expect(result[0].title).toBe("New Buffer");
     expect(result[1].content).toBe("");
+  });
+});
+
+describe("settingsShapeIssues", () => {
+  it("passes a clean config and one with absent fields", () => {
+    expect(settingsShapeIssues({ ...defaultSettings })).toEqual([]);
+    // Absent fields take their defaults — never a shape failure.
+    expect(settingsShapeIssues({ zen: true })).toEqual([]);
+  });
+
+  it("flags wrong-typed present fields — the corrupt branch, never a coerce-and-flush", () => {
+    expect(settingsShapeIssues({ ...defaultSettings, dark: "yes" })).toEqual(["dark is not a boolean"]);
+    expect(settingsShapeIssues({ ...defaultSettings, editorFontSize: "14" })).toContain(
+      "editorFontSize is not a finite number",
+    );
+    expect(settingsShapeIssues("not an object")).toEqual(["config is not a JSON object"]);
+    expect(settingsShapeIssues(null)).toEqual(["config is not a JSON object"]);
+  });
+
+  it("ignores unknown keys — dropped by the known-keys rebuild, not corruption", () => {
+    expect(settingsShapeIssues({ ...defaultSettings, zoomLevel: 1.2, retired: true })).toEqual([]);
   });
 });
