@@ -170,11 +170,19 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      // A panes.json that PARSES but does not fit its shape is corrupt too, and takes
-      // the same halt: normalizePanes would silently drop an entry with no id and
-      // blank a non-string body, and the close path's unconditional save would then
-      // write that lossy reading back over the user's text — launching and quitting
-      // would be enough to lose a pane (storage-path conventions' shape-failure clause).
+      // Check the version before this build's shape. A newer schema may be
+      // intentionally different and must never be offered the corrupt-file reset.
+      const panesVersion = (data.panes as { version?: unknown } | null)?.version;
+      if (typeof panesVersion === "number" && panesVersion > 1) {
+        logError("panes.json is from a newer build", { version: panesVersion });
+        setLoadErrorIsCorruptPanes(false);
+        setLoadError(
+          `Your pane text file (panes.json) was written by a newer version of QuickDeck (format ${panesVersion}) and has been left exactly in place. Update QuickDeck to open it.`,
+        );
+        setLoadStatus("failed");
+        return;
+      }
+
       if (data.panes !== null) {
         const paneIssues = panesShapeIssues(data.panes);
         if (paneIssues.length > 0) {
@@ -186,21 +194,6 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
           setLoadStatus("failed");
           return;
         }
-      }
-
-      // A store whose recorded schema version is newer than this build wrote
-      // it is intact data, not corruption: report it by name and leave it
-      // exactly in place — never quarantined, never reset (storage-path
-      // conventions). No set-aside offer on this halt.
-      const panesVersion = (data.panes as { version?: unknown } | null)?.version;
-      if (typeof panesVersion === "number" && panesVersion > 1) {
-        logError("panes.json is from a newer build", { version: panesVersion });
-        setLoadErrorIsCorruptPanes(false);
-        setLoadError(
-          `Your pane text file (panes.json) was written by a newer version of QuickDeck (format ${panesVersion}) and has been left exactly in place. Update QuickDeck to open it.`,
-        );
-        setLoadStatus("failed");
-        return;
       }
 
       // Valid JSON whose fields fail the shape check is corrupt too: set the
@@ -231,15 +224,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         dataDir: data.dataDir,
       });
 
-      // A quarantine without a report is a silent reset with extra steps
-      // (storage-path conventions): name what was set aside and what the app
-      // started with instead. The dialog is dismissible — the app recovered.
-      if (
-        data.configQuarantinedTo !== null ||
-        data.stateQuarantinedTo !== null ||
-        configShapeQuarantinedTo !== null
-      ) {
-        const setAside = [data.configQuarantinedTo, data.stateQuarantinedTo, configShapeQuarantinedTo]
+      if (data.configQuarantinedTo !== null || configShapeQuarantinedTo !== null) {
+        const setAside = [data.configQuarantinedTo, configShapeQuarantinedTo]
           .filter((path): path is string => path !== null)
           .join("\n");
         showBlockingError(

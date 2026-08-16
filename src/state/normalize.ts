@@ -149,6 +149,9 @@ export function panesShapeIssues(loaded: unknown): string[] {
     return ["panes file is not a JSON object"];
   }
   const source = loaded as Record<string, unknown>;
+  if ("version" in source && (typeof source.version !== "number" || !Number.isFinite(source.version))) {
+    return ["version is not a finite number"];
+  }
   if (!("panes" in source)) {
     // Absent is the first-run case, not corruption: the default pane is created.
     return [];

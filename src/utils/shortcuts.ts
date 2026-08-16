@@ -1,52 +1,30 @@
-// The leaf home of the command-modifier predicate and the platform display
-// word (keyboard-shortcut-conventions): both src/shortcuts.ts (the chord
-// definitions) and src/utils/zoom.ts import from here, downward — a per-file
-// copy is what let quickdeck's named chords and zoom chords disagree on which
-// modifier fires.
-
 // navigator.platform is deprecated but still reliable in all current engines
 // including Tauri's webview. @tauri-apps/plugin-os is not used in this project.
 export const isApplePlatform = /Mac|iPhone|iPad|iPod/.test(
   typeof navigator === "undefined" ? "" : navigator.platform || navigator.userAgent,
 );
 
-/** The platform's command-modifier word: Cmd on macOS, Ctrl elsewhere. Only
- * the DISPLAY word is platform-bound; the predicate below accepts both. */
+/** The platform's command-modifier word: Cmd on macOS, Ctrl elsewhere. */
 export const primaryModWord = isApplePlatform ? "Cmd" : "Ctrl";
 
-/**
- * The one shared command-modifier predicate: BOTH Cmd and Ctrl fire on every
- * platform (the conventions' cross-machine muscle-memory rule), and Alt is
- * excluded because Chromium delivers Windows AltGr as Ctrl+Alt — an unguarded
- * predicate would let an AltGr-typed character fire an accelerator and
- * swallow the character.
- */
+/** Alt is excluded because Chromium delivers Windows AltGr as Ctrl+Alt. */
 export function hasMod(event: KeyboardEvent): boolean {
   return (event.metaKey || event.ctrlKey) && !event.altKey;
 }
 
-// Bare-Ctrl chords on these keys shadow Cocoa's text-editing keymap
-// (StandardKeyBinding.dict: kill-line, transpose, next-line, ..., and
-// Ctrl+Slash), so they belong to the text system while the caret is editable.
-const COCOA_CTRL_TEXT_KEYS = new Set([
-  "a", "b", "d", "e", "f", "h", "k", "l", "n", "o", "p", "t", "v", "y", "/",
-  // Ctrl+Return is insertLineBreak: — omitting it let Ctrl+Return in a text field
-  // both swallow the line break and fire the chord.
-  "Enter",
-]);
+// App chords that overlap Cocoa text editing while a pane has focus.
+const MAC_TEXT_BINDING_KEYS = new Set(["d", "k", "n", "t", "/"]);
 
 /**
  * True when this chord shadows a macOS text-editing binding and must stand
  * down while the event target is editable (keyboard-shortcut-conventions):
- * bare-Ctrl chords on Cocoa text keys. The pane chords no longer need an arrow
- * clause here: they were rebound to the bracket keys precisely because Cmd+Arrow
- * is Cocoa's line navigation and QuickDeck's only surface is a text field.
+ * bare-Ctrl app chords that Cocoa also binds.
  */
 export function shadowsMacTextEditing(event: KeyboardEvent): boolean {
   if (!isApplePlatform) return false;
   if (event.metaKey || !event.ctrlKey) return false;
   const key = event.key.length === 1 ? event.key.toLowerCase() : event.key;
-  return COCOA_CTRL_TEXT_KEYS.has(key);
+  return MAC_TEXT_BINDING_KEYS.has(key);
 }
 
 // Structural shape of an editable-target check, DOM-free for unit tests.

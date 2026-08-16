@@ -187,11 +187,6 @@ export function App() {
       }
 
       const editable = isEditableTarget(event.target as HTMLElement | null);
-      // On macOS a chord that shadows a Cocoa text-editing binding — bare-Ctrl
-      // letters (Ctrl+K kill-line, Ctrl+N next-line, ...) and Cmd/Ctrl+Arrow
-      // line navigation — belongs to the text system while the caret is in an
-      // editable field; the unshadowed halves always fire
-      // (keyboard-shortcut-conventions).
       if (editable && shadowsMacTextEditing(event)) {
         return;
       }

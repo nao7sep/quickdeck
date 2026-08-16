@@ -338,4 +338,10 @@ describe("panesShapeIssues", () => {
     expect(panesShapeIssues([])).toEqual(["panes file is not a JSON object"]);
     expect(panesShapeIssues(null)).toEqual(["panes file is not a JSON object"]);
   });
+
+  it("flags a malformed schema version", () => {
+    expect(panesShapeIssues({ version: "2", panes: [pane] })).toEqual([
+      "version is not a finite number",
+    ]);
+  });
 });

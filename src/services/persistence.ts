@@ -25,7 +25,6 @@ export type LoadedAppData = {
   // Where a corrupt config.json was set aside; the app reports it to the user.
   configQuarantinedTo: string | null;
   state: StateFile | null;
-  stateQuarantinedTo: string | null;
   panes: PanesFile | null;
   // Set when panes.json is present but unreadable: the pane surface halts
   // (file left in place) while config and state still load.
@@ -80,7 +79,6 @@ export async function loadAppData(): Promise<LoadedAppData> {
       config: null,
       configQuarantinedTo: null,
       state: null,
-      stateQuarantinedTo: null,
       panes: null,
       panesError: null,
       dataDir: "Browser preview",

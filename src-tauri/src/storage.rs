@@ -41,7 +41,6 @@ pub struct LoadedAppData {
     // (an unreported quarantine is a silent reset — storage-path conventions).
     pub config_quarantined_to: Option<String>,
     pub state: Option<JsonValue>,
-    pub state_quarantined_to: Option<String>,
     pub panes: Option<JsonValue>,
     // Set when panes.json is present but unreadable: the user's text halts the
     // pane surface (file left exactly in place) while config and state still
@@ -93,8 +92,9 @@ pub fn load_app_data(app: &AppHandle) -> Result<LoadedAppData, String> {
     // stores still load and the halt surface can offer a reset.
     let (config, config_quarantined_to) =
         read_rebuildable_store(&data_dir.join(CONFIG_FILE_NAME))?;
-    let (state, state_quarantined_to) =
-        read_rebuildable_store(&data_dir.join(STATE_FILE_NAME))?;
+    // state.json contains only the active pane and zoom. Preserve and log corrupt
+    // bytes, but do not surface a recovery dialog for disposable view state.
+    let (state, _) = read_rebuildable_store(&data_dir.join(STATE_FILE_NAME))?;
     let (panes, panes_error) = match read_json_optional(&data_dir.join(PANES_FILE_NAME)) {
         Ok(value) => (value, None),
         Err(message) => (None, Some(message)),
@@ -105,7 +105,6 @@ pub fn load_app_data(app: &AppHandle) -> Result<LoadedAppData, String> {
         config,
         config_quarantined_to,
         state,
-        state_quarantined_to,
         panes,
         panes_error,
         data_dir: data_dir.to_string_lossy().into_owned(),
