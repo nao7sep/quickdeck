@@ -34,7 +34,6 @@ export type AppSettings = {
   editorUnderline: boolean;
   autosaveDelaySeconds: number;
   snapshotSearchPageSize: number;
-  zoomLevel: number;
 };
 
 export type ToastKind = "info" | "warning" | "error";

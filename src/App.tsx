@@ -22,6 +22,7 @@ import { SettingsModal } from "./components/SettingsModal";
 import { ShortcutsModal } from "./components/ShortcutsModal";
 import { ToastViewport } from "./components/ToastViewport";
 import { matchesShortcut } from "./shortcuts";
+import { isEditableTarget, shadowsMacTextEditing } from "./utils/shortcuts";
 import { isComposingEvent } from "./hooks/useComposing";
 import { logError, logWarn, serializeError } from "./services/logger";
 import { useAppState } from "./state/AppStateContext";
@@ -41,6 +42,8 @@ export function App() {
     loadStatus,
     saveState,
     settings,
+    zoomLevel,
+    setZoomLevel,
     setActivePaneId,
     addPane,
     movePane,
@@ -86,11 +89,6 @@ export function App() {
     updateSettings({ ...settings, zen: !settings.zen });
   }, [settings, updateSettings]);
 
-  // Keep latest settings in a ref so the zoom keyboard effect below can read
-  // the current value without re-registering on every settings change.
-  const settingsRef = useRef(settings);
-  useEffect(() => { settingsRef.current = settings; }, [settings]);
-
   // Apply the dark theme by toggling a class on the document root, which flips
   // the CSS custom-property tokens defined in styles.css. Also sync the native
   // window theme so the OS title bar (and the window backing shown briefly while
@@ -108,9 +106,9 @@ export function App() {
   useEffect(() => {
     if (!isTauri()) return undefined;
     getCurrentWebview()
-      .setZoom(settings.zoomLevel)
-      .catch((error) => logWarn("set zoom failed", { zoomLevel: settings.zoomLevel, error: serializeError(error) }));
-  }, [settings.zoomLevel]);
+      .setZoom(zoomLevel)
+      .catch((error) => logWarn("set zoom failed", { zoomLevel, error: serializeError(error) }));
+  }, [zoomLevel]);
 
   // Apply the configured UI font by overriding the `--font-ui` CSS variable on :root; blank reverts
   // to the styles.css default. The string is handed to CSS verbatim (engine-resolved); the pane
@@ -148,26 +146,30 @@ export function App() {
 
   // Zoom keyboard shortcuts — separate effect with its own document listener so
   // they work even when a modal is open (zoom should always be accessible).
-  const zoomLevelRef = useRef(settings.zoomLevel);
-  useEffect(() => { zoomLevelRef.current = settings.zoomLevel; }, [settings.zoomLevel]);
+  const zoomLevelRef = useRef(zoomLevel);
+  useEffect(() => { zoomLevelRef.current = zoomLevel; }, [zoomLevel]);
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       // Zoom is window chrome and stays global even while a modal is open; the
       // modal key handlers (Escape/Tab) never overlap the zoom keys.
+      // Mid-composition the chord belongs to the pending IME candidate —
+      // matters on macOS where Ctrl+Semicolon is an IME conversion chord and
+      // Semicolon is a zoom key (text-input-ime-conventions).
+      if (isComposingEvent(e)) return;
       if (isZoomIn(e)) {
         e.preventDefault();
-        updateSettings({ ...settingsRef.current, zoomLevel: stepZoomIn(zoomLevelRef.current) });
+        setZoomLevel(stepZoomIn(zoomLevelRef.current));
       } else if (isZoomOut(e)) {
         e.preventDefault();
-        updateSettings({ ...settingsRef.current, zoomLevel: stepZoomOut(zoomLevelRef.current) });
+        setZoomLevel(stepZoomOut(zoomLevelRef.current));
       } else if (isZoomReset(e)) {
         e.preventDefault();
-        updateSettings({ ...settingsRef.current, zoomLevel: ZOOM_DEFAULT });
+        setZoomLevel(ZOOM_DEFAULT);
       }
     };
     document.addEventListener("keydown", handler);
     return () => document.removeEventListener("keydown", handler);
-  }, [updateSettings]);
+  }, [setZoomLevel]);
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
@@ -179,6 +181,20 @@ export function App() {
       // mid-composition the chord belongs to the pending candidate: stand down and let the user
       // finish, rather than firing on a not-yet-committed candidate (text-input-ime-conventions).
       if (isComposingEvent(event)) {
+        return;
+      }
+
+      const editable = isEditableTarget(event.target as HTMLElement | null);
+      // On macOS a chord that shadows a Cocoa text-editing binding — bare-Ctrl
+      // letters (Ctrl+K kill-line, Ctrl+N next-line, ...) and Cmd/Ctrl+Arrow
+      // line navigation — belongs to the text system while the caret is in an
+      // editable field; the unshadowed halves always fire
+      // (keyboard-shortcut-conventions).
+      if (editable && shadowsMacTextEditing(event)) {
+        return;
+      }
+      // A bare "?" is printable: while typing it is text, not the help alias.
+      if (editable && event.key === "?" && !event.metaKey && !event.ctrlKey) {
         return;
       }
 
@@ -460,33 +476,33 @@ export function App() {
                   type="button"
                   className="menuZoomButton"
                   tabIndex={-1}
-                  onClick={() => updateSettings({ ...settings, zoomLevel: stepZoomOut(settings.zoomLevel) })}
-                  disabled={stepZoomOut(settings.zoomLevel) === settings.zoomLevel}
+                  onClick={() => setZoomLevel(stepZoomOut(zoomLevel))}
+                  disabled={stepZoomOut(zoomLevel) === zoomLevel}
                   title="Zoom out"
                 >
                   <Minus size={12} />
                 </button>
-                {settings.zoomLevel !== ZOOM_DEFAULT ? (
+                {zoomLevel !== ZOOM_DEFAULT ? (
                   <button
                     type="button"
                     className="menuZoomLabel menuZoomLabelClickable"
                     tabIndex={-1}
-                    onClick={() => updateSettings({ ...settings, zoomLevel: ZOOM_DEFAULT })}
+                    onClick={() => setZoomLevel(ZOOM_DEFAULT)}
                     title="Reset to 100%"
                   >
-                    {Math.round(settings.zoomLevel * 100)}%
+                    {Math.round(zoomLevel * 100)}%
                   </button>
                 ) : (
                   <span className="menuZoomLabel">
-                    {Math.round(settings.zoomLevel * 100)}%
+                    {Math.round(zoomLevel * 100)}%
                   </span>
                 )}
                 <button
                   type="button"
                   className="menuZoomButton"
                   tabIndex={-1}
-                  onClick={() => updateSettings({ ...settings, zoomLevel: stepZoomIn(settings.zoomLevel) })}
-                  disabled={stepZoomIn(settings.zoomLevel) === settings.zoomLevel}
+                  onClick={() => setZoomLevel(stepZoomIn(zoomLevel))}
+                  disabled={stepZoomIn(zoomLevel) === zoomLevel}
                   title="Zoom in"
                 >
                   <Plus size={12} />

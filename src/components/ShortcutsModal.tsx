@@ -24,6 +24,13 @@ export function ShortcutsModal({ onClose }: ShortcutsModalProps) {
           </div>
         ))}
       </div>
+      {/* The catalogue-matches-bindings rule: a chord that stands down in some
+          context says so (keyboard-shortcut-conventions). */}
+      <p className="shortcutNote">
+        On macOS, chords that overlap the system's text-editing keys — the Ctrl
+        halves of letter chords, and the pane chords on Left/Right — yield to
+        the text field while you are typing in one.
+      </p>
     </ModalBase>
   );
 }

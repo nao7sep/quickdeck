@@ -10,7 +10,8 @@ import {
 } from "react";
 import { nanoid } from "nanoid";
 import { createDefaultPane, defaultSettings } from "./defaults";
-import { normalizePanes, normalizeSettings } from "./normalize";
+import { normalizePanes, normalizeSettings, normalizeZoomLevel } from "./normalize";
+import { ZOOM_DEFAULT } from "../utils/zoom";
 import { appendPane, deletePane as deletePaneOp, reorderPane } from "./paneOps";
 import { multiline, singleLine } from "../utils/textCleanup";
 import { resolveSaveState } from "../utils/saveRace";
@@ -40,6 +41,9 @@ type AppStateContextValue = {
   activePaneId: string;
   activePane: Pane;
   settings: AppSettings;
+  // The webview zoom — session state (state.json), not a setting, so it rides
+  // beside `settings` rather than inside it (persisted-store-separation).
+  zoomLevel: number;
   saveState: SaveState;
   toasts: Toast[];
   blockingError: BlockingError | null;
@@ -56,6 +60,7 @@ type AppStateContextValue = {
   deletePane: (paneId: string) => void;
   movePane: (paneId: string, direction: -1 | 1) => void;
   updateSettings: (settings: AppSettings) => void;
+  setZoomLevel: (zoomLevel: number) => void;
   saveNow: () => Promise<void>;
   recordSnapshot: (paneId: string, trigger: SnapshotTrigger, content: string) => void;
   snapshotAllPanes: (trigger: SnapshotTrigger) => Promise<void>;
@@ -72,6 +77,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const [panes, setPanes] = useState<Pane[]>([firstPane]);
   const [activePaneId, setActivePaneId] = useState(firstPane.id);
   const [settings, setSettings] = useState(defaultSettings);
+  const [zoomLevel, setZoomLevelState] = useState(ZOOM_DEFAULT);
   const [saveState, setSaveState] = useState<SaveState>("saved");
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [blockingError, setBlockingError] = useState<BlockingError | null>(null);
@@ -166,6 +172,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
           // failure here is still an unexpected error worth recording.
           logWarn("snapshot count failed", { error: serializeError(error) });
         }
+
+        setZoomLevelState(normalizeZoomLevel(data.session?.zoomLevel));
 
         const loadedPanes = normalizePanes(data.session?.panes);
         if (loadedPanes.length > 0) {
@@ -357,6 +365,17 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     logInfo("settings updated", { settings: nextSettings });
   }, []);
 
+  // A view adjustment, not a setting: zoom persists through the session save
+  // (state.json), never the config channel. Deliberately not logged per change —
+  // a held zoom shortcut would spam the log with view churn.
+  const setZoomLevel = useCallback(
+    (nextZoomLevel: number) => {
+      setZoomLevelState(nextZoomLevel);
+      markUnsaved();
+    },
+    [markUnsaved],
+  );
+
   // Throws on failure. Each caller decides whether to surface a modal and/or
   // change control flow, since autosave and the close path want different
   // policies. No-ops unless load succeeded — see the LoadStatus comment in
@@ -371,14 +390,14 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     try {
       await Promise.all([
         saveConfig(settings),
-        saveSession(buildSessionState(panes, activePaneId)),
+        saveSession(buildSessionState(panes, activePaneId, zoomLevel)),
       ]);
       setSaveState(resolveSaveState(dirtyAtStart, dirtyCounterRef.current));
     } catch (error) {
       setSaveState("error");
       throw error;
     }
-  }, [activePaneId, loadStatus, panes, settings]);
+  }, [activePaneId, loadStatus, panes, settings, zoomLevel]);
 
   useEffect(() => {
     if (loadStatus !== "ready" || saveState !== "unsaved") {
@@ -401,6 +420,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       activePaneId,
       activePane,
       settings,
+      zoomLevel,
       saveState,
       toasts,
       blockingError,
@@ -417,6 +437,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       deletePane,
       movePane,
       updateSettings,
+      setZoomLevel,
       saveNow,
       recordSnapshot,
       snapshotAllPanes,
@@ -442,6 +463,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       recordSnapshot,
       saveNow,
       saveState,
+      setZoomLevel,
       settings,
       showBlockingError,
       showToast,
@@ -452,6 +474,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       updatePaneContent,
       updatePaneTitle,
       updateSettings,
+      zoomLevel,
     ],
   );
 

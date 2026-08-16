@@ -15,9 +15,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
   const [confirmingClose, setConfirmingClose] = useState(false);
 
   const isDirty = useMemo(() => {
-    // Exclude zoomLevel — it is controlled outside this modal (keyboard shortcuts
-    // and the menu zoom widget) and must not be compared against the draft.
-    const keys = (Object.keys(settings) as (keyof AppSettings)[]).filter((k) => k !== "zoomLevel");
+    const keys = Object.keys(settings) as (keyof AppSettings)[];
     return keys.some((k) => draft[k] !== settings[k]);
   }, [draft, settings]);
 
@@ -36,9 +34,8 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
 
   function save() {
     // Reuse the load-path normalizer so the form and disk agree on the canonical
-    // shape (trimmed font, clamped bounds). zoomLevel is owned outside the modal,
-    // so commit the current value rather than the (possibly stale) draft copy.
-    updateSettings({ ...normalizeSettings(draft), zoomLevel: settings.zoomLevel });
+    // shape (trimmed font, clamped bounds).
+    updateSettings(normalizeSettings(draft));
     onClose();
   }
 

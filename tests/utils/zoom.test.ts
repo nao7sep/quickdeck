@@ -11,14 +11,14 @@ import {
   stepZoomOut,
 } from "../../src/utils/zoom";
 
-// Set both modifiers so the platform-detected primary modifier is satisfied
-// whether the test host resolves to Apple (metaKey) or not (ctrlKey).
-function keyEvent(key: string, withModifier: boolean): KeyboardEvent {
-  return new KeyboardEvent("keydown", {
-    key,
-    ctrlKey: withModifier,
-    metaKey: withModifier,
-  });
+// Each modifier is asserted ALONE — the old fixture set both in one event,
+// which is exactly how the single-modifier zoom regression stayed invisible
+// (keyboard-shortcut-conventions).
+function keyEvent(
+  key: string,
+  mods: { metaKey?: boolean; ctrlKey?: boolean; altKey?: boolean } = {},
+): KeyboardEvent {
+  return new KeyboardEvent("keydown", { key, ...mods });
 }
 
 describe("zoom levels", () => {
@@ -50,26 +50,39 @@ describe("zoom levels", () => {
 });
 
 describe("zoom shortcuts", () => {
-  it("recognizes zoom-in keys with the primary modifier", () => {
-    expect(isZoomIn(keyEvent("=", true))).toBe(true);
-    expect(isZoomIn(keyEvent("+", true))).toBe(true);
-    expect(isZoomIn(keyEvent(";", true))).toBe(true);
+  it("fires on Cmd (metaKey) alone for every zoom key", () => {
+    expect(isZoomIn(keyEvent("=", { metaKey: true }))).toBe(true);
+    expect(isZoomIn(keyEvent("+", { metaKey: true }))).toBe(true);
+    expect(isZoomIn(keyEvent(";", { metaKey: true }))).toBe(true);
+    expect(isZoomOut(keyEvent("-", { metaKey: true }))).toBe(true);
+    expect(isZoomReset(keyEvent("0", { metaKey: true }))).toBe(true);
   });
 
-  it("recognizes zoom-out and zoom-reset keys", () => {
-    expect(isZoomOut(keyEvent("-", true))).toBe(true);
-    expect(isZoomReset(keyEvent("0", true))).toBe(true);
+  it("fires on Ctrl alone too — both modifiers are bound on every platform", () => {
+    expect(isZoomIn(keyEvent("=", { ctrlKey: true }))).toBe(true);
+    expect(isZoomIn(keyEvent(";", { ctrlKey: true }))).toBe(true);
+    expect(isZoomOut(keyEvent("-", { ctrlKey: true }))).toBe(true);
+    expect(isZoomReset(keyEvent("0", { ctrlKey: true }))).toBe(true);
+  });
+
+  it("rejects AltGr chords — Windows delivers AltGr as Ctrl+Alt", () => {
+    // e.g. Hungarian AltGr+comma types ";" — a zoom-in key — and must keep
+    // typing the character instead of zooming and swallowing it.
+    expect(isZoomIn(keyEvent(";", { ctrlKey: true, altKey: true }))).toBe(false);
+    expect(isZoomIn(keyEvent("=", { ctrlKey: true, altKey: true }))).toBe(false);
+    expect(isZoomOut(keyEvent("-", { ctrlKey: true, altKey: true }))).toBe(false);
+    expect(isZoomReset(keyEvent("0", { ctrlKey: true, altKey: true }))).toBe(false);
   });
 
   it("requires the modifier", () => {
-    expect(isZoomIn(keyEvent("=", false))).toBe(false);
-    expect(isZoomOut(keyEvent("-", false))).toBe(false);
-    expect(isZoomReset(keyEvent("0", false))).toBe(false);
+    expect(isZoomIn(keyEvent("="))).toBe(false);
+    expect(isZoomOut(keyEvent("-"))).toBe(false);
+    expect(isZoomReset(keyEvent("0"))).toBe(false);
   });
 
   it("ignores unrelated keys", () => {
-    expect(isZoomIn(keyEvent("a", true))).toBe(false);
-    expect(isZoomOut(keyEvent("=", true))).toBe(false);
-    expect(isZoomReset(keyEvent("9", true))).toBe(false);
+    expect(isZoomIn(keyEvent("a", { metaKey: true }))).toBe(false);
+    expect(isZoomOut(keyEvent("=", { metaKey: true }))).toBe(false);
+    expect(isZoomReset(keyEvent("9", { metaKey: true }))).toBe(false);
   });
 });

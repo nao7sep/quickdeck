@@ -1,4 +1,4 @@
-import { isApplePlatform } from "./utils/zoom";
+import { hasMod, primaryModWord } from "./utils/shortcuts";
 
 export type ShortcutId =
   | "toggleDark"
@@ -26,9 +26,9 @@ export type ShortcutDefinition = {
 // The command modifier word is resolved at runtime from the running platform:
 // "Cmd" on macOS, "Ctrl" on Windows/Linux. The live shortcuts UI must show one
 // word — never the combined "Cmd/Ctrl" and never a glyph (keyboard-shortcut
-// conventions). Platform detection is shared with utils/zoom.ts so both surfaces
-// agree on which physical key the user has.
-const mod = isApplePlatform ? "Cmd" : "Ctrl";
+// conventions). Both the word and the matching predicate come from the one
+// leaf module, so the label and the binding cannot disagree.
+const mod = primaryModWord;
 
 // Built once at module load from the resolved modifier. Chord grammar:
 // "+" joins with no spaces, modifier order is Cmd/Ctrl → Alt → Shift → key,
@@ -93,7 +93,7 @@ export const shortcutDefinitions: ShortcutDefinition[] = [
   },
   {
     id: "openShortcuts",
-    keys: `${mod}+Slash`,
+    keys: `${mod}+Slash / Question`,
     description: "Open shortcuts",
   },
   {
@@ -104,7 +104,7 @@ export const shortcutDefinitions: ShortcutDefinition[] = [
 ];
 
 export function matchesShortcut(event: KeyboardEvent, id: ShortcutId): boolean {
-  const commandOrControl = event.metaKey || event.ctrlKey;
+  const commandOrControl = hasMod(event);
 
   if (id === "toggleDark") {
     return commandOrControl && !event.shiftKey && event.key.toLowerCase() === "d";
@@ -143,7 +143,18 @@ export function matchesShortcut(event: KeyboardEvent, id: ShortcutId): boolean {
   }
 
   if (id === "openShortcuts") {
-    return commandOrControl && !event.shiftKey && event.key === "/";
+    // Shift is tolerated on the "/" branch: on shifted-slash layouts (German
+    // QWERTZ Shift+7) the chord arrives as key "/" with shiftKey true, and
+    // requiring its absence made the advertised chord unreachable there. On
+    // US-style layouts Shift+"/" produces "?", which the alias branch below
+    // catches — both forms resolve to this same command, in this same handler.
+    if (commandOrControl && event.key === "/") return true;
+    // Bare printable "?" alias: raw flags, never !hasMod(event) — the
+    // predicate's Alt exclusion would make "no command modifier" read true
+    // under AltGr. The dispatch site skips this branch while typing.
+    return (
+      !event.metaKey && !event.ctrlKey && !event.altKey && event.key === "?"
+    );
   }
 
   return id === "closeModal" && event.key === "Escape";

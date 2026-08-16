@@ -9,7 +9,7 @@ import type { AppSettings, Pane } from "../types";
 import { defaultSettings } from "./defaults";
 import { randomPaneColor } from "../utils/paneColors";
 import { singleLine } from "../utils/textCleanup";
-import { ZOOM_MAX, ZOOM_MIN } from "../utils/zoom";
+import { ZOOM_DEFAULT, ZOOM_MAX, ZOOM_MIN } from "../utils/zoom";
 
 // Inclusive bounds for the numeric settings. Single source of truth for the
 // load-path clamp (normalizeSettings), the commit-enable check
@@ -93,8 +93,20 @@ export function normalizeSettings(settings: AppSettings | null): AppSettings {
     editorUnderline: asBoolean(settings.editorUnderline, defaultSettings.editorUnderline),
     autosaveDelaySeconds: clampSetting(settings.autosaveDelaySeconds, "autosaveDelaySeconds"),
     snapshotSearchPageSize: clampSetting(settings.snapshotSearchPageSize, "snapshotSearchPageSize"),
-    zoomLevel: clampNumber(settings.zoomLevel, ZOOM_MIN, ZOOM_MAX, defaultSettings.zoomLevel),
   };
+}
+
+// The session zoom level — a view adjustment persisted in state.json, not a
+// setting in config.json (persisted-store-separation conventions), so it is
+// normalized apart from settings. Anything loaded (absent, hand-edited, out of
+// range) lands back on a sane level.
+export function normalizeZoomLevel(value: unknown): number {
+  return clampNumber(
+    typeof value === "number" ? value : Number.NaN,
+    ZOOM_MIN,
+    ZOOM_MAX,
+    ZOOM_DEFAULT,
+  );
 }
 
 export function normalizePanes(panes: Pane[] | undefined): Pane[] {

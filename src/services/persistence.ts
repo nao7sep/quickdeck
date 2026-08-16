@@ -5,6 +5,9 @@ export type SessionState = {
   version: 1;
   panes: Pane[];
   activePaneId: string;
+  // The webview zoom — a view adjustment, so it is state, never config
+  // (persisted-store-separation conventions).
+  zoomLevel: number;
   updatedAtUtc: string;
 };
 
@@ -38,11 +41,16 @@ export type SnapshotSearchResult = {
   hasMore: boolean;
 };
 
-export function buildSessionState(panes: Pane[], activePaneId: string): SessionState {
+export function buildSessionState(
+  panes: Pane[],
+  activePaneId: string,
+  zoomLevel: number,
+): SessionState {
   return {
     version: 1,
     panes,
     activePaneId,
+    zoomLevel,
     updatedAtUtc: new Date().toISOString(),
   };
 }

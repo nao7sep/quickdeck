@@ -5,9 +5,10 @@ import {
   isSettingsDraftValid,
   normalizePanes,
   normalizeSettings,
+  normalizeZoomLevel,
 } from "../../src/state/normalize";
 import { defaultSettings } from "../../src/state/defaults";
-import { ZOOM_MAX, ZOOM_MIN } from "../../src/utils/zoom";
+import { ZOOM_DEFAULT, ZOOM_MAX, ZOOM_MIN } from "../../src/utils/zoom";
 import type { AppSettings, Pane } from "../../src/types";
 
 const HEX = /^#[0-9a-f]{6}$/i;
@@ -35,7 +36,6 @@ describe("normalizeSettings", () => {
     expect(result.zen).toBe(true);
     expect(result.editorFontFamily).toBe(defaultSettings.editorFontFamily);
     expect(result.editorFontSize).toBe(defaultSettings.editorFontSize);
-    expect(result.zoomLevel).toBe(defaultSettings.zoomLevel);
   });
 
   it("clamps numeric settings to their allowed ranges", () => {
@@ -93,7 +93,6 @@ describe("normalizeSettings", () => {
       "editorUnderline",
       "autosaveDelaySeconds",
       "snapshotSearchPageSize",
-      "zoomLevel",
     ]);
   });
 
@@ -151,12 +150,29 @@ describe("normalizeSettings", () => {
     expect(r.editorUnderline).toBe(false);
   });
 
-  it("clamps zoomLevel into the supported range", () => {
-    expect(normalizeSettings({ ...defaultSettings, zoomLevel: 99 }).zoomLevel).toBe(ZOOM_MAX);
-    expect(normalizeSettings({ ...defaultSettings, zoomLevel: 0.01 }).zoomLevel).toBe(ZOOM_MIN);
-    expect(normalizeSettings({ ...defaultSettings, zoomLevel: Number.NaN }).zoomLevel).toBe(
-      defaultSettings.zoomLevel,
-    );
+  it("ignores a stray zoomLevel left in config.json by an older build", () => {
+    // zoomLevel moved to state.json (persisted-store-separation); the known-keys
+    // rebuild drops the old config field on the next save, no migration needed.
+    const result = normalizeSettings({
+      ...defaultSettings,
+      zoomLevel: 2.4,
+    } as unknown as AppSettings);
+    expect(result).not.toHaveProperty("zoomLevel");
+  });
+});
+
+describe("normalizeZoomLevel", () => {
+  it("clamps into the supported range and passes valid levels through", () => {
+    expect(normalizeZoomLevel(99)).toBe(ZOOM_MAX);
+    expect(normalizeZoomLevel(0.01)).toBe(ZOOM_MIN);
+    expect(normalizeZoomLevel(1.2)).toBe(1.2);
+  });
+
+  it("falls back to the default for absent or invalid values", () => {
+    expect(normalizeZoomLevel(undefined)).toBe(ZOOM_DEFAULT);
+    expect(normalizeZoomLevel(null)).toBe(ZOOM_DEFAULT);
+    expect(normalizeZoomLevel(Number.NaN)).toBe(ZOOM_DEFAULT);
+    expect(normalizeZoomLevel("1.2")).toBe(ZOOM_DEFAULT);
   });
 });
 

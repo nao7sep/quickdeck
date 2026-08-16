@@ -347,13 +347,23 @@ fn atomic_write_json(data_dir: &Path, path: &Path, value: &JsonValue) -> Result<
     let mut bytes = serde_json::to_vec_pretty(value).map_err(to_string_error)?;
     bytes.push(b'\n');
 
-    {
-        let mut file = File::create(&tmp_path).map_err(to_string_error)?;
-        file.write_all(&bytes).map_err(to_string_error)?;
-        file.sync_all().map_err(to_string_error)?;
+    // A failed write or rename must not leave the temp file behind — best-effort
+    // removal on each error path (the fleet's shared write_atomic behavior).
+    let write_tmp = (|| -> std::io::Result<()> {
+        let mut file = File::create(&tmp_path)?;
+        file.write_all(&bytes)?;
+        file.sync_all()?;
+        Ok(())
+    })();
+    if let Err(error) = write_tmp {
+        let _ = fs::remove_file(&tmp_path);
+        return Err(to_string_error(error));
     }
 
-    fs::rename(&tmp_path, path).map_err(to_string_error)?;
+    if let Err(error) = fs::rename(&tmp_path, path) {
+        let _ = fs::remove_file(&tmp_path);
+        return Err(to_string_error(error));
+    }
     if let Ok(directory) = File::open(parent) {
         let _ = directory.sync_all();
     }
@@ -796,6 +806,31 @@ mod tests {
             .unwrap();
         assert_eq!(recorded, on_disk, "recorded blob must equal the file's bytes");
         assert_eq!(recorded.last(), Some(&b'\n'), "the trailing newline must be recorded too");
+
+        crate::backup_store::close_backup_store();
+    }
+
+    #[test]
+    #[serial(backup_store)]
+    fn failed_rename_cleans_up_the_temp_file() {
+        crate::backup_store::close_backup_store();
+
+        let dir = tempfile::tempdir().unwrap();
+        // A DIRECTORY at the target path makes the final rename fail (a file
+        // cannot be renamed over a directory), exercising the error path.
+        let path = dir.path().join("config.json");
+        fs::create_dir(&path).unwrap();
+
+        let result = atomic_write_json(dir.path(), &path, &serde_json::json!({ "a": 1 }));
+        assert!(result.is_err());
+
+        // The failed write must not leave its temp file behind.
+        let leftovers: Vec<_> = fs::read_dir(dir.path())
+            .unwrap()
+            .flatten()
+            .filter(|e| e.file_name().to_string_lossy().ends_with(".tmp"))
+            .collect();
+        assert!(leftovers.is_empty(), "temp files left: {leftovers:?}");
 
         crate::backup_store::close_backup_store();
     }

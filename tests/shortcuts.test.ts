@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { matchesShortcut, shortcutDefinitions } from "../src/shortcuts";
 
-type Mods = { ctrlKey?: boolean; metaKey?: boolean; shiftKey?: boolean };
+type Mods = { ctrlKey?: boolean; metaKey?: boolean; shiftKey?: boolean; altKey?: boolean };
 
 function key(k: string, mods: Mods = {}): KeyboardEvent {
   return new KeyboardEvent("keydown", { key: k, ...mods });
@@ -39,6 +39,26 @@ describe("matchesShortcut", () => {
   it("matches punctuation shortcuts", () => {
     expect(matchesShortcut(key(",", { ctrlKey: true }), "openSettings")).toBe(true);
     expect(matchesShortcut(key("/", { ctrlKey: true }), "openShortcuts")).toBe(true);
+  });
+
+  it("rejects AltGr chords — Windows delivers AltGr as Ctrl+Alt and must keep typing", () => {
+    // An unmapped AltGr combination falls back to the base letter, so e.g.
+    // AltGr+N arrives as key "n" with ctrlKey && altKey.
+    expect(matchesShortcut(key("n", { ctrlKey: true, altKey: true }), "addPane")).toBe(false);
+    expect(matchesShortcut(key("k", { ctrlKey: true, altKey: true }), "toggleZen")).toBe(false);
+    expect(matchesShortcut(key(",", { ctrlKey: true, altKey: true }), "openSettings")).toBe(false);
+    expect(matchesShortcut(key("/", { ctrlKey: true, altKey: true }), "openShortcuts")).toBe(false);
+  });
+
+  it("opens shortcuts on shifted-slash layouts and via the bare '?' alias", () => {
+    // German QWERTZ types "/" as Shift+7 — the chord arrives with shiftKey
+    // true and must still match; US Shift+"/" produces "?", the alias.
+    expect(matchesShortcut(key("/", { ctrlKey: true, shiftKey: true }), "openShortcuts")).toBe(true);
+    expect(matchesShortcut(key("?", { shiftKey: true }), "openShortcuts")).toBe(true);
+    expect(matchesShortcut(key("?", {}), "openShortcuts")).toBe(true);
+    // A command-modified "?" is not a binding, and AltGr-typed "?" is typing.
+    expect(matchesShortcut(key("?", { metaKey: true }), "openShortcuts")).toBe(false);
+    expect(matchesShortcut(key("?", { ctrlKey: true, altKey: true }), "openShortcuts")).toBe(false);
   });
 
   it("matches Escape for closeModal regardless of modifier", () => {
