@@ -10,7 +10,13 @@ import {
 } from "react";
 import { nanoid } from "nanoid";
 import { createDefaultPane, defaultSettings } from "./defaults";
-import { normalizePanes, normalizeSettings, normalizeZoomLevel, settingsShapeIssues } from "./normalize";
+import {
+  normalizePanes,
+  normalizeSettings,
+  normalizeZoomLevel,
+  panesShapeIssues,
+  settingsShapeIssues,
+} from "./normalize";
 import { ZOOM_DEFAULT } from "../utils/zoom";
 import { appendPane, deletePane as deletePaneOp, reorderPane } from "./paneOps";
 import { multiline, singleLine } from "../utils/textCleanup";
@@ -162,6 +168,24 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         );
         setLoadStatus("failed");
         return;
+      }
+
+      // A panes.json that PARSES but does not fit its shape is corrupt too, and takes
+      // the same halt: normalizePanes would silently drop an entry with no id and
+      // blank a non-string body, and the close path's unconditional save would then
+      // write that lossy reading back over the user's text — launching and quitting
+      // would be enough to lose a pane (storage-path conventions' shape-failure clause).
+      if (data.panes !== null) {
+        const paneIssues = panesShapeIssues(data.panes);
+        if (paneIssues.length > 0) {
+          logError("panes.json failed its shape check", { issues: paneIssues });
+          setLoadErrorIsCorruptPanes(true);
+          setLoadError(
+            `Your pane text file (panes.json) is damaged and has been left exactly where it is: ${paneIssues.join("; ")}.`,
+          );
+          setLoadStatus("failed");
+          return;
+        }
       }
 
       // A store whose recorded schema version is newer than this build wrote

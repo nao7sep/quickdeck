@@ -137,6 +137,45 @@ export function settingsShapeIssues(loaded: unknown): string[] {
   return issues;
 }
 
+// Shape failures in a loaded panes.json — the store that carries the user's TEXT, so a
+// failure here halts rather than quarantines (storage-path conventions). normalizePanes
+// below is deliberately lossy: it DROPS an entry with no usable id and coerces a
+// non-string body to "". That is right for a value already known to be sound, and
+// catastrophic for one that is not — the close path saves unconditionally, so a launch
+// and a quit is enough to write the lossy reading back over the user's text. This gate
+// runs first so a damaged store reaches the halt branch instead.
+export function panesShapeIssues(loaded: unknown): string[] {
+  if (loaded === null || typeof loaded !== "object" || Array.isArray(loaded)) {
+    return ["panes file is not a JSON object"];
+  }
+  const source = loaded as Record<string, unknown>;
+  if (!("panes" in source)) {
+    // Absent is the first-run case, not corruption: the default pane is created.
+    return [];
+  }
+  if (!Array.isArray(source.panes)) {
+    return ["panes is not an array"];
+  }
+  const issues: string[] = [];
+  source.panes.forEach((pane, index) => {
+    if (pane === null || typeof pane !== "object" || Array.isArray(pane)) {
+      issues.push(`pane ${index} is not an object`);
+      return;
+    }
+    const entry = pane as Record<string, unknown>;
+    if (typeof entry.id !== "string" || entry.id.length === 0) {
+      issues.push(`pane ${index} has no usable id`);
+    }
+    if ("content" in entry && typeof entry.content !== "string") {
+      issues.push(`pane ${index} has a non-string content`);
+    }
+    if ("title" in entry && typeof entry.title !== "string") {
+      issues.push(`pane ${index} has a non-string title`);
+    }
+  });
+  return issues;
+}
+
 export function normalizeZoomLevel(value: unknown): number {
   return clampNumber(
     typeof value === "number" ? value : Number.NaN,

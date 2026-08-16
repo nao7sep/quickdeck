@@ -6,6 +6,7 @@ import {
   normalizePanes,
   normalizeSettings,
   normalizeZoomLevel,
+  panesShapeIssues,
   settingsShapeIssues,
 } from "../../src/state/normalize";
 import { defaultSettings } from "../../src/state/defaults";
@@ -306,5 +307,35 @@ describe("settingsShapeIssues", () => {
 
   it("ignores unknown keys — dropped by the known-keys rebuild, not corruption", () => {
     expect(settingsShapeIssues({ ...defaultSettings, zoomLevel: 1.2, retired: true })).toEqual([]);
+  });
+});
+
+describe("panesShapeIssues", () => {
+  const pane = { id: "a", title: "T", content: "body", headerColor: "#112233", backgroundColor: "#445566" };
+
+  it("passes a sound store and an absent panes key (first run)", () => {
+    expect(panesShapeIssues({ version: 1, panes: [pane] })).toEqual([]);
+    expect(panesShapeIssues({ version: 1 })).toEqual([]);
+  });
+
+  it("flags a pane with no usable id — normalizePanes would silently DROP it", () => {
+    // The close path saves unconditionally, so without this gate launching and
+    // quitting would write the dropped pane out of existence.
+    expect(panesShapeIssues({ panes: [pane, { ...pane, id: "" }] })).toEqual([
+      "pane 1 has no usable id",
+    ]);
+    expect(panesShapeIssues({ panes: [{ ...pane, id: 42 }] })).toEqual(["pane 0 has no usable id"]);
+  });
+
+  it("flags a non-string body — normalizePanes would silently blank it", () => {
+    expect(panesShapeIssues({ panes: [{ ...pane, content: 123 }] })).toEqual([
+      "pane 0 has a non-string content",
+    ]);
+  });
+
+  it("flags a non-array panes and a non-object root", () => {
+    expect(panesShapeIssues({ panes: "nope" })).toEqual(["panes is not an array"]);
+    expect(panesShapeIssues([])).toEqual(["panes file is not a JSON object"]);
+    expect(panesShapeIssues(null)).toEqual(["panes file is not a JSON object"]);
   });
 });
