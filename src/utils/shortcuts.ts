@@ -12,19 +12,14 @@ export function hasMod(event: KeyboardEvent): boolean {
   return (event.metaKey || event.ctrlKey) && !event.altKey;
 }
 
-// App chords that overlap Cocoa text editing while a pane has focus.
-const MAC_TEXT_BINDING_KEYS = new Set(["d", "k", "n", "t", "/"]);
-
 /**
- * True when this chord shadows a macOS text-editing binding and must stand
- * down while the event target is editable (keyboard-shortcut-conventions):
- * bare-Ctrl app chords that Cocoa also binds.
+ * On macOS, Ctrl inside a text field belongs to the text system whatever the
+ * key is, so the Ctrl half of a dual-bound chord stands down there — one
+ * blanket test, no per-chord key list (keyboard-shortcut-conventions). The
+ * Cmd half is the binding and always fires.
  */
 export function shadowsMacTextEditing(event: KeyboardEvent): boolean {
-  if (!isApplePlatform) return false;
-  if (event.metaKey || !event.ctrlKey) return false;
-  const key = event.key.length === 1 ? event.key.toLowerCase() : event.key;
-  return MAC_TEXT_BINDING_KEYS.has(key);
+  return isApplePlatform && event.ctrlKey && !event.metaKey;
 }
 
 // Structural shape of an editable-target check, DOM-free for unit tests.
