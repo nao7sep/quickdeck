@@ -2,7 +2,7 @@
 name = "quickdeck"
 version = "0.1.0"
 description = "QuickDeck desktop application"
-authors = ["Yoshinao Inoguchi <nao7sep@gmail.com>"]
+authors = ["Yoshinao Inoguchi <yoshinao@inoguchi.com>"]
 license = "MIT"
 edition = "2021"
 
