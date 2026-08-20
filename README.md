@@ -13,7 +13,7 @@ QuickDeck is a local-first, multi-pane plain-text workspace for fast, buffer-bas
 
 ## Download
 
-Prebuilt builds for **macOS (Apple Silicon)** and **Windows (x64)** are on the [Releases](https://github.com/nao7sep/quickdeck/releases) page — a `.dmg` / `setup.exe` installer or a portable `.zip`. The builds are **unsigned**, so the OS warns the first time you open one:
+Prebuilt builds for **macOS (Apple Silicon)** and **Windows (x64)** are on the [Releases](https://github.com/nao7sep/quickdeck/releases/latest) page — a `.dmg` / `setup.exe` installer or a portable `.zip`. The builds are **unsigned**, so the OS warns the first time you open one:
 
 - **macOS** — right-click the app and choose **Open** (or run `xattr -dr com.apple.quarantine /Applications/QuickDeck.app`).
 - **Windows** — on the SmartScreen prompt, click **More info → Run anyway**.
