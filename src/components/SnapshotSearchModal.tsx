@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Search } from "lucide-react";
 import { searchSnapshots, type SnapshotSearchRow } from "../services/persistence";
 import { logWarn, serializeError } from "../services/logger";
@@ -19,8 +19,15 @@ export function SnapshotSearchModal({ onClose }: SnapshotSearchModalProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const composing = useComposing();
+  const searchInFlightRef = useRef(false);
 
   async function runSearch(nextOffset: number) {
+    // The Search button is disabled while loading, but Enter can arrive before
+    // React commits that state. Claim the request synchronously so two searches
+    // cannot race and let an older response replace newer rows.
+    if (searchInFlightRef.current) {
+      return;
+    }
     const trimmedQuery = query.trim();
     if (trimmedQuery.length === 0) {
       setRows([]);
@@ -29,6 +36,7 @@ export function SnapshotSearchModal({ onClose }: SnapshotSearchModalProps) {
       return;
     }
 
+    searchInFlightRef.current = true;
     setLoading(true);
     setError(null);
     try {
@@ -49,6 +57,7 @@ export function SnapshotSearchModal({ onClose }: SnapshotSearchModalProps) {
         setHasMore(false);
       }
     } finally {
+      searchInFlightRef.current = false;
       setLoading(false);
     }
   }

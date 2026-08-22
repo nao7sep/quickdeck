@@ -45,6 +45,9 @@ export function PaneView({ pane }: PaneViewProps) {
 
   return (
     <section
+      id={settings.zen ? `pane-panel-${pane.id}` : undefined}
+      role={settings.zen ? "tabpanel" : undefined}
+      aria-label={settings.zen ? `Pane: ${pane.title}` : undefined}
       className={`pane ${active ? "pane-active" : ""}`}
       style={
         {

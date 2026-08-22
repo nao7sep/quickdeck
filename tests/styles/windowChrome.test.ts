@@ -36,6 +36,11 @@ describe("styles.css scroll-bar and color-scheme guards", () => {
     expect(css).toMatch(/scrollbar-width:\s*thin/);
   });
 
+  it("does not paint disabled menu buttons with the clickable hover state", () => {
+    expect(css).toMatch(/\.menuPanel button:hover:not\(:disabled\)\s*\{/);
+    expect(css).not.toMatch(/\.menuPanel button:hover\s*\{/);
+  });
+
   it(".pane carries a real min-width but no min-height (the footer must never be clipped)", () => {
     // Match the standalone `.pane { ... }` rule (anchored at line start) rather
     // than the descendant `:root.dark .pane { ... }` rule earlier in the file.

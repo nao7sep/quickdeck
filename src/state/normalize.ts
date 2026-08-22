@@ -160,6 +160,7 @@ export function panesShapeIssues(loaded: unknown): string[] {
     return ["panes is not an array"];
   }
   const issues: string[] = [];
+  const seenIds = new Set<string>();
   source.panes.forEach((pane, index) => {
     if (pane === null || typeof pane !== "object" || Array.isArray(pane)) {
       issues.push(`pane ${index} is not an object`);
@@ -168,6 +169,10 @@ export function panesShapeIssues(loaded: unknown): string[] {
     const entry = pane as Record<string, unknown>;
     if (typeof entry.id !== "string" || entry.id.length === 0) {
       issues.push(`pane ${index} has no usable id`);
+    } else if (seenIds.has(entry.id)) {
+      issues.push(`pane ${index} duplicates id ${JSON.stringify(entry.id)}`);
+    } else {
+      seenIds.add(entry.id);
     }
     if ("content" in entry && typeof entry.content !== "string") {
       issues.push(`pane ${index} has a non-string content`);

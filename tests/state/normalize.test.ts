@@ -327,6 +327,12 @@ describe("panesShapeIssues", () => {
     expect(panesShapeIssues({ panes: [{ ...pane, id: 42 }] })).toEqual(["pane 0 has no usable id"]);
   });
 
+  it("flags duplicate pane ids before React state and snapshots can alias them", () => {
+    expect(panesShapeIssues({ panes: [pane, { ...pane, title: "Other" }] })).toEqual([
+      'pane 1 duplicates id "a"',
+    ]);
+  });
+
   it("flags a non-string body — normalizePanes would silently blank it", () => {
     expect(panesShapeIssues({ panes: [{ ...pane, content: 123 }] })).toEqual([
       "pane 0 has a non-string content",

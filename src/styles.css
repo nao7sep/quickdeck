@@ -516,7 +516,7 @@ button:disabled {
   text-align: left;
 }
 
-.menuPanel button:hover {
+.menuPanel button:hover:not(:disabled) {
   background: var(--surface-hover);
   color: var(--text-onhover);
 }

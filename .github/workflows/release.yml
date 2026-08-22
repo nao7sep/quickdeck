@@ -67,7 +67,7 @@ jobs:
       - run: npm ci
 
       # One command per OS — runs `tauri build` and emits the installer + portable
-      # into dist/.
+      # into artifacts/.
       - name: Package (host OS)
         run: ${{ matrix.package }}
 

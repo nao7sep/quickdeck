@@ -96,7 +96,15 @@ export function PaneSwitcher({ panes, activePaneId, onSelect }: PaneSwitcherProp
   };
 
   return (
-    <div className="paneSwitcherWrap" ref={wrapRef}>
+    <div
+      className="paneSwitcherWrap"
+      ref={wrapRef}
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) {
+          close(false);
+        }
+      }}
+    >
       <button
         ref={triggerRef}
         className="paneSwitcherButton"
@@ -123,9 +131,11 @@ export function PaneSwitcher({ panes, activePaneId, onSelect }: PaneSwitcherProp
             return (
               <button
                 key={pane.id}
+                id={`pane-tab-${pane.id}`}
                 type="button"
                 role="tab"
                 aria-selected={selected}
+                aria-controls={`pane-panel-${pane.id}`}
                 tabIndex={index === currentIndex ? 0 : -1}
                 data-pane-index={index}
                 className={`paneSwitcherOption ${selected ? "paneSwitcherOption-selected" : ""}`}

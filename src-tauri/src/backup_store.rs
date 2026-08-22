@@ -25,7 +25,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
-use rusqlite::{params, Connection, OptionalExtension};
+use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
 use serde_json::json;
 use sha2::{Digest, Sha256};
 
@@ -174,11 +174,11 @@ pub fn record(store_file: &Path, absolute_path: &Path, bytes: &[u8]) {
         },
     }
 
-    let StoreState::Open(open) = &*guard else {
+    let StoreState::Open(open) = &mut *guard else {
         return; // unreachable after the match above, but keeps this total
     };
 
-    if let Err(error) = insert_if_changed(&open.conn, absolute_path, bytes) {
+    if let Err(error) = insert_if_changed(&mut open.conn, absolute_path, bytes) {
         crate::logging::warn(
             "backup store: failed to record a managed write",
             json!({ "file": absolute_path.to_string_lossy(), "error": error }),
@@ -188,11 +188,24 @@ pub fn record(store_file: &Path, absolute_path: &Path, bytes: &[u8]) {
 
 /// The dedup-read + conditional insert, factored out so the error handling above
 /// stays a single `warn`. Returns `Err(reason)` on any SQLite failure.
-fn insert_if_changed(conn: &Connection, absolute_path: &Path, bytes: &[u8]) -> Result<(), String> {
+fn insert_if_changed(
+    conn: &mut Connection,
+    absolute_path: &Path,
+    bytes: &[u8],
+) -> Result<(), String> {
     let path_str = absolute_path.to_string_lossy();
     let hash = sha256_hex(bytes);
 
-    let latest: Option<String> = conn
+    // Acquire the SQLite write lock before reading the predecessor. WAL alone
+    // serializes the INSERTs, not the SELECTs that decide whether to insert; two
+    // processes using deferred transactions could both observe the same latest
+    // row and append a duplicate. IMMEDIATE makes latest-read + conditional
+    // insert one cross-process decision while busy_timeout handles contention.
+    let transaction = conn
+        .transaction_with_behavior(TransactionBehavior::Immediate)
+        .map_err(|error| error.to_string())?;
+
+    let latest: Option<String> = transaction
         .query_row(
             "SELECT content_sha256 FROM backups WHERE path = ?1 ORDER BY id DESC LIMIT 1",
             params![path_str],
@@ -203,6 +216,7 @@ fn insert_if_changed(conn: &Connection, absolute_path: &Path, bytes: &[u8]) -> R
 
     // Unchanged since the last recorded version — dedup skip.
     if latest.as_deref() == Some(hash.as_str()) {
+        transaction.commit().map_err(|error| error.to_string())?;
         return Ok(());
     }
 
@@ -210,12 +224,15 @@ fn insert_if_changed(conn: &Connection, absolute_path: &Path, bytes: &[u8]) -> R
     // filename stamp: e.g. 2026-07-06T04:05:12.345Z.
     let written_at_utc = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
 
-    conn.execute(
-        "INSERT INTO backups (path, content, content_sha256, byte_size, written_at_utc)
+    transaction
+        .execute(
+            "INSERT INTO backups (path, content, content_sha256, byte_size, written_at_utc)
          VALUES (?1, ?2, ?3, ?4, ?5)",
-        params![path_str, bytes, hash, bytes.len() as i64, written_at_utc],
-    )
-    .map_err(|error| error.to_string())?;
+            params![path_str, bytes, hash, bytes.len() as i64, written_at_utc],
+        )
+        .map_err(|error| error.to_string())?;
+
+    transaction.commit().map_err(|error| error.to_string())?;
 
     Ok(())
 }
