@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { ChevronUp } from "lucide-react";
 import type { Pane } from "../types";
 import { nextIndex, verticalTablistDirection } from "../utils/compositeNav";
+import { panePanelDomId, paneTabDomId } from "../utils/paneDomIds";
 
 type PaneSwitcherProps = {
   panes: Pane[];
@@ -131,11 +132,11 @@ export function PaneSwitcher({ panes, activePaneId, onSelect }: PaneSwitcherProp
             return (
               <button
                 key={pane.id}
-                id={`pane-tab-${pane.id}`}
+                id={paneTabDomId(pane.id)}
                 type="button"
                 role="tab"
                 aria-selected={selected}
-                aria-controls={`pane-panel-${pane.id}`}
+                aria-controls={panePanelDomId(pane.id)}
                 tabIndex={index === currentIndex ? 0 : -1}
                 data-pane-index={index}
                 className={`paneSwitcherOption ${selected ? "paneSwitcherOption-selected" : ""}`}

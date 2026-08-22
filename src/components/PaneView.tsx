@@ -5,6 +5,7 @@ import { useAppState } from "../state/AppStateContext";
 import { getTextCounts } from "../utils/counts";
 import { darkPaneBackground } from "../utils/paneColors";
 import { shouldPullEditorFocus } from "../utils/paneFocus";
+import { panePanelDomId } from "../utils/paneDomIds";
 
 type PaneViewProps = {
   pane: Pane;
@@ -45,7 +46,7 @@ export function PaneView({ pane }: PaneViewProps) {
 
   return (
     <section
-      id={settings.zen ? `pane-panel-${pane.id}` : undefined}
+      id={settings.zen ? panePanelDomId(pane.id) : undefined}
       role={settings.zen ? "tabpanel" : undefined}
       aria-label={settings.zen ? `Pane: ${pane.title}` : undefined}
       className={`pane ${active ? "pane-active" : ""}`}
