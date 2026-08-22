@@ -25,7 +25,7 @@ use crate::paths::app_data_dir;
 //
 // Every managed-*text* write goes through `atomic_write_json`, which — strictly
 // AFTER the atomic rename lands — records the exact bytes it just wrote into
-// `backups.sqlite3` (see backup_store.rs). Only these two managed-text files reach
+// `backups.sqlite3` (see backup_store.rs). Only these three managed-text files reach
 // that choke point; the enumeration of every write site under ~/.quickdeck and its
 // record/no-record decision lives beside each write below.
 pub const CONFIG_FILE_NAME: &str = "config.json";
