@@ -22,12 +22,15 @@ permissions:
   contents: write
 
 jobs:
-  # Gate: the frontend test suite (which includes the version-consistency check
-  # across the manifests) plus the Rust core's own test suite. Platform-independent,
-  # so it runs once and both build jobs depend on it — a failure blocks the
-  # release before anything is built.
+  # Gate on both supported platforms: the frontend suite (including manifest
+  # version consistency) plus the Rust core's own tests. Both build jobs depend
+  # on every matrix leg.
   test:
-    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
