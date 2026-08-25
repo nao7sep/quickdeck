@@ -1,4 +1,5 @@
 pub mod backup_store;
+mod instance_owner;
 mod logging;
 mod nanoid;
 mod paths;
@@ -163,6 +164,7 @@ fn log_event(
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let app = tauri::Builder::default()
+        .plugin(instance_owner::init())
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             let version = app.package_info().version.to_string();
