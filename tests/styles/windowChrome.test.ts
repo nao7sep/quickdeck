@@ -22,6 +22,12 @@ describe("styles.css scroll-bar and color-scheme guards", () => {
     expect(css).toMatch(/:root\s*\{[^}]*color-scheme:\s*light/);
   });
 
+  it(":root owns the inherited UI font family and size", () => {
+    expect(css).toMatch(/:root\s*\{[^}]*--font-ui:\s*system-ui/);
+    expect(css).toMatch(/:root\s*\{[^}]*font-family:\s*var\(--font-ui\)/);
+    expect(css).toMatch(/body\s*\{[^}]*font-size:\s*13px/);
+  });
+
   it(":root.dark declares color-scheme: dark", () => {
     expect(css).toMatch(/:root\.dark\s*\{[^}]*color-scheme:\s*dark/);
   });
