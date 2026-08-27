@@ -2,6 +2,7 @@
   "name": "quickdeck",
   "private": true,
   "version": "0.1.0",
+  "packageManager": "npm@12.0.2",
   "description": "A local-first multi-pane plain text workspace.",
   "author": "Yoshinao Inoguchi <yoshinao@inoguchi.com>",
   "license": "MIT",
@@ -38,7 +39,7 @@
     "vitest": "^4.1.11"
   },
   "allowScripts": {
-    "core-js": false,
-    "fsevents": false
+    "core-js@2.6.12": false,
+    "fsevents@2.3.3": false
   }
 }
