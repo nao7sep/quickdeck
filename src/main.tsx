@@ -3,7 +3,11 @@ import ReactDOM from "react-dom/client";
 import { App } from "./App";
 import { AppStateProvider } from "./state/AppStateContext";
 import { logError, logInfo, serializeError } from "./services/logger";
+import { denyUnhandledExternalDrop } from "./utils/externalDropBoundary";
 import "./styles.css";
+
+window.addEventListener("dragover", denyUnhandledExternalDrop);
+window.addEventListener("drop", denyUnhandledExternalDrop);
 
 // Global last-resort hooks: log anything that escapes a component or a promise
 // before it is lost. The Rust core also installs a panic hook for the native
