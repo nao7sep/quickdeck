@@ -11,7 +11,7 @@ function drag(
   const event = {
     defaultPrevented,
     preventDefault() { this.defaultPrevented = true; },
-    target: editable ? { closest: () => ({}) } : null,
+    target: editable ? { tagName: "TEXTAREA" } : null,
     dataTransfer: { types, items, dropEffect: "copy" },
   };
   return event as unknown as DragEvent;
