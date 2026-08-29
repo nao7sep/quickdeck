@@ -17,7 +17,7 @@ function drag(
   return event as unknown as DragEvent;
 }
 
-describe("external drop boundary", () => {
+describe("secondary renderer drop boundary", () => {
   it("denies an unowned drop without overriding an owned one", () => {
     const unowned = drag();
     denyUnhandledExternalDrop(unowned);
