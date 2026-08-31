@@ -19,7 +19,7 @@
         "minHeight": 284,
         "visible": true,
         "titleBarStyle": "Visible",
-        "dragDropEnabled": true
+        "dragDropEnabled": false
       }
     ],
     "security": {

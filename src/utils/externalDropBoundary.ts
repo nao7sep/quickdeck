@@ -1,8 +1,8 @@
 import { isEditableTarget } from "./shortcuts";
 
-/** Tauri's configured native interception owns OS file delivery. This secondary
- * renderer boundary refuses any external file or URL drop that still reaches
- * the DOM while retaining native non-file text editing. */
+/** The renderer owns external drag transport so the webview can preserve its
+ * native textarea text/link editing on every platform. Refuse files everywhere
+ * and any other unowned drop outside an editable surface. */
 export function denyUnhandledExternalDrop(event: DragEvent): void {
   if (event.defaultPrevented) return;
   const hasFiles = Array.from(event.dataTransfer?.types ?? []).includes("Files") ||

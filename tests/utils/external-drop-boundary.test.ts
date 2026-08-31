@@ -17,7 +17,7 @@ function drag(
   return event as unknown as DragEvent;
 }
 
-describe("secondary renderer drop boundary", () => {
+describe("renderer external-drop boundary", () => {
   it("denies an unowned drop without overriding an owned one", () => {
     const unowned = drag();
     denyUnhandledExternalDrop(unowned);
@@ -31,6 +31,15 @@ describe("secondary renderer drop boundary", () => {
     const editableText = drag(false, true, ["text/plain"]);
     denyUnhandledExternalDrop(editableText);
     expect(editableText.defaultPrevented).toBe(false);
+
+    const editableLink = drag(false, true, ["text/uri-list"]);
+    denyUnhandledExternalDrop(editableLink);
+    expect(editableLink.defaultPrevented).toBe(false);
+
+    const unownedLink = drag(false, false, ["text/uri-list"]);
+    denyUnhandledExternalDrop(unownedLink);
+    expect(unownedLink.defaultPrevented).toBe(true);
+    expect(unownedLink.dataTransfer?.dropEffect).toBe("none");
 
     const editableFile = drag(false, true, [], [{ kind: "file" }]);
     denyUnhandledExternalDrop(editableFile);

@@ -6,9 +6,9 @@ const config = JSON.parse(
   readFileSync(join(process.cwd(), "src-tauri/tauri.conf.json"), "utf8"),
 ) as { app?: { windows?: Array<{ dragDropEnabled?: unknown }> } };
 
-describe("Tauri native file interception", () => {
-  it("is explicitly the primary OS file-drop boundary", () => {
+describe("Tauri external drag transport", () => {
+  it("leaves delivery to the renderer so native editor text drops survive", () => {
     expect(config.app?.windows).toHaveLength(1);
-    expect(config.app?.windows?.[0]?.dragDropEnabled).toBe(true);
+    expect(config.app?.windows?.[0]?.dragDropEnabled).toBe(false);
   });
 });
