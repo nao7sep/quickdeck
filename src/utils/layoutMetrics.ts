@@ -56,3 +56,14 @@ export function computeWindowMinWidth(
 export function computeWindowMinHeight(zoomLevel = 1): number {
   return Math.ceil((PANE_MIN_HEIGHT + STATUS_BAR_HEIGHT) * zoomLevel);
 }
+
+/** Caps only the OS window floor; the complete content floor remains inside. */
+export function boundNativeMinimumToClient(
+  required: { width: number; height: number },
+  usableClient: { width: number; height: number },
+): { width: number; height: number } {
+  return {
+    width: Math.min(required.width, Math.max(1, usableClient.width)),
+    height: Math.min(required.height, Math.max(1, usableClient.height)),
+  };
+}

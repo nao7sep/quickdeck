@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  boundNativeMinimumToClient,
   computeWindowMinHeight,
   computeWindowMinWidth,
   DECK_GUTTER,
@@ -65,6 +66,17 @@ describe("computeWindowMinHeight", () => {
 
   it("scales pane and fixed status chrome together", () => {
     expect(computeWindowMinHeight(1.2)).toBe(Math.ceil((PANE_MIN_HEIGHT + STATUS_BAR_HEIGHT) * 1.2));
+  });
+});
+
+describe("boundNativeMinimumToClient", () => {
+  it("preserves a fitting floor and caps a physically impossible one", () => {
+    expect(
+      boundNativeMinimumToClient({ width: 900, height: 700 }, { width: 1200, height: 800 }),
+    ).toEqual({ width: 900, height: 700 });
+    expect(
+      boundNativeMinimumToClient({ width: 2400, height: 1500 }, { width: 1400, height: 850 }),
+    ).toEqual({ width: 1400, height: 850 });
   });
 });
 

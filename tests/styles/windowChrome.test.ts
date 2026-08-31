@@ -47,17 +47,15 @@ describe("styles.css scroll-bar and color-scheme guards", () => {
     expect(css).not.toMatch(/\.menuPanel button:hover\s*\{/);
   });
 
-  it(".pane carries a real min-width but no min-height (the footer must never be clipped)", () => {
+  it("keeps the complete pane floor inside a scroll-owning viewport", () => {
     // Match the standalone `.pane { ... }` rule (anchored at line start) rather
     // than the descendant `:root.dark .pane { ... }` rule earlier in the file.
     const paneRule = /^\.pane\s*\{([^}]*)\}/m.exec(css);
     expect(paneRule).not.toBeNull();
     expect(paneRule![1]).not.toMatch(/min-width:\s*0\b/);
     expect(paneRule![1]).toMatch(/min-width:/);
-    // The vertical minimum is enforced at the window level, not as a pane min-height:
-    // a pane taller than the deck would overflow and the deck's overflow:hidden would
-    // clip the footer (the char counts). Guard that the regression doesn't return.
-    expect(paneRule![1]).not.toMatch(/min-height:/);
+    expect(paneRule![1]).toMatch(/min-height:/);
+    expect(css).toMatch(/\.paneViewport\s*\{[^}]*overflow:\s*auto/);
   });
 });
 

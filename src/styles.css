@@ -209,6 +209,8 @@ button:disabled {
   justify-content: space-between;
   gap: 12px;
   height: 44px;
+  overflow-x: auto;
+  overflow-y: hidden;
   padding: 0 16px;
   background: var(--chrome-gradient);
 }
@@ -617,11 +619,17 @@ button:disabled {
 
 /* ── Pane Deck ───────────────────────────────────────────────── */
 
+.paneViewport {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+}
+
 .paneDeck {
   display: flex;
   flex-direction: row;
   height: 100%;
-  min-width: 0;
+  width: 100%;
   overflow: hidden;
   gap: 2px;
   background: var(--deck-gutter);
@@ -634,18 +642,16 @@ button:disabled {
      shrink below its content) so no pane is squeezed below a usable width; mirrors
      PANE_MIN_WIDTH in src/utils/layoutMetrics.ts, which also derives the window
      minimum from it. flex:1 1 0 still lets panes grow and share width equally.
-     The vertical minimum (PANE_MIN_HEIGHT) is enforced at the WINDOW level only
-     (the window can't shrink below pane-min + status bar) — deliberately NOT a
-     `min-height` here: a pane taller than the deck would overflow and the deck's
-     `overflow:hidden` would clip the footer (the char counts). With the pane
-     filling the deck exactly, the editor (the 1fr row) absorbs all shrink and the
-     auto header/footer rows are always reserved, so the counts never disappear. */
+     The deck receives the vertical floor from App. When a scaled floor cannot
+     fit the display, paneViewport scrolls that complete floor rather than
+     letting the native minimum strand the window or clipping the footer. */
   --pane-min-width: 280px;
   display: grid;
   grid-template-rows: auto 1fr auto;
   grid-template-columns: minmax(0, 1fr);
   flex: 1 1 0;
   min-width: var(--pane-min-width);
+  min-height: 100%;
   background: var(--pane-bg, #f5f3ff);
   transition: box-shadow 150ms ease;
   overflow: hidden;

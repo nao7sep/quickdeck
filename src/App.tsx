@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { isTauri } from "@tauri-apps/api/core";
-import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
+import {
+  currentMonitor,
+  getCurrentWindow,
+  LogicalSize,
+} from "@tauri-apps/api/window";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import {
   History,
@@ -26,7 +30,12 @@ import { isEditableTarget, shadowsMacTextEditing } from "./utils/shortcuts";
 import { isComposingEvent } from "./hooks/useComposing";
 import { logError, logWarn, serializeError } from "./services/logger";
 import { useAppState } from "./state/AppStateContext";
-import { computeWindowMinHeight, computeWindowMinWidth } from "./utils/layoutMetrics";
+import {
+  boundNativeMinimumToClient,
+  computeWindowMinHeight,
+  computeWindowMinWidth,
+  PANE_MIN_HEIGHT,
+} from "./utils/layoutMetrics";
 import { clampPaneIndex } from "./utils/paneIndex";
 import { isZoomIn, isZoomOut, isZoomReset, stepZoomIn, stepZoomOut, ZOOM_DEFAULT } from "./utils/zoom";
 
@@ -161,31 +170,83 @@ export function App() {
   // frame before this runs.
   useEffect(() => {
     if (!isTauri()) return undefined;
-    const minWidth = computeWindowMinWidth(
-      panes.length,
-      settings.zen,
-      zoomLevel,
-      statusBarContentWidth,
-    );
-    const minHeight = computeWindowMinHeight(zoomLevel);
-    getCurrentWindow()
-      .setMinSize(new LogicalSize(minWidth, minHeight))
-      .catch((error) =>
+    const appWindow = getCurrentWindow();
+    let disposed = false;
+    const unlistens: Array<() => void> = [];
+    const required = {
+      width: computeWindowMinWidth(
+        panes.length,
+        settings.zen,
+        zoomLevel,
+        statusBarContentWidth,
+      ),
+      height: computeWindowMinHeight(zoomLevel),
+    };
+    const applyMinimum = async () => {
+      try {
+        const monitor = await currentMonitor();
+        let minimum = required;
+        if (monitor !== null) {
+          const [outer, inner] = await Promise.all([
+            appWindow.outerSize(),
+            appWindow.innerSize(),
+          ]);
+          const scale = monitor.scaleFactor || 1;
+          minimum = boundNativeMinimumToClient(required, {
+            width: Math.floor(
+              (monitor.workArea.size.width -
+                Math.max(0, outer.width - inner.width)) /
+                scale,
+            ),
+            height: Math.floor(
+              (monitor.workArea.size.height -
+                Math.max(0, outer.height - inner.height)) /
+                scale,
+            ),
+          });
+        }
+        if (!disposed) {
+          await appWindow.setMinSize(
+            new LogicalSize(minimum.width, minimum.height),
+          );
+        }
+      } catch (error) {
         logWarn("set window min size failed", {
           paneCount: panes.length,
           zen: settings.zen,
-          minWidth,
-          minHeight,
+          requiredWidth: required.width,
+          requiredHeight: required.height,
           error: serializeError(error),
-        }),
-      );
-    return undefined;
+        });
+      }
+    };
+    const retain = (registration: Promise<() => void>) => {
+      void registration
+        .then((unlisten) => {
+          if (disposed) unlisten();
+          else unlistens.push(unlisten);
+        })
+        .catch((error) =>
+          logWarn("window metric listener failed", {
+            error: serializeError(error),
+          }),
+        );
+    };
+    void applyMinimum();
+    retain(appWindow.onMoved(() => void applyMinimum()));
+    retain(appWindow.onScaleChanged(() => void applyMinimum()));
+    return () => {
+      disposed = true;
+      for (const unlisten of unlistens) unlisten();
+    };
   }, [panes.length, settings.zen, statusBarContentWidth, zoomLevel]);
 
   // Zoom keyboard shortcuts — separate effect with its own document listener so
   // they work even when a modal is open (zoom should always be accessible).
   const zoomLevelRef = useRef(zoomLevel);
-  useEffect(() => { zoomLevelRef.current = zoomLevel; }, [zoomLevel]);
+  useEffect(() => {
+    zoomLevelRef.current = zoomLevel;
+  }, [zoomLevel]);
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       // Zoom is window chrome and stays global even while a modal is open; the
@@ -428,13 +489,19 @@ export function App() {
   const visiblePanes = settings.zen
     ? [panes.find((pane) => pane.id === activePaneId) ?? panes[0]]
     : panes;
+  const paneDeckMinimum = computeWindowMinWidth(panes.length, settings.zen);
 
   return (
     <main className="appShell">
-      <div className="paneDeck">
-        {visiblePanes.map((pane) => (
-          <PaneView pane={pane} key={pane.id} />
-        ))}
+      <div className="paneViewport">
+        <div
+          className="paneDeck"
+          style={{ minWidth: paneDeckMinimum, minHeight: PANE_MIN_HEIGHT }}
+        >
+          {visiblePanes.map((pane) => (
+            <PaneView pane={pane} key={pane.id} />
+          ))}
+        </div>
       </div>
       <footer className="appStatusBar" ref={statusBarRef}>
         {settings.zen ? (
