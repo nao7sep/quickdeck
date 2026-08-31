@@ -18,6 +18,7 @@ import {
   settingsShapeIssues,
 } from "./normalize";
 import { ZOOM_DEFAULT } from "../utils/zoom";
+import { toastLifetimeMs } from "../utils/toastPolicy";
 import { appendPane, deletePane as deletePaneOp, reorderPane } from "./paneOps";
 import { multiline, singleLine } from "../utils/textCleanup";
 import { resolveSaveState } from "../utils/saveRace";
@@ -126,9 +127,12 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const showToast = useCallback((kind: ToastKind, message: string) => {
     const id = nanoid();
     setToasts((current) => [...current, { id, kind, message }]);
-    window.setTimeout(() => {
-      setToasts((current) => current.filter((toast) => toast.id !== id));
-    }, 4200);
+    const lifetime = toastLifetimeMs(kind);
+    if (lifetime !== null) {
+      window.setTimeout(() => {
+        setToasts((current) => current.filter((toast) => toast.id !== id));
+      }, lifetime);
+    }
   }, []);
 
   const dismissToast = useCallback((toastId: string) => {

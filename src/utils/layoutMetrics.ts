@@ -38,15 +38,21 @@ export const HORIZONTAL_CHROME = 0;
 // reserves every visible pane's minimum plus the gutters between them plus the
 // horizontal chrome — so the OS can never shrink the window enough to squeeze a
 // pane below its content.
-export function computeWindowMinWidth(paneCount: number, zen: boolean): number {
+export function computeWindowMinWidth(
+  paneCount: number,
+  zen: boolean,
+  zoomLevel = 1,
+  statusBarContentWidth = 0,
+): number {
   const visiblePanes = zen ? 1 : Math.max(1, paneCount);
   const gutters = Math.max(0, visiblePanes - 1) * DECK_GUTTER;
-  return visiblePanes * PANE_MIN_WIDTH + gutters + HORIZONTAL_CHROME;
+  const paneFloor = visiblePanes * PANE_MIN_WIDTH + gutters + HORIZONTAL_CHROME;
+  return Math.ceil(Math.max(paneFloor, statusBarContentWidth) * zoomLevel);
 }
 
 // Minimum window height: a single pane's minimum stacked above the fixed status
 // bar. The pane row and the status bar are the appShell's two grid tracks, so
 // the height floor is their sum.
-export function computeWindowMinHeight(): number {
-  return PANE_MIN_HEIGHT + STATUS_BAR_HEIGHT;
+export function computeWindowMinHeight(zoomLevel = 1): number {
+  return Math.ceil((PANE_MIN_HEIGHT + STATUS_BAR_HEIGHT) * zoomLevel);
 }

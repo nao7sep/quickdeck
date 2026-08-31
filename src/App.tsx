@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
@@ -59,6 +59,8 @@ export function App() {
   } = useAppState();
   const [openModal, setOpenModal] = useState<OpenModal>(null);
   const [snapshotPulse, setSnapshotPulse] = useState(false);
+  const [statusBarContentWidth, setStatusBarContentWidth] = useState(0);
+  const statusBarRef = useRef<HTMLElement | null>(null);
 
   // Brief "snapshot saved" flash whenever the timestamp updates.
   useEffect(() => {
@@ -121,6 +123,35 @@ export function App() {
     else document.documentElement.style.removeProperty("--font-ui");
   }, [settings.uiFontFamily]);
 
+  // The status bar deliberately never wraps. Measure the natural widths of its
+  // live child groups plus its CSS gap/padding, rather than guessing a fixed floor;
+  // pane/snapshot counts, optional badges, zen controls, save state, and the chosen
+  // UI font can all change this run independently of the pane deck.
+  useLayoutEffect(() => {
+    const bar = statusBarRef.current;
+    if (bar === null) return;
+    const style = window.getComputedStyle(bar);
+    const padding = Number.parseFloat(style.paddingLeft) + Number.parseFloat(style.paddingRight);
+    const gap = Number.parseFloat(style.columnGap || style.gap) || 0;
+    const groups = Array.from(bar.children).filter(
+      (child): child is HTMLElement => child instanceof HTMLElement,
+    );
+    const naturalWidth = Math.ceil(
+      padding + groups.reduce((sum, group) => sum + group.scrollWidth, 0) + gap * Math.max(0, groups.length - 1),
+    );
+    setStatusBarContentWidth((current) => current === naturalWidth ? current : naturalWidth);
+  }, [
+    activePaneId,
+    panes.length,
+    saveState,
+    settings.dark,
+    settings.topmost,
+    settings.uiFontFamily,
+    settings.zen,
+    snapshotCount,
+    snapshotPulse,
+  ]);
+
   // Keep the window minimum tracking the live pane count. QuickDeck has no
   // splitter — panes are equal-stretch flex siblings whose count changes via
   // Add / Delete — so the width floor must grow with the panes (and collapse to
@@ -130,8 +161,13 @@ export function App() {
   // frame before this runs.
   useEffect(() => {
     if (!isTauri()) return undefined;
-    const minWidth = computeWindowMinWidth(panes.length, settings.zen);
-    const minHeight = computeWindowMinHeight();
+    const minWidth = computeWindowMinWidth(
+      panes.length,
+      settings.zen,
+      zoomLevel,
+      statusBarContentWidth,
+    );
+    const minHeight = computeWindowMinHeight(zoomLevel);
     getCurrentWindow()
       .setMinSize(new LogicalSize(minWidth, minHeight))
       .catch((error) =>
@@ -144,7 +180,7 @@ export function App() {
         }),
       );
     return undefined;
-  }, [panes.length, settings.zen]);
+  }, [panes.length, settings.zen, statusBarContentWidth, zoomLevel]);
 
   // Zoom keyboard shortcuts — separate effect with its own document listener so
   // they work even when a modal is open (zoom should always be accessible).
@@ -400,7 +436,7 @@ export function App() {
           <PaneView pane={pane} key={pane.id} />
         ))}
       </div>
-      <footer className="appStatusBar">
+      <footer className="appStatusBar" ref={statusBarRef}>
         {settings.zen ? (
           <PaneSwitcher panes={panes} activePaneId={activePaneId} onSelect={setActivePaneId} />
         ) : null}

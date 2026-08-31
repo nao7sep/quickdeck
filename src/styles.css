@@ -1216,6 +1216,14 @@ kbd {
   font-weight: 500;
 }
 
+.toastSeverity {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 5px;
+  font-weight: 700;
+}
+
 .toast-warning {
   border-color: var(--toast-warning-border);
   background: var(--toast-warning-bg);

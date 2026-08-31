@@ -45,11 +45,26 @@ describe("computeWindowMinWidth", () => {
   it("treats a zero/negative pane count as a single pane (never below the floor)", () => {
     expect(computeWindowMinWidth(0, false)).toBe(PANE_MIN_WIDTH);
   });
+
+  it("uses the measured nonwrapping status run when it is wider than the panes", () => {
+    expect(computeWindowMinWidth(1, false, 1, 460)).toBe(460);
+    expect(computeWindowMinWidth(3, false, 1, 460)).toBe(3 * PANE_MIN_WIDTH + 2 * DECK_GUTTER);
+  });
+
+  it("scales the complete content floor by persisted webview zoom", () => {
+    const base = 3 * PANE_MIN_WIDTH + 2 * DECK_GUTTER;
+    expect(computeWindowMinWidth(3, false, 1.2, 460)).toBe(Math.ceil(base * 1.2));
+    expect(computeWindowMinWidth(1, false, 1.2, 460)).toBe(Math.ceil(460 * 1.2));
+  });
 });
 
 describe("computeWindowMinHeight", () => {
   it("is one pane minimum stacked above the fixed status bar", () => {
     expect(computeWindowMinHeight()).toBe(PANE_MIN_HEIGHT + STATUS_BAR_HEIGHT);
+  });
+
+  it("scales pane and fixed status chrome together", () => {
+    expect(computeWindowMinHeight(1.2)).toBe(Math.ceil((PANE_MIN_HEIGHT + STATUS_BAR_HEIGHT) * 1.2));
   });
 });
 
