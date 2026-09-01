@@ -1,6 +1,6 @@
 # QuickDeck
 
-QuickDeck is a local-first, multi-pane plain-text workspace for fast, buffer-based writing — a desktop app for macOS and Windows, built with Tauri, React, and TypeScript. You write across several equal-width panes at once; the workspace autosaves to local JSON, and recovery snapshots are kept in local SQLite so nothing is lost. It suits anyone who wants a quick scratch space for drafting and reshuffling text — with word, character, and X/Twitter-weighted counts built in — and who wants it entirely on their own machine: no telemetry, no sync, no network.
+QuickDeck is a local-first, multi-pane plain-text workspace for fast, buffer-based writing — a desktop app for macOS and Windows, built with Tauri, React, and TypeScript. You write across several equal-width panes at once; the workspace autosaves to local JSON, and recovery snapshots are kept in local SQLite to help recover recent text after mistakes or restarts. It suits anyone who wants a quick scratch space for drafting and reshuffling text — with word, character, and X/Twitter-weighted counts built in — and who wants it entirely on their own machine: no telemetry, no sync, no network.
 
 ## Features
 
