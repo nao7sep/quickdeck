@@ -321,8 +321,12 @@ button:disabled {
 }
 
 .menuPanelUp {
+  /* The status bar owns horizontal overflow at extreme zoom. Keep its popup
+     viewport-fixed so the bar's overflow-y clipping cannot hide an open menu. */
+  position: fixed;
+  right: 16px;
   top: auto;
-  bottom: 46px;
+  bottom: 54px;
 }
 
 /* ── Pane Switcher (zen mode) ────────────────────────────────── */
@@ -378,10 +382,12 @@ button:disabled {
 }
 
 .paneSwitcherPanel {
-  position: absolute;
+  /* This opens from the horizontally scrollable status bar. Fix it to the
+     viewport so the bar's vertical overflow clip cannot hide the panel. */
+  position: fixed;
   z-index: var(--z-menu);
-  left: 0;
-  bottom: 38px;
+  left: 16px;
+  bottom: 54px;
   display: grid;
   width: 280px;
   max-height: 360px;

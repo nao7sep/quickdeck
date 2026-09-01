@@ -7,6 +7,7 @@ import {
   type KeyboardEvent,
   type ReactNode,
 } from "react";
+import { createPortal } from "react-dom";
 import { nextIndex } from "../utils/compositeNav";
 import { isComposingKeyboardEvent, useComposing } from "../hooks/useComposing";
 
@@ -148,7 +149,7 @@ export function Menu({ label, trigger, children, panelClassName }: MenuProps) {
         "aria-expanded": open,
         onClick: () => setOpen((value) => !value),
       })}
-      {open ? (
+      {open ? createPortal(
         <div
           ref={contentRef}
           role="menu"
@@ -159,7 +160,8 @@ export function Menu({ label, trigger, children, panelClassName }: MenuProps) {
           onCompositionEnd={composing.handlers.onCompositionEnd}
         >
           <MenuContext.Provider value={{ close }}>{children}</MenuContext.Provider>
-        </div>
+        </div>,
+        document.body,
       ) : null}
     </div>
   );

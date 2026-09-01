@@ -47,6 +47,20 @@ describe("styles.css scroll-bar and color-scheme guards", () => {
     expect(css).not.toMatch(/\.menuPanel button:hover\s*\{/);
   });
 
+  it("keeps the upward app menu outside the status bar's overflow clip", () => {
+    const menuSource = read("src/components/Menu.tsx");
+    const paneSwitcherSource = read("src/components/PaneSwitcher.tsx");
+    const statusBarRule = /\.appStatusBar\s*\{([^}]*)\}/.exec(css);
+    const upwardMenuRule = /\.menuPanelUp\s*\{([^}]*)\}/.exec(css);
+    const paneSwitcherRule = /\.paneSwitcherPanel\s*\{([^}]*)\}/.exec(css);
+    expect(statusBarRule?.[1]).toMatch(/overflow-x:\s*auto/);
+    expect(statusBarRule?.[1]).toMatch(/overflow-y:\s*hidden/);
+    expect(upwardMenuRule?.[1]).toMatch(/position:\s*fixed/);
+    expect(paneSwitcherRule?.[1]).toMatch(/position:\s*fixed/);
+    expect(menuSource).toMatch(/createPortal\([\s\S]*document\.body/);
+    expect(paneSwitcherSource).toMatch(/createPortal\([\s\S]*document\.body/);
+  });
+
   it("keeps the complete pane floor inside a scroll-owning viewport", () => {
     // Match the standalone `.pane { ... }` rule (anchored at line start) rather
     // than the descendant `:root.dark .pane { ... }` rule earlier in the file.

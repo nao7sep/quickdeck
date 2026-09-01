@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { createPortal } from "react-dom";
 import { ChevronUp } from "lucide-react";
 import type { Pane } from "../types";
 import { nextIndex, verticalTablistDirection } from "../utils/compositeNav";
@@ -65,7 +66,12 @@ export function PaneSwitcher({ panes, activePaneId, onSelect }: PaneSwitcherProp
       return undefined;
     }
     function handleClickOutside(event: MouseEvent) {
-      if (wrapRef.current && !wrapRef.current.contains(event.target as Node)) {
+      const target = event.target as Node;
+      if (
+        wrapRef.current &&
+        !wrapRef.current.contains(target) &&
+        !panelRef.current?.contains(target)
+      ) {
         setOpen(false);
       }
     }
@@ -101,7 +107,11 @@ export function PaneSwitcher({ panes, activePaneId, onSelect }: PaneSwitcherProp
       className="paneSwitcherWrap"
       ref={wrapRef}
       onBlur={(event) => {
-        if (!event.currentTarget.contains(event.relatedTarget)) {
+        const related = event.relatedTarget;
+        if (
+          !event.currentTarget.contains(related) &&
+          !(related instanceof Node && panelRef.current?.contains(related))
+        ) {
           close(false);
         }
       }}
@@ -118,7 +128,7 @@ export function PaneSwitcher({ panes, activePaneId, onSelect }: PaneSwitcherProp
         <span className="paneSwitcherTitle">{activePane.title}</span>
         <ChevronUp size={14} className="paneSwitcherChevron" />
       </button>
-      {open ? (
+      {open ? createPortal(
         <div
           ref={panelRef}
           className="paneSwitcherPanel"
@@ -150,7 +160,8 @@ export function PaneSwitcher({ panes, activePaneId, onSelect }: PaneSwitcherProp
               </button>
             );
           })}
-        </div>
+        </div>,
+        document.body,
       ) : null}
     </div>
   );
