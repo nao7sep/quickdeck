@@ -2,7 +2,7 @@ import { isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { logWarn, serializeError } from "../services/logger";
 
-// Non-dismissible halt shown when persisted state could not be loaded.
+// Non-dismissible halt shown when persisted state could not be prepared.
 //
 // When config.json or state.json fails to read or parse, the app must not
 // fall through to the editor. Doing so would let the default in-memory state
@@ -38,7 +38,7 @@ export function LoadErrorScreen({ error, onSetAsideAndReset }: LoadErrorScreenPr
   return (
     <main className="loadErrorShell">
       <div className="loadErrorPanel">
-        <h1 className="loadErrorTitle">QuickDeck couldn't load saved data</h1>
+        <h1 className="loadErrorTitle">QuickDeck couldn't prepare saved data</h1>
         <p className="loadErrorMessage">{error}</p>
         <p className="loadErrorHint">
           To protect your existing data, QuickDeck will not save changes in this

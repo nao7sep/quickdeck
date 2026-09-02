@@ -100,6 +100,10 @@ export function settingsResetMessage(_quarantinePaths: readonly (string | null)[
   return "A settings file was unreadable, so QuickDeck preserved it and started with defaults for it. The preserved copy's location is recorded in the log. Your pane text is untouched.";
 }
 
+export function firstRunConfigWriteFailureMessage(_diagnostic: unknown): string {
+  return "QuickDeck could not create its settings file. No files were changed. Restore write access to the data folder, then relaunch QuickDeck.";
+}
+
 export function AppStateProvider({ children }: { children: ReactNode }) {
   const firstPane = useMemo(() => createDefaultPane(nanoid()), []);
   const [panes, setPanes] = useState<Pane[]>([firstPane]);
@@ -248,12 +252,23 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       // first run"). data.config is null when the file is absent — either never created, or just
       // quarantined aside (which renames it away) — so this is create-if-absent (an existing
       // config is never overwritten), persisting the real normalized defaults through the normal
-      // save_config path rather than a hand-built literal. A write failure is logged, not fatal.
+      // save_config path rather than a hand-built literal. Without this required
+      // baseline, the app cannot truthfully call its current state saved or know
+      // that later writes are safe, so a failure retains a halting authored result.
       if (!canceledRef.current && (data.config === null || configShapeQuarantinedTo !== null)) {
         try {
           await saveConfig(effectiveSettings);
         } catch (error) {
-          logWarn("failed to create config.json on first run", { error: serializeError(error) });
+          logError("failed to create config.json on first run", {
+            error: serializeError(error),
+          });
+          if (!canceledRef.current) {
+            setSaveState("error");
+            setLoadErrorIsCorruptPanes(false);
+            setLoadError(firstRunConfigWriteFailureMessage(error));
+            setLoadStatus("failed");
+          }
+          return;
         }
       }
 

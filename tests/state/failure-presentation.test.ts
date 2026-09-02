@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  firstRunConfigWriteFailureMessage,
   paneReadFailureMessage,
   paneShapeFailureMessage,
   settingsResetMessage,
@@ -27,5 +28,19 @@ describe("persistence failure presentation", () => {
     expect(message).not.toContain(".invalid");
     expect(message).not.toContain("HOSTILE-SENTINEL");
     expect(message).not.toContain("EACCES");
+  });
+
+  it("retains an authored result when first-run settings cannot be written", () => {
+    const message = firstRunConfigWriteFailureMessage(
+      new TypeError("EACCES /private/tmp/HOSTILE-SENTINEL IPC"),
+    );
+
+    expect(message).toContain("could not create its settings file");
+    expect(message).toContain("No files were changed");
+    expect(message).not.toContain("EACCES");
+    expect(message).not.toContain("/private/tmp");
+    expect(message).not.toContain("HOSTILE-SENTINEL");
+    expect(message).not.toContain("TypeError");
+    expect(message).not.toContain("IPC");
   });
 });
