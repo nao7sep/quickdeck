@@ -71,6 +71,20 @@ describe("styles.css scroll-bar and color-scheme guards", () => {
     expect(paneRule![1]).toMatch(/min-height:/);
     expect(css).toMatch(/\.paneViewport\s*\{[^}]*overflow:\s*auto/);
   });
+
+  it("keeps modal actions fixed while an enlarged result scrolls with the body", () => {
+    const surface = /\.modalSurface\s*\{([^}]*)\}/.exec(css)?.[1];
+    const content = /\.modalContent\s*\{([^}]*)\}/.exec(css)?.[1];
+    const aboutResult = /\.aboutLinkResult\s*\{([^}]*)\}/.exec(css)?.[1];
+
+    expect(surface).toMatch(/grid-template-rows:\s*auto minmax\(0, 1fr\) auto/);
+    expect(surface).toMatch(/max-height:\s*84vh/);
+    expect(surface).toMatch(/overflow:\s*hidden/);
+    expect(content).toMatch(/min-height:\s*0/);
+    expect(content).toMatch(/overflow:\s*auto/);
+    expect(css).toMatch(/\.modalFooter\s*\{[^}]*justify-content:\s*flex-end/);
+    expect(aboutResult).toMatch(/width:\s*min\(100%, 420px\)/);
+  });
 });
 
 describe("tauri.conf.json window-chrome guards", () => {

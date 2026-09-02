@@ -1074,6 +1074,12 @@ kbd {
   margin-top: 6px;
 }
 
+.aboutLinkResults {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+}
+
 .aboutLinkButton {
   display: inline-flex;
   align-items: center;
@@ -1098,6 +1104,26 @@ kbd {
   margin-top: 10px;
   font-size: 11px;
   color: var(--text-muted);
+}
+
+.aboutLinkResult {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  width: min(100%, 420px);
+  border: 1px solid var(--toast-error-border);
+  border-radius: 9px;
+  padding: 8px 10px;
+  text-align: left;
+  line-height: 1.4;
+  background: var(--toast-error-bg);
+}
+
+.aboutLinkResult strong {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 5px;
 }
 
 .aboutDataPath {

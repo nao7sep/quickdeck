@@ -9,5 +9,5 @@
   // free of node types (browser-only surface); only the test program needs them.
   "extends": "./tsconfig.json",
   "compilerOptions": { "types": ["node"] },
-  "include": ["src/**/*.d.ts", "tests/**/*.ts"]
+  "include": ["src/**/*.d.ts", "tests/**/*.ts", "tests/**/*.tsx"]
 }

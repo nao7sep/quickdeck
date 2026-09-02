@@ -19,7 +19,7 @@ export default defineConfig({
   },
   test: {
     environment: "jsdom",
-    include: ["tests/**/*.test.ts"],
+    include: ["tests/**/*.test.{ts,tsx}"],
     coverage: {
       // V8's native coverage; `include` spans the frontend source (the Rust
       // backend has its own cargo-llvm-cov pass) so the report flags logic no

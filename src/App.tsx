@@ -68,6 +68,8 @@ export function App() {
   } = useAppState();
   const [openModal, setOpenModal] = useState<OpenModal>(null);
   const [snapshotPulse, setSnapshotPulse] = useState(false);
+  const [themeApplicationFailed, setThemeApplicationFailed] = useState(false);
+  const [zoomApplicationFailed, setZoomApplicationFailed] = useState(false);
   const [statusBarContentWidth, setStatusBarContentWidth] = useState(0);
   const statusBarRef = useRef<HTMLElement | null>(null);
 
@@ -108,19 +110,46 @@ export function App() {
   // resizing) matches, rather than staying light.
   useEffect(() => {
     document.documentElement.classList.toggle("dark", settings.dark);
-    if (isTauri()) {
-      getCurrentWindow()
-        .setTheme(settings.dark ? "dark" : "light")
-        .catch((error) => logWarn("set window theme failed", { dark: settings.dark, error: serializeError(error) }));
-    }
+    if (!isTauri()) return undefined;
+
+    let current = true;
+    void getCurrentWindow()
+      .setTheme(settings.dark ? "dark" : "light")
+      .then(() => {
+        if (current) setThemeApplicationFailed(false);
+      })
+      .catch((error) => {
+        logWarn("set window theme failed", { dark: settings.dark, error: serializeError(error) });
+        if (current) {
+          setThemeApplicationFailed(true);
+        }
+      });
+
+    return () => {
+      current = false;
+    };
   }, [settings.dark]);
 
   // Apply zoom level to the Tauri webview whenever it changes.
   useEffect(() => {
     if (!isTauri()) return undefined;
-    getCurrentWebview()
+
+    let current = true;
+    void getCurrentWebview()
       .setZoom(zoomLevel)
-      .catch((error) => logWarn("set zoom failed", { zoomLevel, error: serializeError(error) }));
+      .then(() => {
+        if (current) setZoomApplicationFailed(false);
+      })
+      .catch((error) => {
+        logWarn("set zoom failed", { zoomLevel, error: serializeError(error) });
+        if (current) {
+          setZoomApplicationFailed(true);
+        }
+      });
+
+    return () => {
+      current = false;
+    };
   }, [zoomLevel]);
 
   // Apply the configured UI font by overriding the `--font-ui` CSS variable on :root; blank reverts
@@ -635,7 +664,12 @@ export function App() {
       {openModal === "about" ? <AboutModal onClose={() => setOpenModal(null)} /> : null}
       {openModal === "snapshots" ? <SnapshotSearchModal onClose={() => setOpenModal(null)} /> : null}
       {blockingError ? <ErrorModal error={blockingError} onClose={dismissBlockingError} /> : null}
-      <ToastViewport />
+      <ToastViewport
+        themeApplicationFailed={themeApplicationFailed}
+        zoomApplicationFailed={zoomApplicationFailed}
+        onDismissThemeApplicationFailure={() => setThemeApplicationFailed(false)}
+        onDismissZoomApplicationFailure={() => setZoomApplicationFailed(false)}
+      />
     </main>
   );
 }
