@@ -4,6 +4,7 @@ import { App } from "./App";
 import { AppStateProvider } from "./state/AppStateContext";
 import { logError, logInfo, serializeError } from "./services/logger";
 import { denyUnhandledExternalDrop } from "./utils/externalDropBoundary";
+import { RootErrorBoundary } from "./components/RootErrorBoundary";
 import "./styles.css";
 
 window.addEventListener("dragover", denyUnhandledExternalDrop);
@@ -31,8 +32,10 @@ logInfo("ui ready");
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
-    <AppStateProvider>
-      <App />
-    </AppStateProvider>
+    <RootErrorBoundary>
+      <AppStateProvider>
+        <App />
+      </AppStateProvider>
+    </RootErrorBoundary>
   </React.StrictMode>,
 );
