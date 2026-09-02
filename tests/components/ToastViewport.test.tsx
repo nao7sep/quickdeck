@@ -38,5 +38,6 @@ describe("ToastList", () => {
     expect(statuses.some((status) => status.textContent?.includes("Done"))).toBe(true);
     expect(document.querySelectorAll(".toast svg")).toHaveLength(3);
     expect(document.querySelectorAll(".toastClose svg")).toHaveLength(3);
+    expect(document.querySelector(".toastClose svg")?.getAttribute("width")).toBe("16");
   });
 });

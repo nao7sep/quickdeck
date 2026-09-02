@@ -73,7 +73,7 @@ export function ToastList({ toasts, onDismiss }: { toasts: Toast[]; onDismiss: (
         >
           <span>{toast.message}</span>
           <button className="toastClose" type="button" aria-label="Dismiss toast" onClick={() => onDismiss(toast.id)}>
-            <X size={14} aria-hidden="true" />
+            <X size={16} aria-hidden="true" />
           </button>
         </div>
         );
