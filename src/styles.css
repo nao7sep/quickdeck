@@ -60,6 +60,9 @@
   --toast-warning-border: #fde68a;
   --toast-error-bg: linear-gradient(135deg, #fef2f2, #fff5f5);
   --toast-error-border: #fca5a5;
+  /* Shared by the reserved appShell track and app-level result anchoring. Kept
+     in sync with STATUS_BAR_HEIGHT, which derives the native window minimum. */
+  --status-bar-height: 44px;
 
   /* Window chrome (title-bar strip + status bar) — constant across themes. */
   --chrome-gradient: linear-gradient(135deg, #1e1b4b 0%, #312e81 50%, #4c1d95 100%);
@@ -208,7 +211,7 @@ button:disabled {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  height: 44px;
+  height: var(--status-bar-height);
   overflow-x: auto;
   overflow-y: hidden;
   padding: 0 16px;
@@ -1231,7 +1234,9 @@ kbd {
 .toastViewport {
   position: fixed;
   right: 16px;
-  bottom: 16px;
+  /* The gradient status bar contains live theme/zen/topmost/menu controls.
+     Anchor retained app results above its reserved track, never over it. */
+  bottom: calc(var(--status-bar-height) + 16px);
   z-index: var(--z-toast);
   display: grid;
   gap: 8px;

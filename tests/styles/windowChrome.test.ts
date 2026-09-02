@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import {
   computeWindowMinHeight,
   computeWindowMinWidth,
+  STATUS_BAR_HEIGHT,
 } from "../../src/utils/layoutMetrics";
 
 // Static guards over the stylesheet and the Tauri window manifest. They check
@@ -90,6 +91,18 @@ describe("styles.css scroll-bar and color-scheme guards", () => {
     const toast = /\.toast\s*\{([^}]*)\}/.exec(css)?.[1];
     expect(toast).toMatch(/align-items:\s*flex-start/);
     expect(toast).not.toMatch(/align-items:\s*center/);
+  });
+
+  it("anchors retained app results above the actionable status bar", () => {
+    const rootRule = /:root\s*\{([^}]*)\}/.exec(css)?.[1];
+    const statusBar = /\.appStatusBar\s*\{([^}]*)\}/.exec(css)?.[1];
+    const toastViewport = /\.toastViewport\s*\{([^}]*)\}/.exec(css)?.[1];
+    const cssHeight = /--status-bar-height:\s*(\d+)px/.exec(rootRule ?? "")?.[1];
+
+    expect(Number(cssHeight)).toBe(STATUS_BAR_HEIGHT);
+    expect(statusBar).toMatch(/height:\s*var\(--status-bar-height\)/);
+    expect(toastViewport).toMatch(/bottom:\s*calc\(var\(--status-bar-height\) \+ 16px\)/);
+    expect(toastViewport).not.toMatch(/bottom:\s*16px/);
   });
 });
 
