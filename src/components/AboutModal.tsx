@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { CircleAlert, ExternalLink } from "lucide-react";
+import { ExternalLink } from "lucide-react";
 import { isTauri } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { logWarn, serializeError } from "../services/logger";
@@ -66,19 +66,11 @@ export function AboutModal({ onClose }: AboutModalProps) {
           <div className="aboutLinkResults">
             {repoLinkFailed ? (
               <div className="aboutLinkResult" role="alert" aria-atomic="true">
-                <strong>
-                  <CircleAlert size={15} />
-                  Error
-                </strong>
                 <span>Could not open GitHub. Try again.</span>
               </div>
             ) : null}
             {issuesLinkFailed ? (
               <div className="aboutLinkResult" role="alert" aria-atomic="true">
-                <strong>
-                  <CircleAlert size={15} />
-                  Error
-                </strong>
                 <span>Could not open Report Issue. Try again.</span>
               </div>
             ) : null}

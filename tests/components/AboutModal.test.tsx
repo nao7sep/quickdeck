@@ -51,7 +51,7 @@ describe("AboutModal link results", () => {
 
     await act(async () => button("GitHub").click());
     expect(document.querySelector('[role="alert"]')?.textContent)
-      .toContain("ErrorCould not open GitHub. Try again.");
+      .toBe("Could not open GitHub. Try again.");
     expect(mocks.logWarn).toHaveBeenCalledWith(
       "open url failed",
       expect.objectContaining({ url: "https://github.com/nao7sep/quickdeck" }),

@@ -403,7 +403,7 @@ export function App() {
     const appWindow = getCurrentWindow();
     void appWindow.setAlwaysOnTop(settings.topmost).catch((error) => {
       logWarn("set always-on-top failed", { topmost: settings.topmost, error: serializeError(error) });
-      showToast("warning", `Could not update always-on-top: ${String(error)}`);
+      showToast("warning", "Always on top could not be updated. Try changing it again.");
     });
 
     return undefined;
@@ -455,7 +455,10 @@ export function App() {
         return true;
       } catch (error) {
         logError("save on close failed", { error: serializeError(error) });
-        showBlockingErrorRef.current("Could Not Save Data", String(error));
+        showBlockingErrorRef.current(
+          "QuickDeck couldn't save your data",
+          "Your latest changes remain open. Free some storage or restore access to the data folder, then try closing again.",
+        );
         return false;
       }
     }
@@ -488,7 +491,7 @@ export function App() {
           await appWindow.destroy();
         } catch (error) {
           logError("close window failed", { error: serializeError(error) });
-          showToastRef.current("error", `Could not close window: ${String(error)}`);
+          showToastRef.current("error", "QuickDeck could not close the window. Try closing it again.");
         } finally {
           closeInFlight = false;
         }
@@ -496,7 +499,10 @@ export function App() {
         closeUnlisten = unlisten;
       }).catch((error) => {
         logWarn("register close handler failed", { error: serializeError(error) });
-        showToastRef.current("warning", `Could not register close handler: ${String(error)}`);
+        showToastRef.current(
+          "warning",
+          "QuickDeck could not protect unsaved changes during window close. Save your work before quitting.",
+        );
       });
     }
 

@@ -286,7 +286,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         // default in-memory state.
         logError("load failed", { error: serializeError(error) });
         setLoadErrorIsCorruptPanes(false);
-        setLoadError(String(error));
+        setLoadError("QuickDeck could not read its saved data. The diagnostic details are in the log.");
         setLoadStatus("failed");
       }
     }
@@ -313,7 +313,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       await loadPersistedState();
     } catch (error) {
       logError("panes reset failed", { error: serializeError(error) });
-      setLoadError(`The file could not be set aside: ${String(error)}`);
+      setLoadError("The damaged pane file could not be set aside. Your existing files were not changed.");
       setLoadStatus("failed");
     }
   }, [loadPersistedState]);
@@ -436,7 +436,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         })
         .catch((error) => {
           logWarn("snapshot not saved", { trigger, error: serializeError(error) });
-          showToast("warning", `Snapshot was not saved: ${String(error)}`);
+          showToast("warning", "The snapshot wasn’t saved. Your pane content is still open.");
         });
     },
     [loadStatus, showToast],
@@ -520,7 +520,10 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     const timeoutId = window.setTimeout(() => {
       saveNow().catch((error) => {
         logError("autosave failed", { error: serializeError(error) });
-        showBlockingError("Could Not Save Data", String(error));
+        showBlockingError(
+          "QuickDeck couldn't save your data",
+          "Your latest changes remain open. Free some storage or restore access to the data folder, then try again.",
+        );
       });
     }, Math.max(1, settings.autosaveDelaySeconds) * 1000);
 

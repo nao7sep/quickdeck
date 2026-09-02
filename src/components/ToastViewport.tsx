@@ -1,4 +1,4 @@
-import { CircleAlert, TriangleAlert, X } from "lucide-react";
+import { X } from "lucide-react";
 import { useAppState } from "../state/AppStateContext";
 import type { Toast } from "../types";
 
@@ -51,7 +51,6 @@ export function ToastList({ toasts, onDismiss }: { toasts: Toast[]; onDismiss: (
   return (
     <div className="toastViewport">
       {toasts.map((toast) => {
-        const actionable = toast.kind !== "info";
         return (
         <div
           className={`toast toast-${toast.kind}`}
@@ -59,15 +58,9 @@ export function ToastList({ toasts, onDismiss }: { toasts: Toast[]; onDismiss: (
           role={toast.kind === "error" ? "alert" : "status"}
           aria-atomic="true"
         >
-          {actionable ? (
-            <strong className="toastSeverity">
-              {toast.kind === "error" ? <CircleAlert size={15} /> : <TriangleAlert size={15} />}
-              {toast.kind === "error" ? "Error" : "Warning"}
-            </strong>
-          ) : null}
           <span>{toast.message}</span>
           <button className="toastClose" type="button" aria-label="Dismiss toast" onClick={() => onDismiss(toast.id)}>
-            <X size={14} />
+            <X size={14} aria-hidden="true" />
           </button>
         </div>
         );

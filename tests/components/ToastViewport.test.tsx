@@ -31,9 +31,12 @@ describe("ToastList", () => {
       />,
     ));
 
-    expect(document.querySelector('[role="alert"]')?.textContent).toContain("ErrorClose failed");
+    expect(document.querySelector('[role="alert"]')?.textContent).toContain("Close failed");
+    expect(document.querySelector('[role="alert"]')?.textContent).not.toContain("Error");
     const statuses = Array.from(document.querySelectorAll('[role="status"]'));
-    expect(statuses.some((status) => status.textContent?.includes("WarningSnapshot failed"))).toBe(true);
+    expect(statuses.some((status) => status.textContent?.includes("Snapshot failed"))).toBe(true);
     expect(statuses.some((status) => status.textContent?.includes("Done"))).toBe(true);
+    expect(document.querySelectorAll(".toast svg")).toHaveLength(3);
+    expect(document.querySelectorAll(".toastClose svg")).toHaveLength(3);
   });
 });

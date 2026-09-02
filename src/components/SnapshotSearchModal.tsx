@@ -51,7 +51,7 @@ export function SnapshotSearchModal({ onClose }: SnapshotSearchModalProps) {
       // Report modal-local failures inline; the modal stays usable, so there is
       // no need to spawn an app-level toast over it.
       logWarn("snapshot search failed", { offset: nextOffset, error: serializeError(err) });
-      setError(`Snapshot search failed: ${String(err)}`);
+      setError("Snapshots could not be searched. Try again.");
       if (nextOffset === 0) {
         setRows([]);
         setHasMore(false);
