@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { ExternalLink } from "lucide-react";
 import { isTauri } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
@@ -15,18 +15,24 @@ const ISSUES_URL = "https://github.com/nao7sep/quickdeck/issues";
 export function AboutModal({ onClose }: AboutModalProps) {
   const [repoLinkFailed, setRepoLinkFailed] = useState(false);
   const [issuesLinkFailed, setIssuesLinkFailed] = useState(false);
+  const linkAttempts = useRef({ repository: 0, issues: 0 });
 
-  async function open(url: string, setFailed: (failed: boolean) => void) {
+  async function open(
+    owner: "repository" | "issues",
+    url: string,
+    setFailed: (failed: boolean) => void,
+  ) {
+    const attempt = ++linkAttempts.current[owner];
     try {
       if (isTauri()) {
         await openUrl(url);
       } else if (window.open(url, "_blank", "noreferrer") === null) {
         throw new Error("Browser declined to open a new window");
       }
-      setFailed(false);
+      if (linkAttempts.current[owner] === attempt) setFailed(false);
     } catch (error) {
       logWarn("open url failed", { url, error: serializeError(error) });
-      setFailed(true);
+      if (linkAttempts.current[owner] === attempt) setFailed(true);
     }
   }
 
@@ -48,7 +54,7 @@ export function AboutModal({ onClose }: AboutModalProps) {
           <button
             type="button"
             className="aboutLinkButton"
-            onClick={() => void open(REPO_URL, setRepoLinkFailed)}
+            onClick={() => void open("repository", REPO_URL, setRepoLinkFailed)}
           >
             GitHub
             <ExternalLink size={12} />
@@ -56,7 +62,7 @@ export function AboutModal({ onClose }: AboutModalProps) {
           <button
             type="button"
             className="aboutLinkButton"
-            onClick={() => void open(ISSUES_URL, setIssuesLinkFailed)}
+            onClick={() => void open("issues", ISSUES_URL, setIssuesLinkFailed)}
           >
             Report Issue
             <ExternalLink size={12} />

@@ -70,6 +70,7 @@ export function App() {
   const [snapshotPulse, setSnapshotPulse] = useState(false);
   const [themeApplicationFailed, setThemeApplicationFailed] = useState(false);
   const [zoomApplicationFailed, setZoomApplicationFailed] = useState(false);
+  const [topmostApplicationFailed, setTopmostApplicationFailed] = useState(false);
   const [statusBarContentWidth, setStatusBarContentWidth] = useState(0);
   const statusBarRef = useRef<HTMLElement | null>(null);
 
@@ -401,13 +402,20 @@ export function App() {
     }
 
     const appWindow = getCurrentWindow();
-    void appWindow.setAlwaysOnTop(settings.topmost).catch((error) => {
-      logWarn("set always-on-top failed", { topmost: settings.topmost, error: serializeError(error) });
-      showToast("warning", "Always on top could not be updated. Try changing it again.");
-    });
+    let current = true;
+    void appWindow.setAlwaysOnTop(settings.topmost)
+      .then(() => {
+        if (current) setTopmostApplicationFailed(false);
+      })
+      .catch((error) => {
+        logWarn("set always-on-top failed", { topmost: settings.topmost, error: serializeError(error) });
+        if (current) setTopmostApplicationFailed(true);
+      });
 
-    return undefined;
-  }, [settings.topmost, showToast]);
+    return () => {
+      current = false;
+    };
+  }, [settings.topmost]);
 
   // Keep latest persistence callbacks in refs so the close handler can be
   // registered exactly once on mount without re-attaching on every keystroke.
@@ -673,8 +681,10 @@ export function App() {
       <ToastViewport
         themeApplicationFailed={themeApplicationFailed}
         zoomApplicationFailed={zoomApplicationFailed}
+        topmostApplicationFailed={topmostApplicationFailed}
         onDismissThemeApplicationFailure={() => setThemeApplicationFailed(false)}
         onDismissZoomApplicationFailure={() => setZoomApplicationFailed(false)}
+        onDismissTopmostApplicationFailure={() => setTopmostApplicationFailed(false)}
       />
     </main>
   );

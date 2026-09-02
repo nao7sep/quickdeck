@@ -54,6 +54,8 @@ afterEach(async () => {
   document.documentElement.classList.remove("dark");
   mocks.setTheme.mockReset();
   mocks.setZoom.mockReset();
+  mocks.setAlwaysOnTop.mockReset();
+  mocks.setAlwaysOnTop.mockResolvedValue();
   mocks.logWarn.mockReset();
 });
 
@@ -170,5 +172,27 @@ describe("App window-chrome results", () => {
     await flushEffects();
 
     expect(document.querySelector('[role="alert"]')).toBeNull();
+  });
+
+  it("retains always-on-top failure until dismissal or a matching setting succeeds", async () => {
+    const state = createAppState();
+    mocks.appState = state;
+    mocks.setTheme.mockResolvedValue();
+    mocks.setZoom.mockResolvedValue();
+    mocks.setAlwaysOnTop.mockRejectedValueOnce(new Error("EACCES /private/tmp/TOPMOST"));
+    const container = document.createElement("div");
+    document.body.append(container);
+    root = createRoot(container);
+    await act(async () => root?.render(<App />));
+    await flushEffects();
+
+    expect(document.body.textContent).toContain("Always on top could not be updated");
+    expect(document.body.textContent).not.toContain("/private/tmp");
+
+    mocks.setAlwaysOnTop.mockResolvedValueOnce();
+    mocks.appState = { ...state, settings: { ...state.settings, topmost: true } };
+    await act(async () => root?.render(<App />));
+    await flushEffects();
+    expect(document.body.textContent).not.toContain("Always on top could not be updated");
   });
 });

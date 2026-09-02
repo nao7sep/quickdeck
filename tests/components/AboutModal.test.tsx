@@ -64,4 +64,21 @@ describe("AboutModal link results", () => {
     await act(async () => button("GitHub").click());
     expect(document.querySelector('[role="alert"]')).toBeNull();
   });
+
+  it("ignores an older same-link failure after a newer attempt succeeds", async () => {
+    let rejectOlder!: (error: unknown) => void;
+    mocks.openUrl
+      .mockImplementationOnce(() => new Promise<void>((_resolve, reject) => { rejectOlder = reject; }))
+      .mockResolvedValueOnce();
+    const container = document.createElement("div");
+    document.body.append(container);
+    root = createRoot(container);
+    await act(async () => root?.render(<AboutModal onClose={vi.fn()} />));
+
+    await act(async () => { button("GitHub").click(); button("GitHub").click(); });
+    await act(async () => rejectOlder(new Error("stale EACCES /private/tmp/QUICKDECK_STALE")));
+
+    expect(document.querySelector('[role="alert"]')).toBeNull();
+    expect(mocks.logWarn).toHaveBeenCalled();
+  });
 });
