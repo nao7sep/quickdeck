@@ -85,6 +85,12 @@ describe("styles.css scroll-bar and color-scheme guards", () => {
     expect(css).toMatch(/\.modalFooter\s*\{[^}]*justify-content:\s*flex-end/);
     expect(aboutResult).toMatch(/width:\s*min\(100%, 420px\)/);
   });
+
+  it("keeps toast dismissal aligned with the first line of wrapped copy", () => {
+    const toast = /\.toast\s*\{([^}]*)\}/.exec(css)?.[1];
+    expect(toast).toMatch(/align-items:\s*flex-start/);
+    expect(toast).not.toMatch(/align-items:\s*center/);
+  });
 });
 
 describe("tauri.conf.json window-chrome guards", () => {

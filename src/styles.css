@@ -1240,7 +1240,9 @@ kbd {
 
 .toast {
   display: flex;
-  align-items: center;
+  /* The close mark belongs to the message's first line. Keeping the row
+     top-aligned prevents wrapped copy from dragging the X into its midpoint. */
+  align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
   border: 1.5px solid var(--border);

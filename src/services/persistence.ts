@@ -22,7 +22,8 @@ export type PanesFile = {
 
 export type LoadedAppData = {
   config: AppSettings | null;
-  // Where a corrupt config.json was set aside; the app reports it to the user.
+  // Where a corrupt config.json was set aside; retained for diagnostics while
+  // the app presents authored recovery copy.
   configQuarantinedTo: string | null;
   state: StateFile | null;
   panes: PanesFile | null;

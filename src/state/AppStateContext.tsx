@@ -88,6 +88,18 @@ type AppStateContextValue = {
 
 const AppStateContext = createContext<AppStateContextValue | undefined>(undefined);
 
+export function paneReadFailureMessage(): string {
+  return "Your pane text file (panes.json) could not be read and has been left exactly where it is. Check that the data folder is available and that QuickDeck has access, then try again. Diagnostic details are in the log.";
+}
+
+export function paneShapeFailureMessage(): string {
+  return "Your pane text file (panes.json) is damaged and has been left exactly where it is. Diagnostic details are in the log.";
+}
+
+export function settingsResetMessage(): string {
+  return "A settings file was unreadable, so QuickDeck preserved it and started with defaults for it. The preserved copy's location is recorded in the log. Your pane text is untouched.";
+}
+
 export function AppStateProvider({ children }: { children: ReactNode }) {
   const firstPane = useMemo(() => createDefaultPane(nanoid()), []);
   const [panes, setPanes] = useState<Pane[]>([firstPane]);
@@ -167,9 +179,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       if (data.panesError !== null) {
         logError("panes load failed", { error: data.panesError });
         setLoadErrorIsCorruptPanes(true);
-        setLoadError(
-          `Your pane text file (panes.json) could not be read and has been left exactly where it is:\n${data.panesError}`,
-        );
+        setLoadError(paneReadFailureMessage());
         setLoadStatus("failed");
         return;
       }
@@ -192,9 +202,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         if (paneIssues.length > 0) {
           logError("panes.json failed its shape check", { issues: paneIssues });
           setLoadErrorIsCorruptPanes(true);
-          setLoadError(
-            `Your pane text file (panes.json) is damaged and has been left exactly where it is: ${paneIssues.join("; ")}.`,
-          );
+          setLoadError(paneShapeFailureMessage());
           setLoadStatus("failed");
           return;
         }
@@ -229,14 +237,9 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       });
 
       if (data.configQuarantinedTo !== null || configShapeQuarantinedTo !== null) {
-        const setAside = [data.configQuarantinedTo, configShapeQuarantinedTo]
-          .filter((path): path is string => path !== null)
-          .join("\n");
         showBlockingError(
           "A Settings File Was Reset",
-          "A file was unreadable and has been set aside so nothing is lost:\n\n" +
-            `${setAside}\n\n` +
-            "QuickDeck started with defaults for it. Your pane text is untouched.",
+          settingsResetMessage(),
         );
       }
 
