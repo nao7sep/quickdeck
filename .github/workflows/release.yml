@@ -22,9 +22,8 @@ permissions:
   contents: read
 
 jobs:
-  # Gate on both supported platforms: the frontend suite (including manifest
-  # version consistency) plus the Rust core's own tests. Both build jobs depend
-  # on every matrix leg.
+  # Gate on both supported platforms through the repository's canonical check.
+  # Both build jobs depend on every matrix leg.
   test:
     strategy:
       fail-fast: false
@@ -42,11 +41,12 @@ jobs:
           workspaces: src-tauri -> target
       - run: npm install --global npm@12.0.2
       - run: npm ci
-      - run: npm run typecheck
-      - run: npm test
-      - name: Rust tests
-        working-directory: src-tauri
-        run: cargo test
+      - name: Verify tag matches app version
+        if: github.ref_type == 'tag'
+        run: npm run check:release-tag
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+      - run: npm run check
 
   build:
     needs: test
