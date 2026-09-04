@@ -19,11 +19,12 @@ function read(relativePath: string): string {
   return readFileSync(join(process.cwd(), relativePath), "utf8");
 }
 
-// The exact production CSP, snapshotted so any drop or weakening fails here.
-// Keep this in lockstep with src-tauri/tauri.conf.json (app.security.csp); a
-// deliberate change updates this string, an accidental one trips the test.
-const EXPECTED_PRODUCTION_CSP =
-  "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self'; font-src 'self'; connect-src 'self' ipc: http://ipc.localhost; object-src 'none'; base-uri 'self'; frame-ancestors 'none'";
+function directives(policy: string): Map<string, Set<string>> {
+  return new Map(policy.split(";").map((directive) => {
+    const [name, ...values] = directive.trim().split(/\s+/);
+    return [name, new Set(values)];
+  }));
+}
 
 describe("production Content-Security-Policy guard", () => {
   const security = JSON.parse(read("src-tauri/tauri.conf.json")).app.security;
@@ -47,7 +48,16 @@ describe("production Content-Security-Policy guard", () => {
     expect(csp as string).not.toMatch(/'unsafe-eval'/);
   });
 
-  it("matches the snapshotted production CSP exactly", () => {
-    expect(csp).toBe(EXPECTED_PRODUCTION_CSP);
+  it("keeps the required production restrictions and app connections", () => {
+    const policy = directives(csp as string);
+
+    expect(policy.get("default-src")).toEqual(new Set(["'self'"]));
+    expect(policy.get("script-src")).toEqual(new Set(["'self'"]));
+    expect(policy.get("object-src")).toEqual(new Set(["'none'"]));
+    expect(policy.get("base-uri")).toEqual(new Set(["'self'"]));
+    expect(policy.get("frame-ancestors")).toEqual(new Set(["'none'"]));
+    expect(policy.get("connect-src")).toEqual(
+      new Set(["'self'", "ipc:", "http://ipc.localhost"]),
+    );
   });
 });

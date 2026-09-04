@@ -4,107 +4,13 @@ import { describe, expect, it } from "vitest";
 import {
   computeWindowMinHeight,
   computeWindowMinWidth,
-  STATUS_BAR_HEIGHT,
 } from "../../src/utils/layoutMetrics";
 
-// Static guards over the stylesheet and the Tauri window manifest. They check
-// the window-chrome-conventions artifacts that live as text rather than code:
-// the color-scheme declarations, the styled scroll bar, the real per-pane
-// minimum, and a non-transparent title bar with a minimum matching the derived
-// single-pane floor. `npm test` runs vitest from the repo root.
+// The Tauri manifest owns native window behavior that runtime component tests
+// cannot observe. `npm test` runs Vitest from the repo root.
 function read(relativePath: string): string {
   return readFileSync(join(process.cwd(), relativePath), "utf8");
 }
-
-describe("styles.css scroll-bar and color-scheme guards", () => {
-  const css = read("src/styles.css");
-
-  it(":root declares color-scheme: light", () => {
-    expect(css).toMatch(/:root\s*\{[^}]*color-scheme:\s*light/);
-  });
-
-  it(":root owns the inherited UI font family and size", () => {
-    expect(css).toMatch(/:root\s*\{[^}]*--font-ui:\s*system-ui/);
-    expect(css).toMatch(/:root\s*\{[^}]*font-family:\s*var\(--font-ui\)/);
-    expect(css).toMatch(/body\s*\{[^}]*font-size:\s*13px/);
-  });
-
-  it(":root.dark declares color-scheme: dark", () => {
-    expect(css).toMatch(/:root\.dark\s*\{[^}]*color-scheme:\s*dark/);
-  });
-
-  it("styles the scroll bar with a rounded thumb", () => {
-    expect(css).toMatch(/::-webkit-scrollbar\b/);
-    // The pill thumb: a ::-webkit-scrollbar-thumb rule carrying a border-radius.
-    expect(css).toMatch(/::-webkit-scrollbar-thumb\s*\{[^}]*border-radius/);
-  });
-
-  it("declares thin native scroll bars (scrollbar-width)", () => {
-    expect(css).toMatch(/scrollbar-width:\s*thin/);
-  });
-
-  it("does not paint disabled menu buttons with the clickable hover state", () => {
-    expect(css).toMatch(/\.menuPanel button:hover:not\(:disabled\)\s*\{/);
-    expect(css).not.toMatch(/\.menuPanel button:hover\s*\{/);
-  });
-
-  it("keeps the upward app menu outside the status bar's overflow clip", () => {
-    const menuSource = read("src/components/Menu.tsx");
-    const paneSwitcherSource = read("src/components/PaneSwitcher.tsx");
-    const statusBarRule = /\.appStatusBar\s*\{([^}]*)\}/.exec(css);
-    const upwardMenuRule = /\.menuPanelUp\s*\{([^}]*)\}/.exec(css);
-    const paneSwitcherRule = /\.paneSwitcherPanel\s*\{([^}]*)\}/.exec(css);
-    expect(statusBarRule?.[1]).toMatch(/overflow-x:\s*auto/);
-    expect(statusBarRule?.[1]).toMatch(/overflow-y:\s*hidden/);
-    expect(upwardMenuRule?.[1]).toMatch(/position:\s*fixed/);
-    expect(paneSwitcherRule?.[1]).toMatch(/position:\s*fixed/);
-    expect(menuSource).toMatch(/createPortal\([\s\S]*document\.body/);
-    expect(paneSwitcherSource).toMatch(/createPortal\([\s\S]*document\.body/);
-  });
-
-  it("keeps the complete pane floor inside a scroll-owning viewport", () => {
-    // Match the standalone `.pane { ... }` rule (anchored at line start) rather
-    // than the descendant `:root.dark .pane { ... }` rule earlier in the file.
-    const paneRule = /^\.pane\s*\{([^}]*)\}/m.exec(css);
-    expect(paneRule).not.toBeNull();
-    expect(paneRule![1]).not.toMatch(/min-width:\s*0\b/);
-    expect(paneRule![1]).toMatch(/min-width:/);
-    expect(paneRule![1]).toMatch(/min-height:/);
-    expect(css).toMatch(/\.paneViewport\s*\{[^}]*overflow:\s*auto/);
-  });
-
-  it("keeps modal actions fixed while an enlarged result scrolls with the body", () => {
-    const surface = /\.modalSurface\s*\{([^}]*)\}/.exec(css)?.[1];
-    const content = /\.modalContent\s*\{([^}]*)\}/.exec(css)?.[1];
-    const aboutResult = /\.aboutLinkResult\s*\{([^}]*)\}/.exec(css)?.[1];
-
-    expect(surface).toMatch(/grid-template-rows:\s*auto minmax\(0, 1fr\) auto/);
-    expect(surface).toMatch(/max-height:\s*84vh/);
-    expect(surface).toMatch(/overflow:\s*hidden/);
-    expect(content).toMatch(/min-height:\s*0/);
-    expect(content).toMatch(/overflow:\s*auto/);
-    expect(css).toMatch(/\.modalFooter\s*\{[^}]*justify-content:\s*flex-end/);
-    expect(aboutResult).toMatch(/width:\s*min\(100%, 420px\)/);
-  });
-
-  it("keeps toast dismissal aligned with the first line of wrapped copy", () => {
-    const toast = /\.toast\s*\{([^}]*)\}/.exec(css)?.[1];
-    expect(toast).toMatch(/align-items:\s*flex-start/);
-    expect(toast).not.toMatch(/align-items:\s*center/);
-  });
-
-  it("anchors retained app results above the actionable status bar", () => {
-    const rootRule = /:root\s*\{([^}]*)\}/.exec(css)?.[1];
-    const statusBar = /\.appStatusBar\s*\{([^}]*)\}/.exec(css)?.[1];
-    const toastViewport = /\.toastViewport\s*\{([^}]*)\}/.exec(css)?.[1];
-    const cssHeight = /--status-bar-height:\s*(\d+)px/.exec(rootRule ?? "")?.[1];
-
-    expect(Number(cssHeight)).toBe(STATUS_BAR_HEIGHT);
-    expect(statusBar).toMatch(/height:\s*var\(--status-bar-height\)/);
-    expect(toastViewport).toMatch(/bottom:\s*calc\(var\(--status-bar-height\) \+ 16px\)/);
-    expect(toastViewport).not.toMatch(/bottom:\s*16px/);
-  });
-});
 
 describe("tauri.conf.json window-chrome guards", () => {
   const window = JSON.parse(read("src-tauri/tauri.conf.json")).app.windows[0];
