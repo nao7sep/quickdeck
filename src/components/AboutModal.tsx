@@ -82,7 +82,7 @@ export function AboutModal({ onClose }: AboutModalProps) {
             ) : null}
           </div>
         ) : null}
-        <p className="aboutMeta">© 2026 Yoshinao Inoguchi · MIT License</p>
+        <p className="aboutMeta">© 2026 Yoshinao Inoguchi · GNU GPL v3 or later</p>
       </div>
     </ModalBase>
   );

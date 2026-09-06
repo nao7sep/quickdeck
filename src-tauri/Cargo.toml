@@ -3,7 +3,7 @@ name = "quickdeck"
 version = "0.1.0"
 description = "QuickDeck desktop application"
 authors = ["Yoshinao Inoguchi <yoshinao@inoguchi.com>"]
-license = "MIT"
+license = "GPL-3.0-or-later"
 edition = "2021"
 
 # Warnings are errors, on EVERY platform the app ships to — the gate this table exists for.
