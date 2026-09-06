@@ -88,21 +88,10 @@ type AppStateContextValue = {
 
 const AppStateContext = createContext<AppStateContextValue | undefined>(undefined);
 
-export function paneReadFailureMessage(_diagnostic: string): string {
-  return "Your pane text file (panes.json) could not be read and has been left exactly where it is. Check that the data folder is available and that QuickDeck has access, then try again. Diagnostic details are in the log.";
-}
-
-export function paneShapeFailureMessage(_issues: readonly string[]): string {
-  return "Your pane text file (panes.json) is damaged and has been left exactly where it is. Diagnostic details are in the log.";
-}
-
-export function settingsResetMessage(_quarantinePaths: readonly (string | null)[]): string {
-  return "A settings file was unreadable, so QuickDeck preserved it and started with defaults for it. The preserved copy's location is recorded in the log. Your pane text is untouched.";
-}
-
-export function firstRunConfigWriteFailureMessage(_diagnostic: unknown): string {
-  return "QuickDeck could not create its settings file. No files were changed. Restore write access to the data folder, then relaunch QuickDeck.";
-}
+const PANE_READ_FAILURE_MESSAGE = "Your pane text file (panes.json) could not be read and has been left exactly where it is. Check that the data folder is available and that QuickDeck has access, then try again. Diagnostic details are in the log.";
+const PANE_SHAPE_FAILURE_MESSAGE = "Your pane text file (panes.json) is damaged and has been left exactly where it is. Diagnostic details are in the log.";
+const SETTINGS_RESET_MESSAGE = "A settings file was unreadable, so QuickDeck preserved it and started with defaults for it. The preserved copy's location is recorded in the log. Your pane text is untouched.";
+const FIRST_RUN_CONFIG_WRITE_FAILURE_MESSAGE = "QuickDeck could not create its settings file. No files were changed. Restore write access to the data folder, then relaunch QuickDeck.";
 
 export function AppStateProvider({ children }: { children: ReactNode }) {
   const firstPane = useMemo(() => createDefaultPane(nanoid()), []);
@@ -183,7 +172,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       if (data.panesError !== null) {
         logError("panes load failed", { error: data.panesError });
         setLoadErrorIsCorruptPanes(true);
-        setLoadError(paneReadFailureMessage(data.panesError));
+        setLoadError(PANE_READ_FAILURE_MESSAGE);
         setLoadStatus("failed");
         return;
       }
@@ -206,7 +195,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         if (paneIssues.length > 0) {
           logError("panes.json failed its shape check", { issues: paneIssues });
           setLoadErrorIsCorruptPanes(true);
-          setLoadError(paneShapeFailureMessage(paneIssues));
+          setLoadError(PANE_SHAPE_FAILURE_MESSAGE);
           setLoadStatus("failed");
           return;
         }
@@ -243,7 +232,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       if (data.configQuarantinedTo !== null || configShapeQuarantinedTo !== null) {
         showBlockingError(
           "A Settings File Was Reset",
-          settingsResetMessage([data.configQuarantinedTo, configShapeQuarantinedTo]),
+          SETTINGS_RESET_MESSAGE,
         );
       }
 
@@ -265,7 +254,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
           if (!canceledRef.current) {
             setSaveState("error");
             setLoadErrorIsCorruptPanes(false);
-            setLoadError(firstRunConfigWriteFailureMessage(error));
+            setLoadError(FIRST_RUN_CONFIG_WRITE_FAILURE_MESSAGE);
             setLoadStatus("failed");
           }
           return;
