@@ -40,7 +40,10 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "resources": ["Assets.car"],
+    "resources": {
+      "Assets.car": "Assets.car",
+      "../LICENSE": "LICENSE.txt"
+    },
     "windows": {
       "nsis": {
         "installMode": "both",

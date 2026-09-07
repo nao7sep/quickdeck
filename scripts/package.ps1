@@ -20,9 +20,9 @@ $setup = Get-ChildItem src-tauri/target/release/bundle/nsis/*-setup.exe | Select
 if (-not $setup) { throw "tauri build did not produce an NSIS setup.exe" }
 Copy-Item $setup.FullName "artifacts/$AppName-$Version-setup.exe"
 
-# Portable: the self-contained release exe. Tauri embeds the frontend into the
-# binary; WebView2 is a system runtime present on Windows 10/11. The exe is named
-# after the Cargo crate (quickdeck), not the productName.
-Compress-Archive -Path "src-tauri/target/release/quickdeck.exe" -DestinationPath "artifacts/$AppName-$Version-win.zip" -Force
+# Portable: the release exe plus the application licence. Tauri embeds the
+# frontend into the binary; WebView2 is a system runtime present on Windows
+# 10/11. The exe is named after the Cargo crate (quickdeck), not the productName.
+Compress-Archive -Path "src-tauri/target/release/quickdeck.exe", "LICENSE" -DestinationPath "artifacts/$AppName-$Version-win.zip" -Force
 
 Get-ChildItem artifacts
