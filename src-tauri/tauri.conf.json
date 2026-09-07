@@ -42,7 +42,8 @@
     ],
     "resources": {
       "Assets.car": "Assets.car",
-      "../LICENSE": "LICENSE.txt"
+      "../LICENSE": "LICENSE.txt",
+      "../THIRD_PARTY_NOTICES": "THIRD_PARTY_NOTICES.txt"
     },
     "windows": {
       "nsis": {
