@@ -40,6 +40,7 @@ export function AboutModal({ onClose }: AboutModalProps) {
     <ModalBase
       title="About QuickDeck"
       onRequestClose={onClose}
+      passiveContentLabel="About QuickDeck"
       footer={
         <button className="secondaryButton" type="button" onClick={onClose}>
           Close

@@ -10,6 +10,7 @@ export function ShortcutsModal({ onClose }: ShortcutsModalProps) {
     <ModalBase
       title="Shortcuts"
       onRequestClose={onClose}
+      passiveContentLabel="Keyboard shortcuts"
       footer={
         <button className="secondaryButton" type="button" onClick={onClose}>
           Close

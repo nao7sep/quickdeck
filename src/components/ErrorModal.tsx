@@ -11,6 +11,7 @@ export function ErrorModal({ error, onClose }: ErrorModalProps) {
     <ModalBase
       title={error.title}
       onRequestClose={onClose}
+      passiveContentLabel={`${error.title} details`}
       footer={
         <button className="primaryButton" type="button" onClick={onClose}>
           OK

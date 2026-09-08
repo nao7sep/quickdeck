@@ -6,6 +6,7 @@ import { useAppState } from "../state/AppStateContext";
 import { useComposing, isComposingKeyboardEvent } from "../hooks/useComposing";
 import { ModalBase } from "./ModalBase";
 import { formatSnapshotTimestamp } from "../utils/snapshotTimestamp";
+import { passiveScrollRegionProps } from "../utils/passiveScroll";
 
 type SnapshotSearchModalProps = {
   onClose: () => void;
@@ -99,14 +100,19 @@ export function SnapshotSearchModal({ onClose }: SnapshotSearchModalProps) {
       <div className="snapshotResults">
         {error ? <p className="errorText" role="alert">{error}</p> : null}
         {!error && rows.length === 0 ? <p className="mutedText">No snapshot results.</p> : null}
-        {rows.map((row) => (
-          <article className="snapshotResult" key={row.id}>
-            <header>
-              <span>{formatSnapshotTimestamp(row.createdAtUtc)}</span>
-            </header>
-            <pre>{row.content}</pre>
-          </article>
-        ))}
+        {rows.map((row) => {
+          const timestamp = formatSnapshotTimestamp(row.createdAtUtc);
+          return (
+            <article className="snapshotResult" key={row.id}>
+              <header>
+                <span>{timestamp}</span>
+              </header>
+              <pre {...passiveScrollRegionProps(`Snapshot from ${timestamp}`)}>
+                {row.content}
+              </pre>
+            </article>
+          );
+        })}
         {hasMore ? (
           <button className="secondaryButton loadMoreButton" type="button" disabled={loading} onClick={() => void runSearch(rows.length)}>
             Load More

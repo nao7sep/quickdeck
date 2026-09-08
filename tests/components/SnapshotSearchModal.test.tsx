@@ -59,4 +59,42 @@ describe("SnapshotSearchModal failure presentation", () => {
     expect(alert.textContent).not.toContain("HOSTILE-SENTINEL");
     expect(mocks.logWarn).toHaveBeenCalledOnce();
   });
+
+  it("makes each capped snapshot preview its own passive scroll owner", async () => {
+    mocks.search.mockResolvedValue({
+      rows: [
+        {
+          id: "snapshot-1",
+          createdAtUtc: "2026-09-08T00:00:00.000Z",
+          content: "A long snapshot",
+        },
+      ],
+      hasMore: false,
+    });
+    const container = document.createElement("div");
+    document.body.append(container);
+    root = createRoot(container);
+    await act(async () => root?.render(<SnapshotSearchModal onClose={vi.fn()} />));
+
+    const input = document.querySelector<HTMLInputElement>('input[type="search"]')!;
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        "value",
+      )?.set;
+      setter?.call(input, "needle");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    const search = Array.from(document.querySelectorAll("button")).find(
+      (button) => button.textContent === "Search",
+    )!;
+    await act(async () => search.click());
+
+    const preview = document.querySelector<HTMLElement>(
+      ".snapshotResult pre[data-passive-scroll-region]",
+    );
+    expect(preview).not.toBeNull();
+    expect(preview?.tabIndex).toBe(0);
+    expect(preview?.getAttribute("aria-label")).toContain("Snapshot from");
+  });
 });

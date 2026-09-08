@@ -3,6 +3,7 @@ import { X } from "lucide-react";
 import { isTopmostModal, popModal, pushModal } from "../modalStack";
 import { resolveInitialFocus, resolveTrapTarget } from "../focusTrap";
 import { acquireScrollLock, releaseScrollLock } from "../scrollLock";
+import { passiveScrollRegionProps } from "../utils/passiveScroll";
 
 type ModalBaseProps = {
   title: string;
@@ -10,9 +11,19 @@ type ModalBaseProps = {
   footer?: ReactNode;
   closeDisabled?: boolean;
   onRequestClose: () => void;
+  // Informational bodies opt in to the shared keyboard-scroll owner. Forms keep
+  // their fields as the focus and keyboard owners.
+  passiveContentLabel?: string;
 };
 
-export function ModalBase({ title, children, footer, closeDisabled = false, onRequestClose }: ModalBaseProps) {
+export function ModalBase({
+  title,
+  children,
+  footer,
+  closeDisabled = false,
+  onRequestClose,
+  passiveContentLabel,
+}: ModalBaseProps) {
   const surfaceRef = useRef<HTMLDivElement | null>(null);
   const token = useRef({}).current;
   const titleId = useId();
@@ -110,7 +121,14 @@ export function ModalBase({ title, children, footer, closeDisabled = false, onRe
             <X size={18} />
           </button>
         </header>
-        <div className="modalContent">{children}</div>
+        <div
+          {...(passiveContentLabel
+            ? passiveScrollRegionProps(passiveContentLabel)
+            : {})}
+          className="modalContent"
+        >
+          {children}
+        </div>
         {footer ? <footer className="modalFooter">{footer}</footer> : null}
       </div>
     </div>
