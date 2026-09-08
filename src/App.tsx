@@ -29,6 +29,12 @@ import { matchesShortcut } from "./shortcuts";
 import { isEditableTarget, shadowsMacTextEditing } from "./utils/shortcuts";
 import { isComposingEvent } from "./hooks/useComposing";
 import { logError, logWarn, serializeError } from "./services/logger";
+import {
+  flushMainWindowPlacement,
+  initializeMainWindowPlacement,
+  showMainWindowWithoutPlacement,
+  withWindowPlacementSuppressed,
+} from "./services/windowPlacement";
 import { useAppState } from "./state/AppStateContext";
 import {
   boundNativeMinimumToClient,
@@ -54,6 +60,8 @@ export function App() {
     saveState,
     settings,
     zoomLevel,
+    windowPlacement,
+    persistWindowPlacement,
     setZoomLevel,
     setActivePaneId,
     addPane,
@@ -73,6 +81,7 @@ export function App() {
   const [topmostApplicationFailed, setTopmostApplicationFailed] = useState(false);
   const [statusBarContentWidth, setStatusBarContentWidth] = useState(0);
   const statusBarRef = useRef<HTMLElement | null>(null);
+  const placementStartedRef = useRef(false);
 
   // Brief "snapshot saved" flash whenever the timestamp updates.
   useEffect(() => {
@@ -236,9 +245,17 @@ export function App() {
           });
         }
         if (!disposed) {
-          await appWindow.setMinSize(
+          await withWindowPlacementSuppressed(() => appWindow.setMinSize(
             new LogicalSize(minimum.width, minimum.height),
-          );
+          ));
+          if (
+            !placementStartedRef.current
+            && loadStatus === "ready"
+            && statusBarContentWidth > 0
+          ) {
+            placementStartedRef.current = true;
+            await initializeMainWindowPlacement(windowPlacement, minimum, persistWindowPlacement);
+          }
         }
       } catch (error) {
         logWarn("set window min size failed", {
@@ -248,6 +265,7 @@ export function App() {
           requiredHeight: required.height,
           error: serializeError(error),
         });
+        if (loadStatus === "ready") void showMainWindowWithoutPlacement();
       }
     };
     const retain = (registration: Promise<() => void>) => {
@@ -269,7 +287,12 @@ export function App() {
       disposed = true;
       for (const unlisten of unlistens) unlisten();
     };
-  }, [panes.length, settings.zen, statusBarContentWidth, zoomLevel]);
+  }, [loadStatus, panes.length, persistWindowPlacement, settings.zen, statusBarContentWidth, windowPlacement, zoomLevel]);
+
+  useEffect(() => {
+    if (loadStatus !== "failed") return;
+    void showMainWindowWithoutPlacement();
+  }, [loadStatus]);
 
   // Zoom keyboard shortcuts — separate effect with its own document listener so
   // they work even when a modal is open (zoom should always be accessible).
@@ -459,6 +482,7 @@ export function App() {
         logWarn("close snapshot failed", { error: serializeError(error) });
       }
       try {
+        await flushMainWindowPlacement();
         await saveNowRef.current();
         return true;
       } catch (error) {

@@ -1,5 +1,6 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import type { AppSettings, Pane, SnapshotTrigger } from "../types";
+import type { WindowPlacementRecord } from "./windowPlacement";
 
 // Pure view/session state — its own store (state.json), quarantined-then-reset
 // on corruption because every field is rebuildable by use.
@@ -9,6 +10,7 @@ export type StateFile = {
   // The webview zoom — a view adjustment, so it is state, never config
   // (persisted-store-separation conventions).
   zoomLevel: number;
+  windowPlacements: { main: WindowPlacementRecord | null };
   updatedAtUtc: string;
 };
 
@@ -57,11 +59,16 @@ export type SnapshotSearchResult = {
   hasMore: boolean;
 };
 
-export function buildStateFile(activePaneId: string, zoomLevel: number): StateFile {
+export function buildStateFile(
+  activePaneId: string,
+  zoomLevel: number,
+  windowPlacements: StateFile["windowPlacements"] = { main: null },
+): StateFile {
   return {
     version: 1,
     activePaneId,
     zoomLevel,
+    windowPlacements,
     updatedAtUtc: new Date().toISOString(),
   };
 }
@@ -98,12 +105,16 @@ export async function saveConfig(config: AppSettings): Promise<void> {
   await invoke("save_config", { config });
 }
 
+let stateWriteQueue: Promise<void> = Promise.resolve();
+
 export async function saveState(state: StateFile): Promise<void> {
   if (!isTauri()) {
     return;
   }
 
-  await invoke("save_state", { state });
+  const write = stateWriteQueue.catch(() => {}).then(() => invoke<void>("save_state", { state }));
+  stateWriteQueue = write;
+  await write;
 }
 
 export async function savePanes(panes: PanesFile): Promise<void> {
