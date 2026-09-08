@@ -8,7 +8,7 @@
   "license": "GPL-3.0-or-later",
   "type": "module",
   "scripts": {
-    "dev": "vite --host 127.0.0.1 --port 1621",
+    "dev": "vite --host 127.0.0.1 --port 26267 --strictPort",
     "build": "tsc && tsc --noEmit -p tsconfig.node.json && vite build",
     "preview": "vite preview --host 127.0.0.1",
     "tauri": "tauri",
