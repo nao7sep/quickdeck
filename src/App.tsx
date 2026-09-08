@@ -82,6 +82,7 @@ export function App() {
   const [statusBarContentWidth, setStatusBarContentWidth] = useState(0);
   const statusBarRef = useRef<HTMLElement | null>(null);
   const placementStartedRef = useRef(false);
+  const appDestroyingRef = useRef(false);
 
   // Brief "snapshot saved" flash whenever the timestamp updates.
   useEffect(() => {
@@ -271,8 +272,11 @@ export function App() {
     const retain = (registration: Promise<() => void>) => {
       void registration
         .then((unlisten) => {
-          if (disposed) unlisten();
-          else unlistens.push(unlisten);
+          if (disposed) {
+            if (!appDestroyingRef.current) unlisten();
+          } else {
+            unlistens.push(unlisten);
+          }
         })
         .catch((error) =>
           logWarn("window metric listener failed", {
@@ -285,7 +289,9 @@ export function App() {
     retain(appWindow.onScaleChanged(() => void applyMinimum()));
     return () => {
       disposed = true;
-      for (const unlisten of unlistens) unlisten();
+      if (!appDestroyingRef.current) {
+        for (const unlisten of unlistens) unlisten();
+      }
     };
   }, [loadStatus, panes.length, persistWindowPlacement, settings.zen, statusBarContentWidth, windowPlacement, zoomLevel]);
 
@@ -520,6 +526,7 @@ export function App() {
             // again; finally resets the flag.
             return;
           }
+          appDestroyingRef.current = true;
           await appWindow.destroy();
         } catch (error) {
           logError("close window failed", { error: serializeError(error) });
@@ -540,7 +547,7 @@ export function App() {
 
     return () => {
       window.removeEventListener("beforeunload", handleBeforeUnload);
-      closeUnlisten?.();
+      if (!appDestroyingRef.current) closeUnlisten?.();
     };
   }, []);
 

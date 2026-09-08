@@ -158,7 +158,18 @@ export async function initializeMainWindowPlacement(
     cancel();
     await eventQueue;
     if (!enabled) return;
-    if (await win.isMaximized() && !await win.isMinimized() && !await win.isFullscreen()) mode = "maximized";
+    const [minimized, fullscreen, maximized] = await Promise.all([
+      win.isMinimized(), win.isFullscreen(), win.isMaximized(),
+    ]);
+    if (!minimized && !fullscreen) {
+      if (maximized) {
+        mode = "maximized";
+      } else {
+        const [position, size] = await Promise.all([win.outerPosition(), win.outerSize()]);
+        normalBounds = { x: position.x, y: position.y, width: size.width, height: size.height };
+        mode = "normal";
+      }
+    }
     await save();
   };
   if (restoration.mode === "maximized") await withWindowPlacementSuppressed(() => win.maximize());

@@ -9,7 +9,53 @@ use serde_json::{json, Map, Value as JsonValue};
 use storage::{
     LoadedAppData, SnapshotInput, SnapshotSearchResult, SnapshotWriteResult,
 };
-use tauri::{AppHandle, RunEvent};
+use tauri::menu::{Menu, MenuItem};
+use tauri::{AppHandle, Manager, RunEvent};
+
+const SAFE_QUIT_MENU_ID: &str = "quickdeck.safe-quit";
+
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+fn menu_with_safe_quit(app: &AppHandle) -> Result<Menu<tauri::Wry>, String> {
+    let menu = Menu::default(app).map_err(|error| error.to_string())?;
+    let target_title = if cfg!(target_os = "macos") {
+        app.package_info().name.as_str()
+    } else {
+        "File"
+    };
+    let submenu = menu
+        .items()
+        .map_err(|error| error.to_string())?
+        .into_iter()
+        .filter_map(|item| item.as_submenu().cloned())
+        .find(|item| item.text().is_ok_and(|text| text == target_title))
+        .ok_or_else(|| format!("default {target_title} menu is unavailable"))?;
+    let items = submenu.items().map_err(|error| error.to_string())?;
+    let quit_index = items
+        .len()
+        .checked_sub(1)
+        .ok_or_else(|| format!("default {target_title} menu is empty"))?;
+    if items[quit_index].as_predefined_menuitem().is_none() {
+        return Err(format!("default {target_title} menu has no trailing quit item"));
+    }
+    submenu
+        .remove_at(quit_index)
+        .map_err(|error| error.to_string())?;
+    let quit_text = if cfg!(target_os = "macos") {
+        format!("Quit {}", app.package_info().name)
+    } else {
+        "Exit".to_string()
+    };
+    let quit = MenuItem::with_id(
+        app,
+        SAFE_QUIT_MENU_ID,
+        quit_text,
+        true,
+        Some("CmdOrCtrl+Q"),
+    )
+    .map_err(|error| error.to_string())?;
+    submenu.append(&quit).map_err(|error| error.to_string())?;
+    Ok(menu)
+}
 
 #[tauri::command]
 fn load_app_data(app: AppHandle) -> Result<LoadedAppData, String> {
@@ -166,9 +212,28 @@ pub fn run() {
     let app = tauri::Builder::default()
         .plugin(instance_owner::init())
         .plugin(tauri_plugin_opener::init())
+        .on_menu_event(|app, event| {
+            if event.id() == SAFE_QUIT_MENU_ID {
+                if let Some(window) = app.get_webview_window("main") {
+                    if let Err(error) = window.close() {
+                        logging::warn(
+                            "route quit through main window failed",
+                            json!({ "error": error.to_string() }),
+                        );
+                    }
+                } else {
+                    app.exit(0);
+                }
+            }
+        })
         .setup(|app| {
             let version = app.package_info().version.to_string();
             logging::init(app.handle(), &version);
+            #[cfg(any(target_os = "macos", target_os = "windows"))]
+            {
+                let menu = menu_with_safe_quit(app.handle()).map_err(std::io::Error::other)?;
+                app.set_menu(menu)?;
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
