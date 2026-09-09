@@ -46,7 +46,6 @@ import type {
   Toast,
   ToastKind,
 } from "../types";
-import { normalizeWindowPlacement, type WindowPlacementRecord } from "../services/windowPlacement";
 
 type AppStateContextValue = {
   panes: Pane[];
@@ -56,7 +55,6 @@ type AppStateContextValue = {
   // The webview zoom — session state (state.json), not a setting, so it rides
   // beside `settings` rather than inside it (persisted-store-separation).
   zoomLevel: number;
-  windowPlacement: WindowPlacementRecord | null;
   saveState: SaveState;
   toasts: Toast[];
   blockingError: BlockingError | null;
@@ -75,7 +73,6 @@ type AppStateContextValue = {
   movePane: (paneId: string, direction: -1 | 1) => void;
   updateSettings: (settings: AppSettings) => void;
   setZoomLevel: (zoomLevel: number) => void;
-  persistWindowPlacement: (placement: WindowPlacementRecord) => Promise<void>;
   // The user-commanded reset behind the corrupt-panes halt screen: sets
   // panes.json aside and reloads (storage-path conventions — a halting store
   // is clearable from the surface that reported the failure).
@@ -102,7 +99,6 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const [activePaneId, setActivePaneId] = useState(firstPane.id);
   const [settings, setSettings] = useState(defaultSettings);
   const [zoomLevel, setZoomLevelState] = useState(ZOOM_DEFAULT);
-  const [windowPlacement, setWindowPlacement] = useState<WindowPlacementRecord | null>(null);
   const [saveState, setSaveState] = useState<SaveState>("saved");
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [blockingError, setBlockingError] = useState<BlockingError | null>(null);
@@ -117,7 +113,6 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const panesRef = useRef(panes);
   const activePaneIdRef = useRef(activePaneId);
   const zoomLevelRef = useRef(zoomLevel);
-  const windowPlacementRef = useRef<WindowPlacementRecord | null>(windowPlacement);
   // Monotonic counter bumped on every edit. saveNow snapshots the value at the
   // start of a save and only flips back to "saved" when the counter has not
   // moved during the save — keeps an edit from being lost in a save race.
@@ -282,11 +277,6 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       }
 
       setZoomLevelState(normalizeZoomLevel(data.state?.zoomLevel));
-      const loadedPlacement = normalizeWindowPlacement(
-        (data.state as { windowPlacements?: { main?: unknown } } | null)?.windowPlacements?.main,
-      );
-      windowPlacementRef.current = loadedPlacement;
-      setWindowPlacement(loadedPlacement);
 
       const loadedPanes = normalizePanes(data.panes?.panes);
       if (loadedPanes.length > 0) {
@@ -509,16 +499,6 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     [markUnsaved],
   );
 
-  const persistWindowPlacement = useCallback(async (placement: WindowPlacementRecord) => {
-    windowPlacementRef.current = placement;
-    setWindowPlacement(placement);
-    await persistState(buildStateFile(
-      activePaneIdRef.current,
-      zoomLevelRef.current,
-      { main: placement },
-    ));
-  }, []);
-
   // Throws on failure. Each caller decides whether to surface a modal and/or
   // change control flow, since autosave and the close path want different
   // policies. No-ops unless load succeeded — see the LoadStatus comment in
@@ -533,7 +513,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     try {
       await Promise.all([
         saveConfig(settings),
-        persistState(buildStateFile(activePaneId, zoomLevel, { main: windowPlacementRef.current })),
+        persistState(buildStateFile(activePaneId, zoomLevel)),
         savePanes(buildPanesFile(panes)),
       ]);
       setSaveState(resolveSaveState(dirtyAtStart, dirtyCounterRef.current));
@@ -568,7 +548,6 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       activePane,
       settings,
       zoomLevel,
-      windowPlacement,
       saveState,
       toasts,
       blockingError,
@@ -587,7 +566,6 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       movePane,
       updateSettings,
       setZoomLevel,
-      persistWindowPlacement,
       resetCorruptPanes,
       saveNow,
       recordSnapshot,
@@ -612,7 +590,6 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       loadStatus,
       movePane,
       panes,
-      persistWindowPlacement,
       recordSnapshot,
       resetCorruptPanes,
       saveNow,
@@ -629,7 +606,6 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       updatePaneTitle,
       updateSettings,
       zoomLevel,
-      windowPlacement,
     ],
   );
 

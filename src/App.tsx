@@ -29,11 +29,6 @@ import { matchesShortcut } from "./shortcuts";
 import { isEditableTarget, shadowsMacTextEditing } from "./utils/shortcuts";
 import { isComposingEvent } from "./hooks/useComposing";
 import { logError, logWarn, serializeError } from "./services/logger";
-import {
-  flushMainWindowPlacement,
-  initializeMainWindowPlacement,
-  showMainWindowWithoutPlacement,
-} from "./services/windowPlacement";
 import { useAppState } from "./state/AppStateContext";
 import {
   boundNativeMinimumToClient,
@@ -59,8 +54,6 @@ export function App() {
     saveState,
     settings,
     zoomLevel,
-    windowPlacement,
-    persistWindowPlacement,
     setZoomLevel,
     setActivePaneId,
     addPane,
@@ -80,7 +73,6 @@ export function App() {
   const [topmostApplicationFailed, setTopmostApplicationFailed] = useState(false);
   const [statusBarContentWidth, setStatusBarContentWidth] = useState(0);
   const statusBarRef = useRef<HTMLElement | null>(null);
-  const placementStartedRef = useRef(false);
   const appDestroyingRef = useRef(false);
 
   // Brief "snapshot saved" flash whenever the timestamp updates.
@@ -264,21 +256,6 @@ export function App() {
           error: serializeError(error),
         });
       }
-      // A layout metric or minimum failure must not skip saved window mode.
-      if (
-        !disposed
-        && !placementStartedRef.current
-        && loadStatus === "ready"
-        && statusBarContentWidth > 0
-      ) {
-        placementStartedRef.current = true;
-        try {
-          await initializeMainWindowPlacement(windowPlacement, persistWindowPlacement);
-        } catch (error) {
-          logWarn("restore window placement failed", { error: serializeError(error) });
-          await showMainWindowWithoutPlacement();
-        }
-      }
     };
     const retain = (registration: Promise<() => void>) => {
       void registration
@@ -295,10 +272,6 @@ export function App() {
           }),
         );
     };
-    // Register geometry listeners only after the initial minimum and placement
-    // restore have completed. On Windows, changing the native minimum from an
-    // onMoved callback while a maximize transition is in flight can interrupt
-    // the transition and leave a work-area-sized *normal* window behind.
     void applyMinimum().then(() => {
       if (disposed) return;
       retain(appWindow.onMoved(() => void applyMinimum()));
@@ -310,12 +283,7 @@ export function App() {
         for (const unlisten of unlistens) unlisten();
       }
     };
-  }, [loadStatus, panes.length, persistWindowPlacement, settings.zen, statusBarContentWidth, windowPlacement, zoomLevel]);
-
-  useEffect(() => {
-    if (loadStatus !== "failed") return;
-    void showMainWindowWithoutPlacement();
-  }, [loadStatus]);
+  }, [panes.length, settings.zen, statusBarContentWidth, zoomLevel]);
 
   // Zoom keyboard shortcuts — separate effect with its own document listener so
   // they work even when a modal is open (zoom should always be accessible).
@@ -505,7 +473,6 @@ export function App() {
         logWarn("close snapshot failed", { error: serializeError(error) });
       }
       try {
-        await flushMainWindowPlacement();
         await saveNowRef.current();
         return true;
       } catch (error) {
