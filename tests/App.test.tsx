@@ -9,6 +9,8 @@ const mocks = vi.hoisted(() => ({
   setZoom: vi.fn<(zoom: number) => Promise<void>>(),
   setAlwaysOnTop: vi.fn(() => Promise.resolve()),
   setMinSize: vi.fn(() => Promise.resolve()),
+  isMaximized: vi.fn(() => Promise.resolve(false)),
+  isFullscreen: vi.fn(() => Promise.resolve(false)),
   currentMonitor: vi.fn(() => Promise.resolve(null)),
   logWarn: vi.fn(),
 }));
@@ -23,6 +25,8 @@ vi.mock("@tauri-apps/api/window", () => ({
     setTheme: mocks.setTheme,
     setAlwaysOnTop: mocks.setAlwaysOnTop,
     setMinSize: mocks.setMinSize,
+    isMaximized: mocks.isMaximized,
+    isFullscreen: mocks.isFullscreen,
     onMoved: () => Promise.resolve(() => undefined),
     onScaleChanged: () => Promise.resolve(() => undefined),
     onCloseRequested: () => Promise.resolve(() => undefined),

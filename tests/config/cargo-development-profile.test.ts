@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
-const manifest = readFileSync("src-tauri/Cargo.toml", "utf8");
+const manifest = readFileSync("src-tauri/Cargo.toml", "utf8").replace(/\r\n?/g, "\n");
 
 function manifestSection(name: string): string {
   const heading = `[${name}]\n`;

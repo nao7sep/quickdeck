@@ -224,6 +224,11 @@ export function App() {
     };
     const applyMinimum = async () => {
       try {
+        const [maximized, fullscreen] = await Promise.all([
+          appWindow.isMaximized(),
+          appWindow.isFullscreen(),
+        ]);
+        if (maximized || fullscreen) return;
         const monitor = await currentMonitor();
         let minimum = required;
         if (monitor !== null) {
@@ -284,9 +289,15 @@ export function App() {
           }),
         );
     };
-    void applyMinimum();
-    retain(appWindow.onMoved(() => void applyMinimum()));
-    retain(appWindow.onScaleChanged(() => void applyMinimum()));
+    // Register geometry listeners only after the initial minimum and placement
+    // restore have completed. On Windows, changing the native minimum from an
+    // onMoved callback while a maximize transition is in flight can interrupt
+    // the transition and leave a work-area-sized *normal* window behind.
+    void applyMinimum().then(() => {
+      if (disposed) return;
+      retain(appWindow.onMoved(() => void applyMinimum()));
+      retain(appWindow.onScaleChanged(() => void applyMinimum()));
+    });
     return () => {
       disposed = true;
       if (!appDestroyingRef.current) {
