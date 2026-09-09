@@ -33,7 +33,6 @@ import {
   flushMainWindowPlacement,
   initializeMainWindowPlacement,
   showMainWindowWithoutPlacement,
-  withWindowPlacementSuppressed,
 } from "./services/windowPlacement";
 import { useAppState } from "./state/AppStateContext";
 import {
@@ -224,11 +223,12 @@ export function App() {
     };
     const applyMinimum = async () => {
       try {
-        const [maximized, fullscreen] = await Promise.all([
+        const [maximized, fullscreen, minimized] = await Promise.all([
           appWindow.isMaximized(),
           appWindow.isFullscreen(),
+          appWindow.isMinimized(),
         ]);
-        if (maximized || fullscreen) return;
+        if (maximized || fullscreen || minimized) return;
         const monitor = await currentMonitor();
         let minimum = required;
         if (monitor !== null) {
@@ -251,17 +251,9 @@ export function App() {
           });
         }
         if (!disposed) {
-          await withWindowPlacementSuppressed(() => appWindow.setMinSize(
+          await appWindow.setMinSize(
             new LogicalSize(minimum.width, minimum.height),
-          ));
-          if (
-            !placementStartedRef.current
-            && loadStatus === "ready"
-            && statusBarContentWidth > 0
-          ) {
-            placementStartedRef.current = true;
-            await initializeMainWindowPlacement(windowPlacement, minimum, persistWindowPlacement);
-          }
+          );
         }
       } catch (error) {
         logWarn("set window min size failed", {
@@ -271,7 +263,21 @@ export function App() {
           requiredHeight: required.height,
           error: serializeError(error),
         });
-        if (loadStatus === "ready") void showMainWindowWithoutPlacement();
+      }
+      // A layout metric or minimum failure must not skip saved window mode.
+      if (
+        !disposed
+        && !placementStartedRef.current
+        && loadStatus === "ready"
+        && statusBarContentWidth > 0
+      ) {
+        placementStartedRef.current = true;
+        try {
+          await initializeMainWindowPlacement(windowPlacement, persistWindowPlacement);
+        } catch (error) {
+          logWarn("restore window placement failed", { error: serializeError(error) });
+          await showMainWindowWithoutPlacement();
+        }
       }
     };
     const retain = (registration: Promise<() => void>) => {

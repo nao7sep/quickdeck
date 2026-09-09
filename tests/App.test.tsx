@@ -11,12 +11,19 @@ const mocks = vi.hoisted(() => ({
   setMinSize: vi.fn(() => Promise.resolve()),
   isMaximized: vi.fn(() => Promise.resolve(false)),
   isFullscreen: vi.fn(() => Promise.resolve(false)),
+  isMinimized: vi.fn(() => Promise.resolve(false)),
   currentMonitor: vi.fn(() => Promise.resolve(null)),
+  initializePlacement: vi.fn(async () => {}),
   logWarn: vi.fn(),
 }));
 
 vi.mock("../src/state/AppStateContext", () => ({
   useAppState: () => mocks.appState,
+}));
+vi.mock("../src/services/windowPlacement", () => ({
+  initializeMainWindowPlacement: mocks.initializePlacement,
+  flushMainWindowPlacement: vi.fn(async () => {}),
+  showMainWindowWithoutPlacement: vi.fn(async () => {}),
 }));
 vi.mock("@tauri-apps/api/core", () => ({ isTauri: () => true }));
 vi.mock("@tauri-apps/api/window", () => ({
@@ -27,6 +34,7 @@ vi.mock("@tauri-apps/api/window", () => ({
     setMinSize: mocks.setMinSize,
     isMaximized: mocks.isMaximized,
     isFullscreen: mocks.isFullscreen,
+    isMinimized: mocks.isMinimized,
     onMoved: () => Promise.resolve(() => undefined),
     onScaleChanged: () => Promise.resolve(() => undefined),
     onCloseRequested: () => Promise.resolve(() => undefined),
@@ -61,6 +69,7 @@ afterEach(async () => {
   mocks.setAlwaysOnTop.mockReset();
   mocks.setAlwaysOnTop.mockResolvedValue();
   mocks.logWarn.mockReset();
+  mocks.initializePlacement.mockClear();
 });
 
 function createAppState() {
@@ -80,6 +89,8 @@ function createAppState() {
     loadErrorIsCorruptPanes: false,
     resetCorruptPanes: vi.fn(() => Promise.resolve()),
     loadStatus: "ready",
+    windowPlacement: { normalBounds: null, mode: "maximized" },
+    persistWindowPlacement: vi.fn(async () => {}),
     saveState: "saved",
     settings: {
       dark: false,
@@ -126,6 +137,32 @@ async function flushEffects() {
 }
 
 describe("App window-chrome results", () => {
+  it.each(["currentMonitor", "setMinSize"] as const)(
+    "still starts saved placement when layout %s fails",
+    async (failure) => {
+      const state = createAppState();
+      mocks.appState = state;
+      mocks.setTheme.mockResolvedValue();
+      mocks.setZoom.mockResolvedValue();
+      mocks[failure].mockRejectedValue(new Error("native layout unavailable"));
+      const style = document.createElement("style");
+      style.textContent = ".appStatusBar { padding: 10px; }";
+      document.head.append(style);
+      try {
+        const container = document.createElement("div");
+        document.body.append(container);
+        root = createRoot(container);
+        await act(async () => root?.render(<App />));
+        await flushEffects();
+        expect(mocks.initializePlacement).toHaveBeenCalledWith(state.windowPlacement, state.persistWindowPlacement);
+      } finally {
+        style.remove();
+        mocks.currentMonitor.mockResolvedValue(null);
+        mocks.setMinSize.mockResolvedValue();
+      }
+    },
+  );
+
   it("keeps theme and zoom failures independent through dismissal and matching retries", async () => {
     const state = createAppState();
     mocks.appState = state;
