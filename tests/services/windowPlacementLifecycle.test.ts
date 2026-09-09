@@ -77,6 +77,29 @@ beforeEach(() => {
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
 
 describe("native placement lifecycle", () => {
+  it.each(["geometry", "mode", "maximized"] as const)(
+    "flushes the latest retained normal placement when closing with %s capture unavailable",
+    async (failure) => {
+      const { initializeMainWindowPlacement, flushMainWindowPlacement } = await import("../../src/services/windowPlacement");
+      const persist = vi.fn(async () => {});
+      await initializeMainWindowPlacement({ normalBounds: null, mode: "normal" }, persist);
+      const moved = { x: 150, y: 160, width: 1300, height: 850 };
+      Object.assign(mocks.bounds, moved);
+      mocks.move();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(persist).not.toHaveBeenCalled();
+      const bounds = vi.spyOn(mocks.win, "outerPosition").mockRejectedValue(new Error("geometry unavailable"));
+      if (failure === "mode") vi.spyOn(mocks.win, "isMaximized").mockRejectedValueOnce(new Error("mode unavailable"));
+      if (failure === "maximized") mocks.state.maximized = true;
+      await flushMainWindowPlacement();
+      expect(persist).toHaveBeenLastCalledWith({
+        normalBounds: moved, mode: failure === "maximized" ? "maximized" : "normal",
+      });
+      if (failure === "maximized") expect(bounds).not.toHaveBeenCalled();
+      else expect(mocks.report).toHaveBeenCalled();
+    },
+  );
+
   it.each(["opening", "innerSize", "monitors", "setPosition", "setSize", "finalSnapshot"] as const)(
     "restores saved maximized mode when %s fails",
     async (failure) => {

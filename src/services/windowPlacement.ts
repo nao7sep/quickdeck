@@ -58,12 +58,12 @@ export function restorableBounds(
 
 export function settledWindowPlacement(
   previous: WindowPlacementRecord,
-  snapshot: { bounds: WindowBounds; minimized: boolean; fullscreen: boolean; maximized: boolean },
+  snapshot: { bounds: WindowBounds | null; minimized: boolean; fullscreen: boolean; maximized: boolean },
 ): WindowPlacementRecord {
   if (snapshot.minimized || snapshot.fullscreen) return previous;
   return snapshot.maximized
     ? { normalBounds: previous.normalBounds, mode: "maximized" }
-    : { normalBounds: snapshot.bounds, mode: "normal" };
+    : { normalBounds: snapshot.bounds ?? previous.normalBounds, mode: "normal" };
 }
 
 
@@ -88,12 +88,19 @@ export async function initializeMainWindowPlacement(
   const win = getCurrentWindow();
   // Windows requires a visible HWND before positioning or maximizing.
   await win.show();
+  const readBounds = async () => {
+    const [position, size] = await Promise.all([win.outerPosition(), win.outerSize()]);
+    return { x: position.x, y: position.y, width: size.width, height: size.height };
+  };
   const snapshot = async () => {
-    const [position, size, minimized, fullscreen, maximized] = await Promise.all([
-      win.outerPosition(), win.outerSize(), win.isMinimized(), win.isFullscreen(), win.isMaximized(),
+    const [minimized, fullscreen, maximized] = await Promise.all([
+      win.isMinimized(), win.isFullscreen(), win.isMaximized(),
     ]);
     return {
-      bounds: { x: position.x, y: position.y, width: size.width, height: size.height },
+      bounds: minimized || fullscreen || maximized ? null : await readBounds().catch((error) => {
+        report("read normal window bounds", error);
+        return null;
+      }),
       minimized, fullscreen, maximized,
     };
   };
@@ -103,8 +110,8 @@ export async function initializeMainWindowPlacement(
   };
   // Geometry is best effort; a failed read or setter must not skip saved mode.
   try {
-    const opening = await snapshot();
-    record.normalBounds = opening.bounds;
+    const opening = await readBounds();
+    record.normalBounds = opening;
     const openingInnerSize = await win.innerSize();
     const bounds = restorableBounds(saved?.normalBounds ?? null, await availableMonitors());
     if (bounds) {
@@ -118,11 +125,11 @@ export async function initializeMainWindowPlacement(
         ));
       } catch (error) {
         report("restore window bounds", error);
-        await win.setPosition(new PhysicalPosition(opening.bounds.x, opening.bounds.y));
+        await win.setPosition(new PhysicalPosition(opening.x, opening.y));
         await win.setSize(openingInnerSize);
       }
     }
-    record.normalBounds = (await snapshot()).bounds;
+    record.normalBounds = await readBounds();
   } catch (error) {
     report("restore normal window placement", error);
   }
@@ -140,7 +147,11 @@ export async function initializeMainWindowPlacement(
   let eventTail = Promise.resolve();
   const cancel = () => { clearTimeout(timer); timer = undefined; };
   const saveSnapshot = async () => {
-    record = settledWindowPlacement(record, await snapshot());
+    try {
+      record = settledWindowPlacement(record, await snapshot());
+    } catch (error) {
+      report("capture window placement", error);
+    }
     await persist(record);
   };
   const inspect = async () => {
