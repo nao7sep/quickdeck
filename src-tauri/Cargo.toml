@@ -35,7 +35,6 @@ sha2 = "0.11.0"
 chrono = { version = "0.4.45", features = ["serde"] }
 getrandom = "0.4.3"
 tauri-plugin-opener = "2.5.4"
-tauri-plugin-window-state = "2.4.1"
 
 [dev-dependencies]
 # Serializes the tests that share process-global state — the backup-store

@@ -9,9 +9,7 @@
     "core:window:allow-destroy",
     "core:window:allow-set-always-on-top",
     "core:window:allow-set-min-size",
-    "core:window:allow-show",
     "core:window:allow-set-theme",
-    "window-state:allow-restore-state",
     "opener:default",
     "opener:allow-open-url"
   ]

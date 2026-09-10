@@ -9,8 +9,6 @@ const mocks = vi.hoisted(() => ({
   setZoom: vi.fn<(zoom: number) => Promise<void>>(() => Promise.resolve()),
   setAlwaysOnTop: vi.fn(() => Promise.resolve()),
   setMinSize: vi.fn(() => Promise.resolve()),
-  show: vi.fn(() => Promise.resolve()),
-  restoreStateCurrent: vi.fn(() => Promise.resolve()),
   isMaximized: vi.fn(() => Promise.resolve(false)),
   isFullscreen: vi.fn(() => Promise.resolve(false)),
   isMinimized: vi.fn(() => Promise.resolve(false)),
@@ -28,7 +26,6 @@ vi.mock("@tauri-apps/api/window", () => ({
     setTheme: mocks.setTheme,
     setAlwaysOnTop: mocks.setAlwaysOnTop,
     setMinSize: mocks.setMinSize,
-    show: mocks.show,
     isMaximized: mocks.isMaximized,
     isFullscreen: mocks.isFullscreen,
     isMinimized: mocks.isMinimized,
@@ -40,9 +37,6 @@ vi.mock("@tauri-apps/api/window", () => ({
   LogicalSize: class LogicalSize {
     constructor(public width: number, public height: number) {}
   },
-}));
-vi.mock("@tauri-apps/plugin-window-state", () => ({
-  restoreStateCurrent: mocks.restoreStateCurrent,
 }));
 vi.mock("@tauri-apps/api/webview", () => ({
   getCurrentWebview: () => ({ setZoom: mocks.setZoom }),
@@ -72,10 +66,6 @@ afterEach(async () => {
   mocks.setAlwaysOnTop.mockResolvedValue();
   mocks.setMinSize.mockReset();
   mocks.setMinSize.mockResolvedValue();
-  mocks.show.mockReset();
-  mocks.show.mockResolvedValue();
-  mocks.restoreStateCurrent.mockReset();
-  mocks.restoreStateCurrent.mockResolvedValue();
   mocks.logWarn.mockReset();
 });
 
@@ -142,13 +132,7 @@ async function flushEffects() {
 }
 
 describe("App window-chrome results", () => {
-  it("waits for placement restoration before applying the window minimum", async () => {
-    let finishRestore: () => void = () => {};
-    mocks.restoreStateCurrent.mockImplementation(
-      () => new Promise<void>((resolve) => {
-        finishRestore = resolve;
-      }),
-    );
+  it("applies the content-derived window minimum on startup", async () => {
     mocks.appState = createAppState();
 
     const container = document.createElement("div");
@@ -157,18 +141,7 @@ describe("App window-chrome results", () => {
     await act(async () => root?.render(<App />));
     await flushEffects();
 
-    expect(mocks.setMinSize).not.toHaveBeenCalled();
-
-    await act(async () => {
-      finishRestore();
-      await Promise.resolve();
-    });
-
-    expect(mocks.show).toHaveBeenCalledOnce();
     expect(mocks.setMinSize).toHaveBeenCalledOnce();
-    expect(mocks.show.mock.invocationCallOrder[0]).toBeLessThan(
-      mocks.setMinSize.mock.invocationCallOrder[0],
-    );
   });
 
   it("keeps theme and zoom failures independent through dismissal and matching retries", async () => {

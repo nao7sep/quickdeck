@@ -212,16 +212,6 @@ pub fn run() {
     let app = tauri::Builder::default()
         .plugin(instance_owner::init())
         .plugin(tauri_plugin_opener::init())
-        .plugin(
-            tauri_plugin_window_state::Builder::default()
-                .skip_initial_state("main")
-                .with_state_flags(
-                    tauri_plugin_window_state::StateFlags::SIZE
-                        | tauri_plugin_window_state::StateFlags::POSITION
-                        | tauri_plugin_window_state::StateFlags::MAXIMIZED,
-                )
-                .build(),
-        )
         .on_menu_event(|app, event| {
             if event.id() == SAFE_QUIT_MENU_ID {
                 if let Some(window) = app.get_webview_window("main") {

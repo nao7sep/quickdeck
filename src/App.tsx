@@ -6,7 +6,6 @@ import {
   LogicalSize,
 } from "@tauri-apps/api/window";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
-import { restoreStateCurrent } from "@tauri-apps/plugin-window-state";
 import {
   History,
   Info,
@@ -72,34 +71,9 @@ export function App() {
   const [themeApplicationFailed, setThemeApplicationFailed] = useState(false);
   const [zoomApplicationFailed, setZoomApplicationFailed] = useState(false);
   const [topmostApplicationFailed, setTopmostApplicationFailed] = useState(false);
-  const [placementReady, setPlacementReady] = useState(false);
   const [statusBarContentWidth, setStatusBarContentWidth] = useState(0);
   const statusBarRef = useRef<HTMLElement | null>(null);
   const appDestroyingRef = useRef(false);
-
-  useEffect(() => {
-    if (!isTauri()) {
-      setPlacementReady(true);
-      return undefined;
-    }
-    let current = true;
-    void (async () => {
-      try {
-        await restoreStateCurrent();
-      } catch (error) {
-        logWarn("window state restore failed", { error: serializeError(error) });
-      }
-      try {
-        await getCurrentWindow().show();
-      } catch (error) {
-        logError("show window failed", { error: serializeError(error) });
-      }
-      if (current) setPlacementReady(true);
-    })();
-    return () => {
-      current = false;
-    };
-  }, []);
 
   // Brief "snapshot saved" flash whenever the timestamp updates.
   useEffect(() => {
@@ -226,7 +200,7 @@ export function App() {
   // static minWidth/minHeight only have to cover the very first single-pane
   // frame before this runs.
   useEffect(() => {
-    if (!isTauri() || !placementReady) return undefined;
+    if (!isTauri()) return undefined;
     const appWindow = getCurrentWindow();
     let disposed = false;
     const unlistens: Array<() => void> = [];
@@ -309,7 +283,7 @@ export function App() {
         for (const unlisten of unlistens) unlisten();
       }
     };
-  }, [panes.length, placementReady, settings.zen, statusBarContentWidth, zoomLevel]);
+  }, [panes.length, settings.zen, statusBarContentWidth, zoomLevel]);
 
   // Zoom keyboard shortcuts — separate effect with its own document listener so
   // they work even when a modal is open (zoom should always be accessible).
