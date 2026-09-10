@@ -11,6 +11,7 @@ use storage::{
 };
 use tauri::menu::{Menu, MenuItem};
 use tauri::{AppHandle, Manager, RunEvent};
+use tauri_plugin_window_state::StateFlags;
 
 const SAFE_QUIT_MENU_ID: &str = "quickdeck.safe-quit";
 
@@ -212,6 +213,11 @@ pub fn run() {
     let app = tauri::Builder::default()
         .plugin(instance_owner::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(
+            tauri_plugin_window_state::Builder::default()
+                .with_state_flags(StateFlags::POSITION | StateFlags::SIZE)
+                .build(),
+        )
         .on_menu_event(|app, event| {
             if event.id() == SAFE_QUIT_MENU_ID {
                 if let Some(window) = app.get_webview_window("main") {
