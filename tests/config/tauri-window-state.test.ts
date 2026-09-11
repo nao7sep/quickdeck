@@ -7,10 +7,6 @@ function read(relativePath: string): string {
 }
 
 const core = read("src-tauri/src/lib.rs");
-const trackedFlags = core
-  .match(/\.with_state_flags\(([^)]*)\)/)?.[1]
-  ?.replace(/\s+/g, " ")
-  .trim();
 const packageManifest = JSON.parse(read("package.json")) as {
   dependencies?: Record<string, string>;
   devDependencies?: Record<string, string>;
@@ -21,8 +17,8 @@ const capability = JSON.parse(
 
 describe("Tauri window-state integration", () => {
   it("tracks the transient maximize event but restores only normal geometry", () => {
-    expect(trackedFlags).toBe(
-      "StateFlags::POSITION | StateFlags::SIZE | StateFlags::MAXIMIZED",
+    expect(core).toMatch(
+      /\.with_state_flags\(\s*StateFlags::POSITION\s*\|\s*StateFlags::SIZE\s*\|\s*StateFlags::MAXIMIZED,?\s*\)/,
     );
     expect(core).toContain('.skip_initial_state("main")');
     expect(core).toContain(
