@@ -11,7 +11,7 @@ use storage::{
 };
 use tauri::menu::{Menu, MenuItem};
 use tauri::{AppHandle, Manager, RunEvent};
-use tauri_plugin_window_state::StateFlags;
+use tauri_plugin_window_state::{StateFlags, WindowExt};
 
 const SAFE_QUIT_MENU_ID: &str = "quickdeck.safe-quit";
 
@@ -215,7 +215,13 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(
             tauri_plugin_window_state::Builder::default()
-                .with_state_flags(StateFlags::POSITION | StateFlags::SIZE)
+                // Windows emits a transient move while maximizing. Track that
+                // mode so the plugin preserves the prior coordinates, but
+                // restore only normal geometry during setup below.
+                .with_state_flags(
+                    StateFlags::POSITION | StateFlags::SIZE | StateFlags::MAXIMIZED,
+                )
+                .skip_initial_state("main")
                 .build(),
         )
         .on_menu_event(|app, event| {
@@ -235,6 +241,14 @@ pub fn run() {
         .setup(|app| {
             let version = app.package_info().version.to_string();
             logging::init(app.handle(), &version);
+            if let Some(window) = app.get_webview_window("main") {
+                if let Err(error) = window.restore_state(StateFlags::POSITION | StateFlags::SIZE) {
+                    logging::warn(
+                        "normal window state could not be restored",
+                        json!({ "error": error.to_string() }),
+                    );
+                }
+            }
             #[cfg(any(target_os = "macos", target_os = "windows"))]
             {
                 let menu = menu_with_safe_quit(app.handle()).map_err(std::io::Error::other)?;

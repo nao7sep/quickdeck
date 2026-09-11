@@ -20,9 +20,16 @@ const capability = JSON.parse(
 ) as { permissions?: Array<string | { identifier?: string }> };
 
 describe("Tauri window-state integration", () => {
-  it("automatically tracks exactly position and size", () => {
-    expect(trackedFlags).toBe("StateFlags::POSITION | StateFlags::SIZE");
-    expect(core).not.toContain("skip_initial_state");
+  it("tracks the transient maximize event but restores only normal geometry", () => {
+    expect(trackedFlags).toBe(
+      "StateFlags::POSITION | StateFlags::SIZE | StateFlags::MAXIMIZED",
+    );
+    expect(core).toContain('.skip_initial_state("main")');
+    expect(core).toContain(
+      "window.restore_state(StateFlags::POSITION | StateFlags::SIZE)",
+    );
+    expect(core).not.toContain("StateFlags::FULLSCREEN");
+    expect(core).not.toContain("StateFlags::VISIBLE");
   });
 
   it("keeps window-state outside the frontend boundary", () => {
