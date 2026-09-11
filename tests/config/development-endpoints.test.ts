@@ -20,4 +20,10 @@ describe("development endpoint", () => {
       expect(read(path)).not.toMatch(/stop[_-]port|Stop-Port/);
     }
   });
+
+  it("does not watch Cargo artifacts on Windows", () => {
+    expect(read("vite.config.ts")).toContain(
+      'ignored: ["**/src-tauri/target/**"]',
+    );
+  });
 });

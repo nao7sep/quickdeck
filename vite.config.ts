@@ -25,6 +25,9 @@ export default defineConfig({
     // with a sibling app's fixed development endpoint.
     port: 26267,
     strictPort: true,
+    watch: {
+      ignored: ["**/src-tauri/target/**"],
+    },
   },
   envPrefix: ["VITE_", "TAURI_"],
 });
