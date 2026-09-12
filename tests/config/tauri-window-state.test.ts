@@ -16,14 +16,17 @@ const capability = JSON.parse(
 ) as { permissions?: Array<string | { identifier?: string }> };
 
 describe("Tauri window-state integration", () => {
-  it("tracks the transient maximize event but restores only normal geometry", () => {
+  it("tracks normal geometry and restores display mode only on Windows", () => {
     expect(core).toMatch(
       /\.with_state_flags\(\s*StateFlags::POSITION\s*\|\s*StateFlags::SIZE\s*\|\s*StateFlags::MAXIMIZED,?\s*\)/,
     );
     expect(core).toContain('.skip_initial_state("main")');
     expect(core).toContain(
-      "window.restore_state(StateFlags::POSITION | StateFlags::SIZE)",
+      'if cfg!(target_os = "windows")',
     );
+    expect(core).toContain("normal | StateFlags::MAXIMIZED");
+    expect(core).toContain("window.restore_state(restore_state_flags())");
+    expect(core).toContain("window.show()?");
     expect(core).not.toContain("StateFlags::FULLSCREEN");
     expect(core).not.toContain("StateFlags::VISIBLE");
   });

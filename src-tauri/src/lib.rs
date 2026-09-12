@@ -15,6 +15,15 @@ use tauri_plugin_window_state::{StateFlags, WindowExt};
 
 const SAFE_QUIT_MENU_ID: &str = "quickdeck.safe-quit";
 
+fn restore_state_flags() -> StateFlags {
+    let normal = StateFlags::POSITION | StateFlags::SIZE;
+    if cfg!(target_os = "windows") {
+        normal | StateFlags::MAXIMIZED
+    } else {
+        normal
+    }
+}
+
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 fn menu_with_safe_quit(app: &AppHandle) -> Result<Menu<tauri::Wry>, String> {
     let menu = Menu::default(app).map_err(|error| error.to_string())?;
@@ -215,9 +224,6 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(
             tauri_plugin_window_state::Builder::default()
-                // Windows emits a transient move while maximizing. Track that
-                // mode so the plugin preserves the prior coordinates, but
-                // restore only normal geometry during setup below.
                 .with_state_flags(
                     StateFlags::POSITION | StateFlags::SIZE | StateFlags::MAXIMIZED,
                 )
@@ -241,10 +247,11 @@ pub fn run() {
         .setup(|app| {
             let version = app.package_info().version.to_string();
             logging::init(app.handle(), &version);
-            if let Some(window) = app.get_webview_window("main") {
-                if let Err(error) = window.restore_state(StateFlags::POSITION | StateFlags::SIZE) {
+            let main_window = app.get_webview_window("main");
+            if let Some(window) = main_window.as_ref() {
+                if let Err(error) = window.restore_state(restore_state_flags()) {
                     logging::warn(
-                        "normal window state could not be restored",
+                        "window state could not be restored",
                         json!({ "error": error.to_string() }),
                     );
                 }
@@ -253,6 +260,9 @@ pub fn run() {
             {
                 let menu = menu_with_safe_quit(app.handle()).map_err(std::io::Error::other)?;
                 app.set_menu(menu)?;
+            }
+            if let Some(window) = main_window {
+                window.show()?;
             }
             Ok(())
         })

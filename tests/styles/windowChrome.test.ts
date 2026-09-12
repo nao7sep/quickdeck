@@ -15,11 +15,11 @@ function read(relativePath: string): string {
 describe("tauri.conf.json window-chrome guards", () => {
   const window = JSON.parse(read("src-tauri/tauri.conf.json")).app.windows[0];
 
-  it("opens normally visible with the designed initial size and mode", () => {
-    expect(window.visible).not.toBe(false);
+  it("creates hidden at the designed normal size for native restoration", () => {
+    expect(window.visible).toBe(false);
     expect(window.width).toBe(1120);
     expect(window.height).toBe(760);
-    expect(window.maximized).toBe(true);
+    expect(window).not.toHaveProperty("maximized");
   });
 
   it("the title bar is not transparent (a normal themed bar)", () => {
