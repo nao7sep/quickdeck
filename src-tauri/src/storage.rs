@@ -13,11 +13,12 @@ use tauri::AppHandle;
 
 use crate::paths::app_data_dir;
 
-// The three files the data directory holds, each named in exactly one place so
+// The managed files the data directory holds, each named in exactly one place so
 // the on-disk layout has a single source of truth.
 //
 // - `config.json`      — durable user settings.               RECORDED (managed text)
 // - `state.json`       — UI/session state (view only).        RECORDED (managed text)
+// - `window.json`      — native window state (view only).     RECORDED (managed text)
 // - `panes.json`       — the panes' TEXT — the user's work.   RECORDED (managed text)
 // - `snapshots.sqlite3` — the snapshot store.                 not recorded (binary + append-safe)
 // - `backups.sqlite3`   — the write-through backup store.     not recorded (the store itself)
@@ -25,11 +26,12 @@ use crate::paths::app_data_dir;
 //
 // Every managed-*text* write goes through `atomic_write_json`, which — strictly
 // AFTER the atomic rename lands — records the exact bytes it just wrote into
-// `backups.sqlite3` (see backup_store.rs). Only these three managed-text files reach
+// `backups.sqlite3` (see backup_store.rs). Only these four managed-text files reach
 // that choke point; the enumeration of every write site under ~/.quickdeck and its
 // record/no-record decision lives beside each write below.
 pub const CONFIG_FILE_NAME: &str = "config.json";
 pub const STATE_FILE_NAME: &str = "state.json";
+pub const WINDOW_FILE_NAME: &str = "window.json";
 pub const PANES_FILE_NAME: &str = "panes.json";
 pub const SNAPSHOTS_DB_FILE_NAME: &str = "snapshots.sqlite3";
 
@@ -125,6 +127,16 @@ pub fn save_state(app: &AppHandle, state: JsonValue) -> Result<(), String> {
     // absorbs the churn (data-backup conventions).
     let data_dir = app_data_dir(app)?;
     atomic_write_json(&data_dir, &data_dir.join(STATE_FILE_NAME), &state)
+}
+
+pub fn load_window_state(app: &AppHandle) -> Result<Option<JsonValue>, String> {
+    let data_dir = app_data_dir(app)?;
+    read_rebuildable_store(&data_dir.join(WINDOW_FILE_NAME)).map(|(value, _)| value)
+}
+
+pub fn save_window_state(app: &AppHandle, state: JsonValue) -> Result<(), String> {
+    let data_dir = app_data_dir(app)?;
+    atomic_write_json(&data_dir, &data_dir.join(WINDOW_FILE_NAME), &state)
 }
 
 pub fn save_panes(app: &AppHandle, panes: JsonValue) -> Result<(), String> {
@@ -442,7 +454,8 @@ fn temp_path_for(path: &Path) -> Result<PathBuf, String> {
     Ok(parent.join(format!("{}-{}.tmp", stem, crate::nanoid::generate()?)))
 }
 
-// The single managed-text atomic-write choke point for config.json and state.json,
+// The single managed-text atomic-write choke point for config.json, state.json,
+// window.json,
 // and — crucially — the ONE place the data-backup hook lives. A managed-text write
 // that bypasses this helper is a silent backup gap; there is deliberately no second
 // atomic-write path in the app.

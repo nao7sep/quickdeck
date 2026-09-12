@@ -4,6 +4,7 @@ mod logging;
 mod nanoid;
 mod paths;
 pub mod storage;
+pub mod window_placement;
 
 use serde_json::{json, Map, Value as JsonValue};
 use storage::{
@@ -11,18 +12,8 @@ use storage::{
 };
 use tauri::menu::{Menu, MenuItem};
 use tauri::{AppHandle, Manager, RunEvent};
-use tauri_plugin_window_state::{StateFlags, WindowExt};
 
 const SAFE_QUIT_MENU_ID: &str = "quickdeck.safe-quit";
-
-fn restore_state_flags() -> StateFlags {
-    let normal = StateFlags::POSITION | StateFlags::SIZE;
-    if cfg!(target_os = "windows") {
-        normal | StateFlags::MAXIMIZED
-    } else {
-        normal
-    }
-}
 
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 fn menu_with_safe_quit(app: &AppHandle) -> Result<Menu<tauri::Wry>, String> {
@@ -219,17 +210,15 @@ fn log_event(
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let placement_state = window_placement::new_state();
+    let event_placement_state = placement_state.clone();
+    let setup_placement_state = placement_state.clone();
     let app = tauri::Builder::default()
         .plugin(instance_owner::init())
         .plugin(tauri_plugin_opener::init())
-        .plugin(
-            tauri_plugin_window_state::Builder::default()
-                .with_state_flags(
-                    StateFlags::POSITION | StateFlags::SIZE | StateFlags::MAXIMIZED,
-                )
-                .skip_initial_state("main")
-                .build(),
-        )
+        .on_window_event(move |window, event| {
+            window_placement::on_window_event(window, event, &event_placement_state);
+        })
         .on_menu_event(|app, event| {
             if event.id() == SAFE_QUIT_MENU_ID {
                 if let Some(window) = app.get_webview_window("main") {
@@ -244,17 +233,16 @@ pub fn run() {
                 }
             }
         })
-        .setup(|app| {
+        .setup(move |app| {
             let version = app.package_info().version.to_string();
             logging::init(app.handle(), &version);
             let main_window = app.get_webview_window("main");
             if let Some(window) = main_window.as_ref() {
-                if let Err(error) = window.restore_state(restore_state_flags()) {
-                    logging::warn(
-                        "window state could not be restored",
-                        json!({ "error": error.to_string() }),
-                    );
-                }
+                window_placement::restore(
+                    app.handle(),
+                    &window.as_ref().window(),
+                    &setup_placement_state,
+                );
             }
             #[cfg(any(target_os = "macos", target_os = "windows"))]
             {
@@ -289,13 +277,19 @@ pub fn run() {
     // lines on exit — warn/error/debug already flush immediately, and the panic
     // hook flushes on a crash.
     let mut shutdown_logged = false;
-    app.run(move |_app, event| {
+    app.run(move |app, event| {
+        if matches!(event, RunEvent::ExitRequested { .. }) {
+            if let Some(window) = app.get_webview_window("main") {
+                window_placement::capture(&window.as_ref().window(), &placement_state);
+            }
+        }
         let ending = matches!(event, RunEvent::ExitRequested { .. } | RunEvent::Exit);
         if ending && !shutdown_logged {
             shutdown_logged = true;
             logging::log_shutdown();
         }
         if matches!(event, RunEvent::Exit) {
+            window_placement::save(app, &placement_state);
             logging::flush();
         }
     });

@@ -1,16 +1,23 @@
 // Contract for the data directory's on-disk filenames.
 //
 // These constants are the single source of truth for what QuickDeck writes into
-// its data directory. This suite pins the volatile UI/window/session state to
-// `state.json` and guards it against silently merging with, or drifting into,
-// the durable `config.json` or the snapshot store.
+// its data directory. This suite pins volatile frontend state to `state.json`
+// and native window state to `window.json`, and guards both against silently
+// merging with the durable `config.json` or the snapshot store.
 
 use quickdeck_lib::backup_store::BACKUPS_DB_FILE_NAME;
-use quickdeck_lib::storage::{CONFIG_FILE_NAME, PANES_FILE_NAME, SNAPSHOTS_DB_FILE_NAME, STATE_FILE_NAME};
+use quickdeck_lib::storage::{
+    CONFIG_FILE_NAME, PANES_FILE_NAME, SNAPSHOTS_DB_FILE_NAME, STATE_FILE_NAME, WINDOW_FILE_NAME,
+};
 
 #[test]
 fn volatile_state_resolves_to_state_json() {
     assert_eq!(STATE_FILE_NAME, "state.json");
+}
+
+#[test]
+fn native_window_state_has_its_own_volatile_state_file() {
+    assert_eq!(WINDOW_FILE_NAME, "window.json");
 }
 
 #[test]
@@ -43,6 +50,9 @@ fn state_is_separate_from_config_and_snapshots() {
     // store — a collision would let throwaway UI state overwrite user settings.
     assert_ne!(STATE_FILE_NAME, CONFIG_FILE_NAME);
     assert_ne!(STATE_FILE_NAME, SNAPSHOTS_DB_FILE_NAME);
+    assert_ne!(WINDOW_FILE_NAME, STATE_FILE_NAME);
+    assert_ne!(WINDOW_FILE_NAME, CONFIG_FILE_NAME);
+    assert_ne!(WINDOW_FILE_NAME, SNAPSHOTS_DB_FILE_NAME);
     assert_ne!(PANES_FILE_NAME, STATE_FILE_NAME);
     assert_ne!(PANES_FILE_NAME, CONFIG_FILE_NAME);
     assert_ne!(CONFIG_FILE_NAME, SNAPSHOTS_DB_FILE_NAME);
@@ -55,13 +65,19 @@ fn backup_store_is_separate_from_the_snapshot_store_and_the_managed_files() {
     assert_ne!(BACKUPS_DB_FILE_NAME, SNAPSHOTS_DB_FILE_NAME);
     assert_ne!(BACKUPS_DB_FILE_NAME, CONFIG_FILE_NAME);
     assert_ne!(BACKUPS_DB_FILE_NAME, STATE_FILE_NAME);
+    assert_ne!(BACKUPS_DB_FILE_NAME, WINDOW_FILE_NAME);
 }
 
 #[test]
 fn no_stale_session_json_name_remains() {
     // The old volatile-state filename is fully retired; nothing should resolve
     // back to it.
-    for name in [STATE_FILE_NAME, CONFIG_FILE_NAME, SNAPSHOTS_DB_FILE_NAME] {
+    for name in [
+        STATE_FILE_NAME,
+        WINDOW_FILE_NAME,
+        CONFIG_FILE_NAME,
+        SNAPSHOTS_DB_FILE_NAME,
+    ] {
         assert_ne!(name, "session.json", "stale session.json name still in use");
     }
 }
