@@ -1,31 +1,10 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { contrast, parseHex, themeBlock, tokenValue, type Rgb } from "../helpers/themeCss";
 
 const css = readFileSync(join(process.cwd(), "src/styles.css"), "utf8");
 const compact = css.replace(/\s+/g, "");
-
-type Rgb = [number, number, number];
-
-function selectorBlock(selector: string): string {
-  const start = css.search(new RegExp(`^${selector.replace(".", "\\.")}\\s*\\{`, "m"));
-  expect(start, `${selector} must exist`).toBeGreaterThanOrEqual(0);
-  const open = css.indexOf("{", start);
-  const close = css.indexOf("\n}", open);
-  return css.slice(open, close);
-}
-
-function tokenValue(block: string, token: string): string {
-  const match = block.match(new RegExp(`${token.replaceAll("-", "\\-")}\\s*:\\s*([^;]+);`));
-  expect(match, `${token} must be defined`).toBeTruthy();
-  return match![1]!.trim();
-}
-
-function parseHex(value: string): Rgb {
-  const hex = value.match(/^#([0-9a-f]{6})$/i)?.[1];
-  expect(hex, `${value} must be an opaque six-digit hex color`).toBeTruthy();
-  return [0, 2, 4].map((offset) => Number.parseInt(hex!.slice(offset, offset + 2), 16)) as Rgb;
-}
 
 function compositeThumb(value: string, background: Rgb): Rgb {
   const match = value.match(
@@ -37,20 +16,6 @@ function compositeThumb(value: string, background: Rgb): Rgb {
   return foreground.map(
     (channel, index) => channel * alpha + background[index] * (1 - alpha),
   ) as Rgb;
-}
-
-function luminance(rgb: Rgb): number {
-  const [red, green, blue] = rgb.map((channel) => {
-    const value = channel / 255;
-    return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
-  });
-  return 0.2126 * red + 0.7152 * green + 0.0722 * blue;
-}
-
-function contrast(first: Rgb, second: Rgb): number {
-  const a = luminance(first);
-  const b = luminance(second);
-  return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
 }
 
 describe("global scrollbar styling", () => {
@@ -90,14 +55,14 @@ describe("global scrollbar styling", () => {
       "--app-bg",
       "--deck-gutter",
     ];
-    for (const selector of [":root", ":root.dark"]) {
-      const block = selectorBlock(selector);
+    for (const theme of ["light", "dark"] as const) {
+      const block = themeBlock(css, theme);
       const thumb = tokenValue(block, "--scrollbar-thumb");
       for (const surfaceToken of surfaceTokens) {
         const background = parseHex(tokenValue(block, surfaceToken));
         expect(
           contrast(compositeThumb(thumb, background), background),
-          `${selector} ${surfaceToken}`,
+          `${theme} ${surfaceToken}`,
         ).toBeGreaterThanOrEqual(3);
       }
     }

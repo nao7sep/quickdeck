@@ -28,9 +28,41 @@ describe("getFocusableElements", () => {
     // the tabindex=-1 div.
     expect(getFocusableElements(surface).length).toBe(4);
   });
+
+  it("keeps only the checked radio of a named group as its tab stop", () => {
+    const surface = buildSurface(`
+      <input type="radio" name="theme" value="system" />
+      <input type="radio" name="theme" value="light" />
+      <input type="radio" name="theme" value="dark" checked />
+      <input type="checkbox" />
+    `);
+
+    expect(getFocusableElements(surface).map((element) => (element as HTMLInputElement).value)).toEqual([
+      "dark",
+      "on",
+    ]);
+  });
+
+  it("keeps the first radio of a group with nothing checked", () => {
+    const surface = buildSurface(`
+      <input type="radio" name="theme" value="system" />
+      <input type="radio" name="theme" value="light" />
+    `);
+
+    expect(getFocusableElements(surface)).toEqual([surface.querySelector('[value="system"]')]);
+  });
 });
 
 describe("resolveInitialFocus", () => {
+  it("lands on the checked radio when a radio group leads the form", () => {
+    const surface = buildSurface(`
+      <button data-modal-close>x</button>
+      <input type="radio" name="theme" value="system" />
+      <input type="radio" name="theme" value="dark" checked />
+    `);
+    expect(resolveInitialFocus(surface)).toBe(surface.querySelector('[value="dark"]'));
+  });
+
   it("prefers the first focusable that is not the close button", () => {
     const surface = buildSurface(`<button data-modal-close>x</button><input id="first" /><button>save</button>`);
     expect(resolveInitialFocus(surface)).toBe(surface.querySelector("#first"));

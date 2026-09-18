@@ -2,7 +2,7 @@ import type { AppSettings, Pane } from "../types";
 import { randomPaneColor } from "../utils/paneColors";
 
 export const defaultSettings: AppSettings = {
-  dark: false,
+  theme: "system",
   zen: false,
   topmost: false,
   uiFontFamily: "",

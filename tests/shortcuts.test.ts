@@ -9,8 +9,6 @@ function key(k: string, mods: Mods = {}): KeyboardEvent {
 
 describe("matchesShortcut", () => {
   it("matches toggle shortcuts case-insensitively with either primary modifier", () => {
-    expect(matchesShortcut(key("d", { ctrlKey: true }), "toggleDark")).toBe(true);
-    expect(matchesShortcut(key("D", { metaKey: true }), "toggleDark")).toBe(true);
     expect(matchesShortcut(key("k", { ctrlKey: true }), "toggleZen")).toBe(true);
     expect(matchesShortcut(key("K", { metaKey: true }), "toggleZen")).toBe(true);
     expect(matchesShortcut(key("t", { ctrlKey: true }), "toggleTopmost")).toBe(true);
@@ -69,11 +67,15 @@ describe("matchesShortcut", () => {
 });
 
 describe("shortcutDefinitions", () => {
-  it("lists the toggles in dark -> zen -> topmost order", () => {
+  it("lists the toggles in zen -> topmost order", () => {
     const toggles = shortcutDefinitions
       .map((s) => s.id)
-      .filter((id) => id === "toggleDark" || id === "toggleZen" || id === "toggleTopmost");
-    expect(toggles).toEqual(["toggleDark", "toggleZen", "toggleTopmost"]);
+      .filter((id) => id === "toggleZen" || id === "toggleTopmost");
+    expect(toggles).toEqual(["toggleZen", "toggleTopmost"]);
+  });
+
+  it("offers no theme shortcut; the theme changes only in Settings", () => {
+    expect(shortcutDefinitions.some((s) => /theme|dark/i.test(s.description))).toBe(false);
   });
 
   it("has unique descriptions, since the modal uses them as render keys", () => {

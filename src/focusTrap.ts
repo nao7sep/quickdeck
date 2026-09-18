@@ -14,8 +14,24 @@ const FOCUSABLE_SELECTOR = [
   '[tabindex]:not([tabindex="-1"])',
 ].join(",");
 
+// A named radio group is one tab stop — its checked radio, or its first radio
+// when none is checked — because Tab skips the rest of the group and arrow keys
+// move within it. Its other radios are therefore neither initial-focus nor wrap
+// targets.
 export function getFocusableElements(container: HTMLElement): HTMLElement[] {
-  return Array.from(container.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR));
+  const candidates = Array.from(container.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR));
+  return candidates.filter((element) => {
+    if (!isNamedRadio(element)) return true;
+    const group = candidates.filter(
+      (other): other is HTMLInputElement =>
+        isNamedRadio(other) && other.name === element.name && other.form === element.form,
+    );
+    return element === (group.find((radio) => radio.checked) ?? group[0]);
+  });
+}
+
+function isNamedRadio(element: HTMLElement): element is HTMLInputElement {
+  return element instanceof HTMLInputElement && element.type === "radio" && element.name !== "";
 }
 
 // Where focus should land when the modal opens: the first useful control,

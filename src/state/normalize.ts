@@ -9,6 +9,7 @@ import type { AppSettings, Pane } from "../types";
 import { defaultSettings } from "./defaults";
 import { randomPaneColor } from "../utils/paneColors";
 import { singleLine } from "../utils/textCleanup";
+import { normalizeThemePreference } from "../utils/theme";
 import { ZOOM_DEFAULT, ZOOM_MAX, ZOOM_MIN } from "../utils/zoom";
 
 // Inclusive bounds for the numeric settings. Single source of truth for the
@@ -69,10 +70,10 @@ export function normalizeSettings(settings: AppSettings | null): AppSettings {
 
   // Build the result from known keys only, in the canonical field order.
   // Spreading the loaded object would carry hand-edited or renamed keys (e.g.
-  // a stale "darkMode"/"theme") back into every save; listing fields explicitly
+  // the retired "dark" boolean) back into every save; listing fields explicitly
   // keeps config.json pinned to the current schema.
   return {
-    dark: asBoolean(settings.dark, defaultSettings.dark),
+    theme: normalizeThemePreference(settings.theme),
     zen: asBoolean(settings.zen, defaultSettings.zen),
     topmost: asBoolean(settings.topmost, defaultSettings.topmost),
     // UI font is free text and may be blank (blank = the built-in default stack), so unlike the
@@ -121,7 +122,7 @@ export function settingsShapeIssues(loaded: unknown): string[] {
   const isBool = (v: unknown) => typeof v === "boolean";
   const isNum = (v: unknown) => typeof v === "number" && Number.isFinite(v);
   const isStr = (v: unknown) => typeof v === "string";
-  expect("dark", isBool, "boolean");
+  expect("theme", isStr, "string");
   expect("zen", isBool, "boolean");
   expect("topmost", isBool, "boolean");
   expect("uiFontFamily", isStr, "string");

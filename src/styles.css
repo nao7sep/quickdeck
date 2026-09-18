@@ -7,7 +7,7 @@
   background: transparent;
   /* color-scheme matches the active theme so native UA controls (form widgets,
      the platform's default scroll bar before our styling lands) render in the
-     right palette; :root.dark flips it to dark. Per the window-chrome-conventions
+     right palette; the dark block below flips it. Per the window-chrome-conventions
      a web UI needs BOTH this declaration AND the explicit ::-webkit-scrollbar
      styling below — the declaration alone leaves the platform's default (on some
      platforms thick and square) bar in place. */
@@ -23,8 +23,8 @@
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
 
-  /* Theme tokens — light values. The dark theme (:root.dark) below redefines
-     only the white / near-white surfaces and the dark text that sits on them.
+  /* Theme tokens — light values. The dark block below redefines only the
+     white / near-white surfaces and the dark text that sits on them.
      Already-dark surfaces (status bar, modal header, pane headers, gradient
      buttons) are intentionally not tokenized and stay identical in both.
 
@@ -45,9 +45,12 @@
   --text-heading: #1e1b4b;
   --text-onhover: #312e81;
   --text-muted: #6b7280;
+  /* The outline is the only boundary of a text field on the modal surface, so it
+     holds 3:1 against --surface; the other borders are decorative dividers. */
+  --input-border: #868ba3;
   --accent: #6d28d9;
   --accent-strong: #4c1d95;
-  --danger: #ef4444;
+  --danger: #dc2626;
   --warning: #f59e0b;
   --divider-subtle: rgba(0, 0, 0, 0.07);
   --overlay-hover: rgba(0, 0, 0, 0.08);
@@ -80,47 +83,56 @@
   --pane-bg: #f5f3ff;
 }
 
-:root.dark {
-  color-scheme: dark;
-  --border: #34343f;
-  --border-strong: #45454f;
-  --surface: #20202a;
-  --surface-muted: #282833;
-  --surface-hover: #2e2e3a;
-  --surface-selected: #3a2e5a;
-  --surface-accent: #272033;
-  --app-bg: #141419;
-  --deck-gutter: #4c4c58;
-  --text: #e6e6ee;
-  --text-strong: #c9ccd6;
-  --text-heading: #f1f1f7;
-  --text-onhover: #d7cdff;
-  --text-muted: #989eaa;
-  --accent: #c4b5fd;
-  --accent-strong: #ddd0ff;
-  --divider-subtle: rgba(255, 255, 255, 0.08);
-  --overlay-hover: rgba(255, 255, 255, 0.10);
-  --scrollbar-thumb: rgba(230, 230, 238, 0.55);
-  --scrollbar-thumb-hover: rgba(230, 230, 238, 0.72);
-  --kbd-bg: #2a2438;
-  --kbd-border: #5b4b8a;
-  --kbd-text: #e2d8ff;
-  --toast-warning-bg: linear-gradient(135deg, #2a2410, #241f0e);
-  --toast-warning-border: #6b5d2a;
-  --toast-error-bg: linear-gradient(135deg, #2a1414, #241010);
-  --toast-error-border: #7a3a3a;
-}
+/* The dark theme. prefers-color-scheme follows the native window theme, which
+   the Rust core sets from the saved choice before the window is shown and the
+   app updates on Save — so this block, not page script, decides the palette
+   from the first frame (app-chrome conventions, Theme). */
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --border: #34343f;
+    --border-strong: #45454f;
+    --surface: #20202a;
+    --surface-muted: #282833;
+    --surface-hover: #2e2e3a;
+    --surface-selected: #3a2e5a;
+    --surface-accent: #272033;
+    --app-bg: #141419;
+    --deck-gutter: #4c4c58;
+    --text: #e6e6ee;
+    --text-strong: #c9ccd6;
+    --text-heading: #f1f1f7;
+    --text-onhover: #d7cdff;
+    --text-muted: #989eaa;
+    --input-border: #72728a;
+    --accent: #c4b5fd;
+    --danger: #f87171;
+    --accent-strong: #ddd0ff;
+    --divider-subtle: rgba(255, 255, 255, 0.08);
+    --overlay-hover: rgba(255, 255, 255, 0.10);
+    --scrollbar-thumb: rgba(230, 230, 238, 0.55);
+    --scrollbar-thumb-hover: rgba(230, 230, 238, 0.72);
+    --kbd-bg: #2a2438;
+    --kbd-border: #5b4b8a;
+    --kbd-text: #e2d8ff;
+    --toast-warning-bg: linear-gradient(135deg, #2a2410, #241f0e);
+    --toast-warning-border: #6b5d2a;
+    --toast-error-bg: linear-gradient(135deg, #2a1414, #241010);
+    --toast-error-border: #7a3a3a;
+  }
 
-/* Pane bodies carry per-pane near-white tints via inline --pane-bg in light
-   mode. In dark mode a non-active pane uses --pane-bg-dark (the same hue at a
-   dark, low lightness) and the active pane uses a neutral dark surface — the
-   direct analog of light mode, where the active pane is plain white. */
-:root.dark .pane {
-  background: var(--pane-bg-dark, #181820);
-}
+  /* Pane bodies carry per-pane near-white tints via inline --pane-bg in light
+     mode. In dark mode a non-active pane uses --pane-bg-dark (the same hue at a
+     dark, low lightness) and the active pane uses a neutral dark surface — the
+     direct analog of light mode, where the active pane is plain white. The
+     :root prefix outranks the base .pane and .pane-active rules further down. */
+  :root .pane {
+    background: var(--pane-bg-dark, #181820);
+  }
 
-:root.dark .pane-active {
-  background: #20202a;
+  :root .pane-active {
+    background: #20202a;
+  }
 }
 
 * {
@@ -262,7 +274,7 @@ button:disabled {
 /* Status-bar pills/buttons use a colorful palette spaced around the hue wheel
    so that no two adjacent items share a similar color. Left to right the
    possible run is: panes (blue) · snapshots (fuchsia) · snapshot-saved (green)
-   · Light/Dark (amber) · Zen (purple) · Topmost (cyan) · save state · menu
+   · Zen (purple) · Topmost (cyan) · save state · menu
    (emerald). The save-state pill is the one exception — it is a status signal,
    so it keeps its semantic colors (neutral / amber / red). */
 
@@ -286,11 +298,6 @@ button:disabled {
   color: #e9d5ff;
 }
 
-.statusThemeToggle {
-  background: rgba(245, 158, 11, 0.40);
-  color: #fde68a;
-}
-
 .statusBadgeButton {
   border: 0;
   transition: background 120ms;
@@ -302,10 +309,6 @@ button:disabled {
 
 .statusBadge-zen.statusBadgeButton:hover {
   background: rgba(168, 85, 247, 0.62);
-}
-
-.statusThemeToggle:hover {
-  background: rgba(245, 158, 11, 0.58);
 }
 
 @keyframes snapshotFlash {
@@ -964,7 +967,7 @@ button:disabled {
 .searchBox input {
   width: 100%;
   min-height: 36px;
-  border: 1.5px solid var(--border);
+  border: 1.5px solid var(--input-border);
   border-radius: 8px;
   background: var(--surface);
   color: var(--text);
@@ -1010,6 +1013,43 @@ button:disabled {
 .checkboxRow input[type="checkbox"] {
   width: 16px;
   height: 16px;
+  accent-color: #7c3aed;
+}
+
+/* A fieldset-based radio group styled like the form's other labelled fields. */
+.radioGroup {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.radioGroup legend {
+  margin-bottom: 6px;
+  padding: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
+.radioGroupOptions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+}
+
+.radioRow {
+  display: flex !important;
+  align-items: center;
+  gap: 8px !important;
+}
+
+.radioRow input[type="radio"] {
+  width: 16px;
+  height: 16px;
+  margin: 0;
   accent-color: #7c3aed;
 }
 
@@ -1252,7 +1292,7 @@ kbd {
 .toastViewport {
   position: fixed;
   right: 16px;
-  /* The gradient status bar contains live theme/zen/topmost/menu controls.
+  /* The gradient status bar contains live zen/topmost/menu controls.
      Anchor retained app results above its reserved track, never over it. */
   bottom: calc(var(--status-bar-height) + 16px);
   z-index: var(--z-toast);

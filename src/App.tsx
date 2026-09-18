@@ -26,6 +26,7 @@ import { SettingsModal } from "./components/SettingsModal";
 import { ShortcutsModal } from "./components/ShortcutsModal";
 import { ToastViewport } from "./components/ToastViewport";
 import { matchesShortcut } from "./shortcuts";
+import { applyWindowTheme } from "./services/windowTheme";
 import { isEditableTarget, shadowsMacTextEditing } from "./utils/shortcuts";
 import { isComposingEvent } from "./hooks/useComposing";
 import { logError, logWarn, serializeError } from "./services/logger";
@@ -94,10 +95,6 @@ export function App() {
     setOpenModal(modal);
   }, []);
 
-  const toggleDark = useCallback(() => {
-    updateSettings({ ...settings, dark: !settings.dark });
-  }, [settings, updateSettings]);
-
   const toggleTopmost = useCallback(() => {
     updateSettings({ ...settings, topmost: !settings.topmost });
   }, [settings, updateSettings]);
@@ -106,22 +103,21 @@ export function App() {
     updateSettings({ ...settings, zen: !settings.zen });
   }, [settings, updateSettings]);
 
-  // Apply the dark theme by toggling a class on the document root, which flips
-  // the CSS custom-property tokens defined in styles.css. Also sync the native
-  // window theme so the OS title bar (and the window backing shown briefly while
-  // resizing) matches, rather than staying light.
+  // The window theme is the one theme authority: it paints the title bar, and the
+  // page's tokens follow it through prefers-color-scheme. The Rust core already
+  // applied the saved choice before showing the window, so nothing is sent until
+  // the settings have loaded; sending the pre-load default would briefly replace
+  // an explicit Light or Dark with System.
   useEffect(() => {
-    document.documentElement.classList.toggle("dark", settings.dark);
-    if (!isTauri()) return undefined;
+    if (!isTauri() || loadStatus !== "ready") return undefined;
 
     let current = true;
-    void getCurrentWindow()
-      .setTheme(settings.dark ? "dark" : "light")
+    void applyWindowTheme(settings.theme)
       .then(() => {
         if (current) setThemeApplicationFailed(false);
       })
       .catch((error) => {
-        logWarn("set window theme failed", { dark: settings.dark, error: serializeError(error) });
+        logWarn("set window theme failed", { theme: settings.theme, error: serializeError(error) });
         if (current) {
           setThemeApplicationFailed(true);
         }
@@ -130,7 +126,7 @@ export function App() {
     return () => {
       current = false;
     };
-  }, [settings.dark]);
+  }, [loadStatus, settings.theme]);
 
   // Apply zoom level to the Tauri webview whenever it changes.
   useEffect(() => {
@@ -184,7 +180,6 @@ export function App() {
     activePaneId,
     panes.length,
     saveState,
-    settings.dark,
     settings.topmost,
     settings.uiFontFamily,
     settings.zen,
@@ -375,11 +370,6 @@ export function App() {
         openMenuModal("shortcuts");
       }
 
-      if (matchesShortcut(event, "toggleDark")) {
-        event.preventDefault();
-        toggleDark();
-      }
-
       if (matchesShortcut(event, "toggleTopmost")) {
         event.preventDefault();
         toggleTopmost();
@@ -404,7 +394,6 @@ export function App() {
     panes,
     setActivePaneId,
     settings,
-    toggleDark,
     toggleTopmost,
     toggleZen,
     updateSettings,
@@ -579,15 +568,6 @@ export function App() {
           {snapshotPulse ? (
             <span className="statusBadge statusBadge-snapshot">Snapshot saved</span>
           ) : null}
-          <button
-            type="button"
-            className="statusBadge statusBadgeButton statusThemeToggle"
-            title={settings.dark ? "Switch to light theme" : "Switch to dark theme"}
-            aria-pressed={settings.dark}
-            onClick={toggleDark}
-          >
-            {settings.dark ? "Dark" : "Light"}
-          </button>
           {settings.zen ? (
             <button
               type="button"

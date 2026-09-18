@@ -1,7 +1,6 @@
 import { hasMod, isApplePlatform, primaryModWord } from "./utils/shortcuts";
 
 export type ShortcutId =
-  | "toggleDark"
   | "toggleZen"
   | "toggleTopmost"
   | "addPane"
@@ -62,11 +61,6 @@ export const shortcutDefinitions: ShortcutDefinition[] = [
     description: "Move pane right",
   },
   {
-    id: "toggleDark",
-    keys: `${mod}+D`,
-    description: "Toggle dark theme",
-  },
-  {
     id: "toggleZen",
     keys: `${mod}+K`,
     description: "Toggle zen mode",
@@ -107,10 +101,6 @@ export const shortcutDefinitions: ShortcutDefinition[] = [
 
 export function matchesShortcut(event: KeyboardEvent, id: ShortcutId): boolean {
   const commandOrControl = hasMod(event);
-
-  if (id === "toggleDark") {
-    return commandOrControl && !event.shiftKey && event.key.toLowerCase() === "d";
-  }
 
   if (id === "toggleZen") {
     return commandOrControl && !event.shiftKey && event.key.toLowerCase() === "k";

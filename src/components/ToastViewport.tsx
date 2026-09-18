@@ -29,7 +29,7 @@ export function ToastViewport({
     appChromeResults.push({
       id: THEME_APPLICATION_FAILURE_ID,
       kind: "error",
-      message: "Window theme could not be applied. Try switching themes again.",
+      message: "The theme could not be applied. Try saving it again in Settings.",
     });
   }
   if (zoomApplicationFailed) {

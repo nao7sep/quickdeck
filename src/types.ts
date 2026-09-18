@@ -15,8 +15,11 @@ export type SaveState = "saved" | "saving" | "unsaved" | "error";
 // with default state.
 export type LoadStatus = "loading" | "ready" | "failed";
 
+// The saved appearance choice. System follows the OS appearance.
+export type ThemePreference = "system" | "light" | "dark";
+
 export type AppSettings = {
-  dark: boolean;
+  theme: ThemePreference;
   zen: boolean;
   topmost: boolean;
   // UI (chrome) font family. Family only; blank = the built-in default stack (the styles.css

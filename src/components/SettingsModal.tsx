@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { useAppState } from "../state/AppStateContext";
 import type { AppSettings } from "../types";
 import { SETTINGS_BOUNDS, isSettingsDraftValid, normalizeSettings } from "../state/normalize";
+import { THEME_PREFERENCES } from "../utils/theme";
 import { ConfirmCloseModal } from "./ConfirmCloseModal";
 import { ModalBase } from "./ModalBase";
 
@@ -66,14 +67,26 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
         }
       >
         <div className="formGrid">
-          <label className="checkboxRow">
-            <input
-              type="checkbox"
-              checked={draft.dark}
-              onChange={(event) => setField("dark", event.target.checked)}
-            />
-            <span>Dark theme</span>
-          </label>
+          {/* A native radio group: one tab stop, arrow keys move and select
+              (composite-control conventions). Applied on Save like every other
+              field here. */}
+          <fieldset className="radioGroup">
+            <legend>Theme</legend>
+            <div className="radioGroupOptions">
+              {THEME_PREFERENCES.map(({ value, label }) => (
+                <label className="radioRow" key={value}>
+                  <input
+                    type="radio"
+                    name="theme"
+                    value={value}
+                    checked={draft.theme === value}
+                    onChange={() => setField("theme", value)}
+                  />
+                  <span>{label}</span>
+                </label>
+              ))}
+            </div>
+          </fieldset>
           <label className="checkboxRow">
             <input
               type="checkbox"

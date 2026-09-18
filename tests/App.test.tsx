@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   appState: {} as Record<string, unknown>,
-  setTheme: vi.fn<(theme: "dark" | "light") => Promise<void>>(() => Promise.resolve()),
+  applyWindowTheme: vi.fn<(theme: "system" | "light" | "dark") => Promise<void>>(() => Promise.resolve()),
   setZoom: vi.fn<(zoom: number) => Promise<void>>(() => Promise.resolve()),
   setAlwaysOnTop: vi.fn(() => Promise.resolve()),
   setMinSize: vi.fn(() => Promise.resolve()),
@@ -23,7 +23,6 @@ vi.mock("@tauri-apps/api/core", () => ({ isTauri: () => true }));
 vi.mock("@tauri-apps/api/window", () => ({
   currentMonitor: mocks.currentMonitor,
   getCurrentWindow: () => ({
-    setTheme: mocks.setTheme,
     setAlwaysOnTop: mocks.setAlwaysOnTop,
     setMinSize: mocks.setMinSize,
     isMaximized: mocks.isMaximized,
@@ -41,6 +40,9 @@ vi.mock("@tauri-apps/api/window", () => ({
 vi.mock("@tauri-apps/api/webview", () => ({
   getCurrentWebview: () => ({ setZoom: mocks.setZoom }),
 }));
+vi.mock("../src/services/windowTheme", () => ({
+  applyWindowTheme: mocks.applyWindowTheme,
+}));
 vi.mock("../src/services/logger", () => ({
   logError: vi.fn(),
   logWarn: mocks.logWarn,
@@ -57,9 +59,8 @@ afterEach(async () => {
   if (root !== null) await act(async () => root?.unmount());
   root = null;
   document.body.innerHTML = "";
-  document.documentElement.classList.remove("dark");
-  mocks.setTheme.mockReset();
-  mocks.setTheme.mockResolvedValue();
+  mocks.applyWindowTheme.mockReset();
+  mocks.applyWindowTheme.mockResolvedValue();
   mocks.setZoom.mockReset();
   mocks.setZoom.mockResolvedValue();
   mocks.setAlwaysOnTop.mockReset();
@@ -88,7 +89,7 @@ function createAppState() {
     loadStatus: "ready",
     saveState: "saved",
     settings: {
-      dark: false,
+      theme: "system",
       zen: false,
       topmost: false,
       uiFontFamily: "",
@@ -144,10 +145,48 @@ describe("App window-chrome results", () => {
     expect(mocks.setMinSize).toHaveBeenCalledOnce();
   });
 
+  it("applies the theme only once settings have loaded, then on every change", async () => {
+    const state = createAppState();
+    mocks.appState = { ...state, loadStatus: "loading" };
+    const container = document.createElement("div");
+    document.body.append(container);
+    root = createRoot(container);
+    await act(async () => root?.render(<App />));
+    await flushEffects();
+
+    // The Rust core applied the saved theme before showing the window; the
+    // pre-load default must not replace it.
+    expect(mocks.applyWindowTheme).not.toHaveBeenCalled();
+
+    mocks.appState = { ...state, settings: { ...state.settings, theme: "dark" } };
+    await act(async () => root?.render(<App />));
+    await flushEffects();
+    expect(mocks.applyWindowTheme).toHaveBeenLastCalledWith("dark");
+
+    mocks.appState = { ...state, settings: { ...state.settings, theme: "system" } };
+    await act(async () => root?.render(<App />));
+    await flushEffects();
+    expect(mocks.applyWindowTheme).toHaveBeenLastCalledWith("system");
+    expect(mocks.applyWindowTheme).toHaveBeenCalledTimes(2);
+  });
+
+  it("offers no theme control outside Settings", async () => {
+    mocks.appState = createAppState();
+    const container = document.createElement("div");
+    document.body.append(container);
+    root = createRoot(container);
+    await act(async () => root?.render(<App />));
+    await flushEffects();
+
+    const labels = Array.from(document.querySelectorAll(".appStatusBar button"))
+      .map((button) => `${button.textContent} ${button.getAttribute("title") ?? ""}`);
+    expect(labels.some((label) => /theme|light|dark/i.test(label))).toBe(false);
+  });
+
   it("keeps theme and zoom failures independent through dismissal and matching retries", async () => {
     const state = createAppState();
     mocks.appState = state;
-    mocks.setTheme.mockRejectedValueOnce(new Error("theme unavailable"));
+    mocks.applyWindowTheme.mockRejectedValueOnce(new Error("theme unavailable"));
     mocks.setZoom.mockRejectedValueOnce(new Error("zoom unavailable"));
 
     const container = document.createElement("div");
@@ -159,36 +198,36 @@ describe("App window-chrome results", () => {
     const alertText = () => Array.from(document.querySelectorAll('[role="alert"]'))
       .map((alert) => alert.textContent ?? "");
     expect(alertText()).toEqual(expect.arrayContaining([
-      expect.stringContaining("Window theme could not be applied"),
+      expect.stringContaining("The theme could not be applied"),
       expect.stringContaining("Zoom could not be applied"),
     ]));
 
     const themeAlert = Array.from(document.querySelectorAll('[role="alert"]')).find(
-      (alert) => alert.textContent?.includes("Window theme could not be applied"),
+      (alert) => alert.textContent?.includes("The theme could not be applied"),
     );
     const themeDismiss = themeAlert?.querySelector("button");
     if (!(themeDismiss instanceof HTMLButtonElement)) throw new Error("Missing theme dismiss button");
     await act(async () => themeDismiss.click());
-    expect(alertText().some((text) => text.includes("Window theme"))).toBe(false);
+    expect(alertText().some((text) => text.includes("The theme could not"))).toBe(false);
     expect(alertText().some((text) => text.includes("Zoom could not"))).toBe(true);
 
-    mocks.setTheme.mockRejectedValueOnce(new Error("theme still unavailable"));
+    mocks.applyWindowTheme.mockRejectedValueOnce(new Error("theme still unavailable"));
     mocks.setZoom.mockResolvedValueOnce();
     mocks.appState = {
       ...state,
-      settings: { ...state.settings, dark: true },
+      settings: { ...state.settings, theme: "dark" },
       zoomLevel: 1.1,
     };
     await act(async () => root?.render(<App />));
     await flushEffects();
 
-    expect(alertText().some((text) => text.includes("Window theme could not"))).toBe(true);
+    expect(alertText().some((text) => text.includes("The theme could not"))).toBe(true);
     expect(alertText().some((text) => text.includes("Zoom could not"))).toBe(false);
 
-    mocks.setTheme.mockResolvedValueOnce();
+    mocks.applyWindowTheme.mockResolvedValueOnce();
     mocks.appState = {
       ...mocks.appState,
-      settings: { ...state.settings, dark: false },
+      settings: { ...state.settings, theme: "light" },
     };
     await act(async () => root?.render(<App />));
     await flushEffects();
@@ -199,7 +238,7 @@ describe("App window-chrome results", () => {
   it("retains always-on-top failure until dismissal or a matching setting succeeds", async () => {
     const state = createAppState();
     mocks.appState = state;
-    mocks.setTheme.mockResolvedValue();
+    mocks.applyWindowTheme.mockResolvedValue();
     mocks.setZoom.mockResolvedValue();
     mocks.setAlwaysOnTop.mockRejectedValueOnce(new Error("EACCES /private/tmp/TOPMOST"));
     const container = document.createElement("div");

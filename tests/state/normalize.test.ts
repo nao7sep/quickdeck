@@ -70,19 +70,19 @@ describe("normalizeSettings", () => {
   it("drops unknown keys not in the schema", () => {
     const result = normalizeSettings({
       ...defaultSettings,
+      dark: true,
       darkMode: true,
-      theme: "light",
       uiZoomPercent: 69,
     } as unknown as AppSettings);
+    expect(result).not.toHaveProperty("dark");
     expect(result).not.toHaveProperty("darkMode");
-    expect(result).not.toHaveProperty("theme");
     expect(result).not.toHaveProperty("uiZoomPercent");
     expect(Object.keys(result).sort()).toEqual(Object.keys(defaultSettings).sort());
   });
 
-  it("emits keys in canonical order (dark, zen, topmost first)", () => {
+  it("emits keys in canonical order (theme, zen, topmost first)", () => {
     expect(Object.keys(normalizeSettings({ ...defaultSettings }))).toEqual([
-      "dark",
+      "theme",
       "zen",
       "topmost",
       "uiFontFamily",
@@ -99,14 +99,24 @@ describe("normalizeSettings", () => {
   });
 
   it("coerces the boolean toggles and falls back for non-booleans", () => {
-    expect(normalizeSettings({ ...defaultSettings, dark: true }).dark).toBe(true);
+    expect(normalizeSettings({ ...defaultSettings, zen: true }).zen).toBe(true);
     const bad = normalizeSettings({
       ...defaultSettings,
-      dark: "yes",
+      zen: "yes",
       topmost: 1,
     } as unknown as AppSettings);
-    expect(bad.dark).toBe(defaultSettings.dark);
+    expect(bad.zen).toBe(defaultSettings.zen);
     expect(bad.topmost).toBe(defaultSettings.topmost);
+  });
+
+  it("defaults the theme to System and keeps a saved Light or Dark", () => {
+    expect(defaultSettings.theme).toBe("system");
+    expect(normalizeSettings({ ...defaultSettings, theme: "dark" }).theme).toBe("dark");
+    const retired = normalizeSettings({ ...defaultSettings, theme: "sepia" } as unknown as AppSettings);
+    expect(retired.theme).toBe("system");
+    const absent = { ...defaultSettings } as Partial<AppSettings>;
+    delete absent.theme;
+    expect(normalizeSettings(absent as AppSettings).theme).toBe("system");
   });
 
   it("falls back for an empty or non-string font family", () => {
@@ -297,7 +307,9 @@ describe("settingsShapeIssues", () => {
   });
 
   it("flags wrong-typed present fields — the corrupt branch, never a coerce-and-flush", () => {
-    expect(settingsShapeIssues({ ...defaultSettings, dark: "yes" })).toEqual(["dark is not a boolean"]);
+    expect(settingsShapeIssues({ ...defaultSettings, theme: true })).toEqual(["theme is not a string"]);
+    // The retired "dark" key is an unknown key, dropped rather than treated as corruption.
+    expect(settingsShapeIssues({ ...defaultSettings, dark: true })).toEqual([]);
     expect(settingsShapeIssues({ ...defaultSettings, editorFontSize: "14" })).toContain(
       "editorFontSize is not a finite number",
     );
