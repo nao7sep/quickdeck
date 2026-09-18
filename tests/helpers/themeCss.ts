@@ -1,4 +1,4 @@
-// Pure helpers for reading styles.css's theme token blocks and measuring WCAG
+// Pure helpers for reading styles.css's theme token blocks and measuring
 // contrast. The light tokens live in the top-level :root block; the dark tokens
 // live in the :root block inside @media (prefers-color-scheme: dark).
 

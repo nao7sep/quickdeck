@@ -2,7 +2,7 @@
 //
 // Goals:
 //   1. Header colors must read white text comfortably — every color is dark
-//      enough that its WCAG relative luminance stays well below white.
+//      enough that its relative luminance stays well below white.
 //   2. When adding a pane, the new header should be visibly distinct from
 //      ALL existing pane headers, not just the most recent one.
 //

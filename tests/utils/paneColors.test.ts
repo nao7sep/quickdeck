@@ -9,7 +9,7 @@ import {
 
 const HEX = /^#[0-9a-f]{6}$/;
 
-// WCAG relative luminance from a #rrggbb string.
+// Relative luminance from a #rrggbb string.
 function relativeLuminance(hex: string): number {
   const int = parseInt(hex.slice(1), 16);
   const channels = [(int >> 16) & 0xff, (int >> 8) & 0xff, int & 0xff].map((v) => {
