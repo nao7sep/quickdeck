@@ -120,6 +120,13 @@ describe("normalizeSettings", () => {
     expect(normalizeSettings(absent as AppSettings).theme).toBe("system");
   });
 
+  it("reads the old bare monospace default as the current default", () => {
+    expect(normalizeSettings({ ...defaultSettings, editorFontFamily: "monospace" }).editorFontFamily).toBe(
+      defaultSettings.editorFontFamily,
+    );
+    expect(normalizeSettings({ ...defaultSettings, editorFontFamily: "Courier New" }).editorFontFamily).toBe("Courier New");
+  });
+
   it("falls back for an empty or non-string font family", () => {
     expect(normalizeSettings({ ...defaultSettings, editorFontFamily: "   " }).editorFontFamily).toBe(
       defaultSettings.editorFontFamily,

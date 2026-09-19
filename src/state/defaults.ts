@@ -7,7 +7,7 @@ export const defaultSettings: AppSettings = {
   zen: false,
   topmost: false,
   uiFontFamily: "",
-  editorFontFamily: "monospace",
+  editorFontFamily: 'ui-monospace, "Menlo", "Consolas", monospace',
   editorFontSize: 14,
   editorLineHeight: 1.6,
   editorPadding: 14,

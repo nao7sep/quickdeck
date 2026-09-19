@@ -84,8 +84,12 @@ export function normalizeSettings(settings: AppSettings | null): AppSettings {
       typeof settings.uiFontFamily === "string"
         ? singleLine(settings.uiFontFamily)
         : defaultSettings.uiFontFamily,
+    // A bare "monospace" was the old default and is Courier in the macOS webview, so it reads
+    // as the current default rather than a choice.
     editorFontFamily:
-      typeof settings.editorFontFamily === "string" && singleLine(settings.editorFontFamily).length > 0
+      typeof settings.editorFontFamily === "string"
+        && singleLine(settings.editorFontFamily).length > 0
+        && singleLine(settings.editorFontFamily) !== "monospace"
         ? singleLine(settings.editorFontFamily)
         : defaultSettings.editorFontFamily,
     editorFontSize: clampSetting(settings.editorFontSize, "editorFontSize"),

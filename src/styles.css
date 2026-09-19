@@ -15,9 +15,8 @@
   /* UI (chrome) font. The Settings "UI font" field overrides this variable at runtime with a
      verbatim, engine-resolved family string; blank reverts to this default. Family only — window
      zoom (Cmd/Ctrl ±) handles UI sizing. The pane editor uses its own editorFontFamily (content). */
-  --font-ui:
-    system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
-    "Helvetica Neue", Arial, sans-serif;
+  --font-ui: system-ui, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, "Menlo", "Consolas", monospace;
   font-family: var(--font-ui);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
@@ -1193,7 +1192,7 @@ kbd {
 }
 
 .aboutDataPath {
-  font-family: monospace;
+  font-family: var(--font-mono);
   font-size: 11px;
   color: var(--text-muted);
   word-break: break-all;
