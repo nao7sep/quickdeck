@@ -15,7 +15,6 @@
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.test.json",
     "test": "vitest run",
     "check": "npm run typecheck && npm test && cargo test --manifest-path src-tauri/Cargo.toml",
-    "check:full": "npm run check",
     "check:release-tag": "node scripts/check-release-tag.mjs",
     "test:coverage": "vitest run --coverage"
   },
