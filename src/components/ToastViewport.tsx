@@ -35,6 +35,7 @@ export function ToastViewport({
   if (themeApplicationFailed) {
     appChromeResults.push({
       id: THEME_APPLICATION_FAILURE_ID,
+      owner: THEME_APPLICATION_FAILURE_ID,
       kind: "error",
       message: message("toast.themeFailed"),
     });
@@ -42,6 +43,7 @@ export function ToastViewport({
   if (languageApplicationFailed) {
     appChromeResults.push({
       id: LANGUAGE_APPLICATION_FAILURE_ID,
+      owner: LANGUAGE_APPLICATION_FAILURE_ID,
       kind: "error",
       message: message("toast.languageFailed"),
     });
@@ -49,6 +51,7 @@ export function ToastViewport({
   if (zoomApplicationFailed) {
     appChromeResults.push({
       id: ZOOM_APPLICATION_FAILURE_ID,
+      owner: ZOOM_APPLICATION_FAILURE_ID,
       kind: "error",
       message: message("toast.zoomFailed"),
     });
@@ -56,6 +59,7 @@ export function ToastViewport({
   if (topmostApplicationFailed) {
     appChromeResults.push({
       id: TOPMOST_APPLICATION_FAILURE_ID,
+      owner: TOPMOST_APPLICATION_FAILURE_ID,
       kind: "error",
       message: message("toast.topmostFailed"),
     });
@@ -89,7 +93,7 @@ export function ToastList({ toasts, onDismiss }: { toasts: Toast[]; onDismiss: (
         >
           <span>{text(toast.message)}</span>
           <button className="toastClose" type="button" aria-label={t("common.dismissToast")} onClick={() => onDismiss(toast.id)}>
-            <X size={16} aria-hidden="true" />
+            <X aria-hidden="true" />
           </button>
         </div>
         );

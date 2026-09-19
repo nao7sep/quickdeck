@@ -1303,24 +1303,35 @@ kbd {
   display: grid;
   gap: 8px;
   width: min(360px, calc(100vw - 32px));
+  max-height: calc(100vh - var(--status-bar-height) - 32px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .toast {
   display: flex;
   /* The close mark belongs to the message's first line. Keeping the row
-     top-aligned prevents wrapped copy from dragging the X into its midpoint. */
+     top-aligned and exactly one text line high prevents a one-line notice from
+     acquiring button-only height, while wrapped copy cannot drag the X into
+     its midpoint. */
   align-items: flex-start;
   justify-content: space-between;
-  gap: 12px;
+  gap: 8px;
   border: 1.5px solid var(--border);
   border-radius: 12px;
   background: var(--surface);
-  padding: 10px 14px;
+  padding: 4px 8px 4px 12px;
   box-shadow:
     0 8px 24px rgba(30, 27, 75, 0.14),
     0 2px 6px rgba(30, 27, 75, 0.08);
   font-size: 13px;
   font-weight: 500;
+  line-height: 20px;
+}
+
+.toast > span {
+  min-width: 0;
+  padding-block: 4px;
 }
 
 .toastSeverity {
@@ -1345,13 +1356,18 @@ kbd {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
+  width: 28px;
+  height: 28px;
   border: 0;
   border-radius: 6px;
   background: transparent;
   flex-shrink: 0;
   transition: background 120ms;
+}
+
+.toastClose svg {
+  width: 20px;
+  height: 20px;
 }
 
 .toastClose:hover {

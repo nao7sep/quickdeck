@@ -47,6 +47,7 @@ export type ToastKind = "info" | "warning" | "error";
 
 export type Toast = {
   id: string;
+  owner: string;
   kind: ToastKind;
   message: Message;
 };

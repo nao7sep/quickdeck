@@ -538,7 +538,7 @@ export function App() {
           await appWindow.destroy();
         } catch (error) {
           logError("close window failed", { error: serializeError(error) });
-          showToastRef.current("error", message("toast.closeFailed"));
+          showToastRef.current("window-close:destroy", "error", message("toast.closeFailed"));
         } finally {
           closeInFlight = false;
         }
@@ -546,7 +546,11 @@ export function App() {
         closeUnlisten = unlisten;
       }).catch((error) => {
         logWarn("register close handler failed", { error: serializeError(error) });
-        showToastRef.current("warning", message("toast.closeUnprotected"));
+        showToastRef.current(
+          "window-close:registration",
+          "warning",
+          message("toast.closeUnprotected"),
+        );
       });
     }
 

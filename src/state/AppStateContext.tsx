@@ -91,7 +91,7 @@ type AppStateContextValue = {
   saveNow: () => Promise<void>;
   recordSnapshot: (paneId: string, trigger: SnapshotTrigger, content: string) => void;
   snapshotAllPanes: (trigger: SnapshotTrigger) => Promise<void>;
-  showToast: (kind: ToastKind, message: Message) => void;
+  showToast: (owner: string, kind: ToastKind, message: Message) => void;
   dismissToast: (toastId: string) => void;
   showBlockingError: (title: Message, message: Message) => void;
   dismissBlockingError: () => void;
@@ -145,9 +145,12 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     return panes.find((pane) => pane.id === activePaneId) ?? panes[0];
   }, [activePaneId, panes]);
 
-  const showToast = useCallback((kind: ToastKind, text: Message) => {
+  const showToast = useCallback((owner: string, kind: ToastKind, text: Message) => {
     const id = nanoid();
-    setToasts((current) => [...current, { id, kind, message: text }]);
+    setToasts((current) => [
+      ...current.filter((toast) => toast.owner !== owner),
+      { id, owner, kind, message: text },
+    ]);
     const lifetime = toastLifetimeMs(kind);
     if (lifetime !== null) {
       window.setTimeout(() => {
@@ -416,10 +419,10 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         case "blocked-last":
           // Expected, anticipated outcomes surfaced to the user as toasts — not
           // logged incidents.
-          showToast("warning", message("toast.lastPane"));
+          showToast(`pane-delete:${paneId}`, "warning", message("toast.lastPane"));
           return;
         case "blocked-non-empty":
-          showToast("warning", message("toast.nonEmptyPane"));
+          showToast(`pane-delete:${paneId}`, "warning", message("toast.nonEmptyPane"));
           return;
         case "deleted":
           setPanes(outcome.panes);
@@ -468,7 +471,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         })
         .catch((error) => {
           logWarn("snapshot not saved", { trigger, error: serializeError(error) });
-          showToast("warning", message("toast.snapshotFailed"));
+          showToast(`snapshot:${paneId}`, "warning", message("toast.snapshotFailed"));
         });
     },
     [loadStatus, showToast],
