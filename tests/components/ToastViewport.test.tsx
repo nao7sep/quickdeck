@@ -24,9 +24,9 @@ describe("ToastList", () => {
     await act(async () => root?.render(
       <ToastList
         toasts={[
-          { id: "warning", owner: "snapshot:pane-1", kind: "warning", message: message("toast.snapshotFailed") },
+          { id: "warning", owner: "snapshot", kind: "warning", message: message("toast.snapshotFailed") },
           { id: "error", owner: "window-close:destroy", kind: "error", message: message("toast.closeFailed") },
-          { id: "info", owner: "pane-delete:pane-1", kind: "info", message: message("toast.lastPane") },
+          { id: "info", owner: "pane-delete", kind: "info", message: message("toast.lastPane") },
         ]}
         onDismiss={vi.fn()}
       />,

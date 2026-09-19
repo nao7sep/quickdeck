@@ -418,11 +418,13 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
           return;
         case "blocked-last":
           // Expected, anticipated outcomes surfaced to the user as toasts — not
-          // logged incidents.
-          showToast(`pane-delete:${paneId}`, "warning", message("toast.lastPane"));
+          // logged incidents. The messages do not name a pane, so the owner is the
+          // operation: a later blocked delete of any pane supersedes the notice
+          // instead of stacking copies nobody can tell apart.
+          showToast("pane-delete", "warning", message("toast.lastPane"));
           return;
         case "blocked-non-empty":
-          showToast(`pane-delete:${paneId}`, "warning", message("toast.nonEmptyPane"));
+          showToast("pane-delete", "warning", message("toast.nonEmptyPane"));
           return;
         case "deleted":
           setPanes(outcome.panes);
@@ -471,7 +473,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         })
         .catch((error) => {
           logWarn("snapshot not saved", { trigger, error: serializeError(error) });
-          showToast(`snapshot:${paneId}`, "warning", message("toast.snapshotFailed"));
+          // One owner for every pane: the message cannot say which pane failed.
+          showToast("snapshot", "warning", message("toast.snapshotFailed"));
         });
     },
     [loadStatus, showToast],

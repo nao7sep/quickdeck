@@ -7,6 +7,7 @@ import type { LoadedAppData } from "../../src/services/persistence";
 
 const persistence = vi.hoisted(() => ({
   loadAppData: vi.fn(),
+  createSnapshot: vi.fn(),
 }));
 
 vi.mock("../../src/services/persistence", async (importOriginal) => {
@@ -16,6 +17,7 @@ vi.mock("../../src/services/persistence", async (importOriginal) => {
   return {
     ...original,
     loadAppData: persistence.loadAppData,
+    createSnapshot: persistence.createSnapshot,
     countSnapshots: vi.fn(async () => 0),
   };
 });
@@ -80,9 +82,50 @@ describe("operational toast ownership", () => {
 
     expect(latestState!.toasts).toHaveLength(1);
     expect(latestState!.toasts[0]).toMatchObject({
-      owner: `pane-delete:${paneId}`,
+      owner: "pane-delete",
       kind: "warning",
       message: message("toast.lastPane"),
+    });
+  });
+
+  // The messages never name a pane, so per-pane owners would stack identical
+  // cards nobody can tell apart; the later blocked delete supersedes instead.
+  it("keeps one blocked-delete warning across different panes", async () => {
+    await renderState();
+    await act(async () => {
+      latestState!.addPane();
+    });
+    const [first, second] = latestState!.panes;
+    await act(async () => {
+      latestState!.updatePaneContent(first.id, "kept");
+      latestState!.updatePaneContent(second.id, "also kept");
+    });
+
+    await act(async () => {
+      latestState!.deletePane(first.id);
+      latestState!.deletePane(second.id);
+    });
+
+    expect(latestState!.toasts).toHaveLength(1);
+    expect(latestState!.toasts[0]).toMatchObject({
+      owner: "pane-delete",
+      message: message("toast.nonEmptyPane"),
+    });
+  });
+
+  it("keeps one snapshot warning when several panes fail to snapshot", async () => {
+    persistence.createSnapshot.mockRejectedValue(new Error("read-only data folder"));
+    await renderState();
+
+    await act(async () => {
+      latestState!.recordSnapshot("pane-a", "copy", "first");
+      latestState!.recordSnapshot("pane-b", "copy", "second");
+    });
+
+    expect(latestState!.toasts).toHaveLength(1);
+    expect(latestState!.toasts[0]).toMatchObject({
+      owner: "snapshot",
+      message: message("toast.snapshotFailed"),
     });
   });
 
