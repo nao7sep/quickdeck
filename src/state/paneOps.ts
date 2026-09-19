@@ -12,10 +12,10 @@ import { multiline } from "../utils/textCleanup";
 
 // Appends a new pane whose header color is chosen to stay distinct from every
 // existing pane header. The caller supplies the id (generated outside so the
-// caller can also focus the new pane).
-export function appendPane(panes: Pane[], newPaneId: string): Pane[] {
+// caller can also focus the new pane) and the localized default title.
+export function appendPane(panes: Pane[], newPaneId: string, title: string): Pane[] {
   const existingHeaders = panes.map((pane) => pane.headerColor);
-  return [...panes, createDefaultPane(newPaneId, existingHeaders)];
+  return [...panes, createDefaultPane(newPaneId, title, existingHeaders)];
 }
 
 // Moves the pane one slot in the given direction. Returns the same array

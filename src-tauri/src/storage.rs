@@ -52,6 +52,10 @@ pub struct LoadedAppData {
     // Whether developer-only debug logging is on. Set by the command layer
     // (see lib.rs) from logging::debug_enabled(); storage leaves it false.
     pub debug_enabled: bool,
+    // The computer's language and regional locale, read at launch. Set by the
+    // command layer from i18n::LanguageState; storage leaves them empty.
+    pub system_language: String,
+    pub system_locale: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -111,6 +115,8 @@ pub fn load_app_data(app: &AppHandle) -> Result<LoadedAppData, String> {
         panes_error,
         data_dir: data_dir.to_string_lossy().into_owned(),
         debug_enabled: false,
+        system_language: String::new(),
+        system_locale: None,
     })
 }
 

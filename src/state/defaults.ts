@@ -2,6 +2,7 @@ import type { AppSettings, Pane } from "../types";
 import { randomPaneColor } from "../utils/paneColors";
 
 export const defaultSettings: AppSettings = {
+  language: "system",
   theme: "system",
   zen: false,
   topmost: false,
@@ -17,11 +18,17 @@ export const defaultSettings: AppSettings = {
   snapshotSearchPageSize: 25,
 };
 
-export function createDefaultPane(id: string, existingHeaders: ReadonlyArray<string> = []): Pane {
+// `title` is the localized default name for a new pane; once created it is the
+// user's own text and keeps whatever language it was created in.
+export function createDefaultPane(
+  id: string,
+  title: string,
+  existingHeaders: ReadonlyArray<string> = [],
+): Pane {
   const colors = randomPaneColor(existingHeaders);
   return {
     id,
-    title: "New Buffer",
+    title,
     content: "",
     headerColor: colors.header,
     backgroundColor: colors.background,

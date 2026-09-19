@@ -1,6 +1,7 @@
 import React, { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { useI18n } from "../../src/i18n/I18nContext";
 import { AppStateProvider, useAppState } from "../../src/state/AppStateContext";
 import type { LoadedAppData } from "../../src/services/persistence";
 
@@ -32,18 +33,23 @@ function loadedAppData(overrides: Partial<LoadedAppData> = {}): LoadedAppData {
     panesError: null,
     dataDir: "/private/tmp/quickdeck-test",
     debugEnabled: false,
+    systemLanguage: "en",
+    systemLocale: null,
     ...overrides,
   };
 }
 
 function StartupState() {
   const state = useAppState();
+  const { text } = useI18n();
   return (
     <>
       <span data-testid="load-status">{state.loadStatus}</span>
       <span data-testid="save-state">{state.saveState}</span>
-      <span data-testid="load-error">{state.loadError}</span>
-      <span data-testid="blocking-error">{state.blockingError?.message}</span>
+      <span data-testid="load-error">{state.loadError ? text(state.loadError) : null}</span>
+      <span data-testid="blocking-error">
+        {state.blockingError ? text(state.blockingError.message) : null}
+      </span>
     </>
   );
 }
@@ -153,5 +159,82 @@ describe("persistence failure presentation", () => {
     expect(message).not.toContain(".invalid");
     expect(message).not.toContain("HOSTILE-SENTINEL");
     expect(message).not.toContain("EACCES");
+  });
+});
+
+function LanguageProbe() {
+  const { t } = useI18n();
+  const { language } = useAppState();
+  return (
+    <>
+      <span data-testid="language">{language}</span>
+      <span data-testid="settings-title">{t("settings.title")}</span>
+    </>
+  );
+}
+
+async function renderLanguageProbe(): Promise<HTMLElement> {
+  const host = document.createElement("div");
+  document.body.append(host);
+  root = createRoot(host);
+  await act(async () => {
+    root?.render(
+      <AppStateProvider>
+        <LanguageProbe />
+      </AppStateProvider>,
+    );
+  });
+  return host;
+}
+
+describe("interface language", () => {
+  it("speaks the saved language and declares it on the document", async () => {
+    persistence.loadAppData.mockResolvedValueOnce(
+      loadedAppData({ config: { language: "ja" } as LoadedAppData["config"], systemLanguage: "ko" }),
+    );
+
+    const host = await renderLanguageProbe();
+
+    expect(host.querySelector('[data-testid="language"]')?.textContent).toBe("ja");
+    expect(host.querySelector('[data-testid="settings-title"]')?.textContent).toBe("設定");
+    expect(document.documentElement.lang).toBe("ja");
+  });
+
+  it("follows the computer's language under System", async () => {
+    persistence.loadAppData.mockResolvedValueOnce(loadedAppData({ systemLanguage: "ko" }));
+
+    const host = await renderLanguageProbe();
+
+    expect(host.querySelector('[data-testid="language"]')?.textContent).toBe("ko");
+    expect(host.querySelector('[data-testid="settings-title"]')?.textContent).toBe("설정");
+  });
+
+  it("falls back to English for a computer language the core did not resolve", async () => {
+    persistence.loadAppData.mockResolvedValueOnce(loadedAppData({ systemLanguage: "xx" }));
+
+    const host = await renderLanguageProbe();
+
+    expect(host.querySelector('[data-testid="language"]')?.textContent).toBe("en");
+  });
+
+  it("gives the first pane its default title in that language", async () => {
+    persistence.loadAppData.mockResolvedValueOnce(loadedAppData({ systemLanguage: "de" }));
+    let panes: { title: string }[] = [];
+    function PaneProbe() {
+      panes = useAppState().panes;
+      return null;
+    }
+    const host = document.createElement("div");
+    document.body.append(host);
+    root = createRoot(host);
+    await act(async () => {
+      root?.render(
+        <AppStateProvider>
+          <PaneProbe />
+        </AppStateProvider>,
+      );
+    });
+
+    expect(panes.map((pane) => pane.title)).toEqual(["Neuer Puffer"]);
   });
 });

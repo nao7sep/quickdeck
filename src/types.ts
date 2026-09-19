@@ -1,3 +1,6 @@
+import type { LanguagePreference } from "./i18n/languages";
+import type { Message } from "./i18n/translate";
+
 export type SnapshotTrigger = "copy" | "paste" | "cut" | "app_close";
 
 export type Pane = {
@@ -19,6 +22,7 @@ export type LoadStatus = "loading" | "ready" | "failed";
 export type ThemePreference = "system" | "light" | "dark";
 
 export type AppSettings = {
+  language: LanguagePreference;
   theme: ThemePreference;
   zen: boolean;
   topmost: boolean;
@@ -44,12 +48,12 @@ export type ToastKind = "info" | "warning" | "error";
 export type Toast = {
   id: string;
   kind: ToastKind;
-  message: string;
+  message: Message;
 };
 
 export type BlockingError = {
-  title: string;
-  message: string;
+  title: Message;
+  message: Message;
 };
 
 export type TextCounts = {

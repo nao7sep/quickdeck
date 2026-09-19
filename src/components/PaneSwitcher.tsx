@@ -4,6 +4,7 @@ import { ChevronUp } from "lucide-react";
 import type { Pane } from "../types";
 import { nextIndex, verticalTablistDirection } from "../utils/compositeNav";
 import { panePanelDomId, paneTabDomId } from "../utils/paneDomIds";
+import { useI18n } from "../i18n/I18nContext";
 
 type PaneSwitcherProps = {
   panes: Pane[];
@@ -28,6 +29,7 @@ type PaneSwitcherProps = {
  * modal stack.
  */
 export function PaneSwitcher({ panes, activePaneId, onSelect }: PaneSwitcherProps) {
+  const { t } = useI18n();
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
@@ -134,7 +136,7 @@ export function PaneSwitcher({ panes, activePaneId, onSelect }: PaneSwitcherProp
           className="paneSwitcherPanel"
           role="tablist"
           aria-orientation="vertical"
-          aria-label="Switch pane"
+          aria-label={t("pane.switch")}
           onKeyDown={onKeyDown}
         >
           {panes.map((pane, index) => {

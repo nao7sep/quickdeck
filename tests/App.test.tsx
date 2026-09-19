@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   appState: {} as Record<string, unknown>,
   applyWindowTheme: vi.fn<(theme: "system" | "light" | "dark") => Promise<void>>(() => Promise.resolve()),
+  applyLanguage: vi.fn<(language: string) => Promise<void>>(() => Promise.resolve()),
   setZoom: vi.fn<(zoom: number) => Promise<void>>(() => Promise.resolve()),
   setAlwaysOnTop: vi.fn(() => Promise.resolve()),
   setMinSize: vi.fn(() => Promise.resolve()),
@@ -43,6 +44,9 @@ vi.mock("@tauri-apps/api/webview", () => ({
 vi.mock("../src/services/windowTheme", () => ({
   applyWindowTheme: mocks.applyWindowTheme,
 }));
+vi.mock("../src/services/persistence", () => ({
+  applyLanguage: mocks.applyLanguage,
+}));
 vi.mock("../src/services/logger", () => ({
   logError: vi.fn(),
   logWarn: mocks.logWarn,
@@ -61,6 +65,8 @@ afterEach(async () => {
   document.body.innerHTML = "";
   mocks.applyWindowTheme.mockReset();
   mocks.applyWindowTheme.mockResolvedValue();
+  mocks.applyLanguage.mockReset();
+  mocks.applyLanguage.mockResolvedValue();
   mocks.setZoom.mockReset();
   mocks.setZoom.mockResolvedValue();
   mocks.setAlwaysOnTop.mockReset();
@@ -88,7 +94,9 @@ function createAppState() {
     resetCorruptPanes: vi.fn(() => Promise.resolve()),
     loadStatus: "ready",
     saveState: "saved",
+    language: "en",
     settings: {
+      language: "system",
       theme: "system",
       zen: false,
       topmost: false,
@@ -168,6 +176,59 @@ describe("App window-chrome results", () => {
     await flushEffects();
     expect(mocks.applyWindowTheme).toHaveBeenLastCalledWith("system");
     expect(mocks.applyWindowTheme).toHaveBeenCalledTimes(2);
+  });
+
+  it("renders no text until settings have loaded, so the first text is in the saved language", async () => {
+    mocks.appState = { ...createAppState(), loadStatus: "loading" };
+    const container = document.createElement("div");
+    document.body.append(container);
+    root = createRoot(container);
+    await act(async () => root?.render(<App />));
+    await flushEffects();
+
+    expect(container.textContent).toBe("");
+    expect(container.querySelector(".appShell")).not.toBeNull();
+  });
+
+  it("sends the language to the native menu once settings have loaded, then on every change", async () => {
+    const state = createAppState();
+    mocks.appState = { ...state, loadStatus: "loading" };
+    const container = document.createElement("div");
+    document.body.append(container);
+    root = createRoot(container);
+    await act(async () => root?.render(<App />));
+    await flushEffects();
+    expect(mocks.applyLanguage).not.toHaveBeenCalled();
+
+    mocks.appState = state;
+    await act(async () => root?.render(<App />));
+    await flushEffects();
+    expect(mocks.applyLanguage).toHaveBeenLastCalledWith("en");
+
+    mocks.appState = { ...state, language: "ja" };
+    await act(async () => root?.render(<App />));
+    await flushEffects();
+    expect(mocks.applyLanguage).toHaveBeenLastCalledWith("ja");
+    expect(mocks.applyLanguage).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps a native-menu language failure until a later language applies", async () => {
+    const state = createAppState();
+    mocks.appState = state;
+    mocks.applyLanguage.mockRejectedValueOnce(new Error("EACCES /private/tmp/MENU"));
+    const container = document.createElement("div");
+    document.body.append(container);
+    root = createRoot(container);
+    await act(async () => root?.render(<App />));
+    await flushEffects();
+
+    expect(document.body.textContent).toContain("The menu bar language could not be changed");
+    expect(document.body.textContent).not.toContain("/private/tmp");
+
+    mocks.appState = { ...state, language: "de" };
+    await act(async () => root?.render(<App />));
+    await flushEffects();
+    expect(document.body.textContent).not.toContain("The menu bar language could not be changed");
   });
 
   it("offers no theme control outside Settings", async () => {

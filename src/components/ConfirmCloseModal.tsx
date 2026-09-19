@@ -1,3 +1,4 @@
+import { useI18n } from "../i18n/I18nContext";
 import { ModalBase } from "./ModalBase";
 
 type ConfirmCloseModalProps = {
@@ -6,22 +7,23 @@ type ConfirmCloseModalProps = {
 };
 
 export function ConfirmCloseModal({ onCancel, onDiscard }: ConfirmCloseModalProps) {
+  const { t } = useI18n();
   return (
     <ModalBase
-      title="Discard Changes?"
+      title={t("discard.title")}
       onRequestClose={onCancel}
       footer={
         <>
           <button className="secondaryButton" type="button" onClick={onCancel}>
-            Cancel
+            {t("common.cancel")}
           </button>
           <button className="dangerButton" type="button" onClick={onDiscard}>
-            Discard
+            {t("discard.confirm")}
           </button>
         </>
       }
     >
-      <p>This modal has unsaved changes. Closing it will discard them.</p>
+      <p>{t("discard.body")}</p>
     </ModalBase>
   );
 }

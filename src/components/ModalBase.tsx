@@ -4,6 +4,7 @@ import { isTopmostModal, popModal, pushModal } from "../modalStack";
 import { resolveInitialFocus, resolveTrapTarget } from "../focusTrap";
 import { acquireScrollLock, releaseScrollLock } from "../scrollLock";
 import { passiveScrollRegionProps } from "../utils/passiveScroll";
+import { useI18n } from "../i18n/I18nContext";
 
 type ModalBaseProps = {
   title: string;
@@ -24,6 +25,7 @@ export function ModalBase({
   onRequestClose,
   passiveContentLabel,
 }: ModalBaseProps) {
+  const { t } = useI18n();
   const surfaceRef = useRef<HTMLDivElement | null>(null);
   const token = useRef({}).current;
   const titleId = useId();
@@ -113,7 +115,7 @@ export function ModalBase({
           <button
             className="iconButton"
             type="button"
-            aria-label="Close modal"
+            aria-label={t("common.closeModal")}
             data-modal-close
             disabled={closeDisabled}
             onClick={onRequestClose}

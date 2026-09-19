@@ -10,8 +10,8 @@ function pane(id: string, content = ""): Pane {
 }
 
 describe("appendPane", () => {
-  it("adds a new pane with the given id and a fresh color", () => {
-    const result = appendPane([pane("a")], "b");
+  it("adds a new pane with the given id, title and a fresh color", () => {
+    const result = appendPane([pane("a")], "b", "New Buffer");
     expect(result).toHaveLength(2);
     expect(result[1].id).toBe("b");
     expect(result[1].title).toBe("New Buffer");
@@ -85,7 +85,7 @@ describe("adding a pane widens the computed window minimum", () => {
     let panes = [pane("a")];
     let previous = computeWindowMinWidth(panes.length, false);
     for (let i = 0; i < 4; i += 1) {
-      panes = appendPane(panes, `extra-${i}`);
+      panes = appendPane(panes, `extra-${i}`, "New Buffer");
       const current = computeWindowMinWidth(panes.length, false);
       expect(current).toBeGreaterThan(previous);
       previous = current;

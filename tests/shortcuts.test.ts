@@ -86,7 +86,7 @@ describe("shortcutDefinitions", () => {
   it("includes the zoom rows as id-less, display-only entries", () => {
     // Zoom is matched in utils/zoom.ts, not matchesShortcut, so it carries no id.
     const idless = shortcutDefinitions.filter((s) => s.id === undefined).map((s) => s.description);
-    expect(idless).toEqual(["Zoom in", "Zoom out", "Reset zoom"]);
+    expect(idless).toEqual(["shortcuts.zoomIn", "shortcuts.zoomOut", "shortcuts.zoomReset"]);
   });
 
   describe("platform pane-key labels", () => {

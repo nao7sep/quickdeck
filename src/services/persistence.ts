@@ -33,6 +33,10 @@ export type LoadedAppData = {
   dataDir: string;
   // Whether developer-only debug logging is on (resolved by the Rust core).
   debugEnabled: boolean;
+  // The computer's language resolved to a supported tag, and its regional
+  // locale for dates and numbers, both read by the Rust core at launch.
+  systemLanguage: string;
+  systemLocale: string | null;
 };
 
 export type SnapshotWriteInput = {
@@ -87,10 +91,22 @@ export async function loadAppData(): Promise<LoadedAppData> {
       panesError: null,
       dataDir: "Browser preview",
       debugEnabled: import.meta.env.DEV,
+      systemLanguage: "en",
+      systemLocale: null,
     };
   }
 
   return invoke<LoadedAppData>("load_app_data");
+}
+
+// Rebuilds the native menu in the interface language (the Rust core built it in
+// the saved language before the window was shown).
+export async function applyLanguage(language: string): Promise<void> {
+  if (!isTauri()) {
+    return;
+  }
+
+  await invoke("apply_language", { language });
 }
 
 export async function saveConfig(config: AppSettings): Promise<void> {

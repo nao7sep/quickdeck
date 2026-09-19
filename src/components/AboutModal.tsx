@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import { ExternalLink } from "lucide-react";
 import { isTauri } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { useI18n } from "../i18n/I18nContext";
 import { logWarn, serializeError } from "../services/logger";
 import { ModalBase } from "./ModalBase";
 
@@ -13,6 +14,7 @@ const REPO_URL = "https://github.com/nao7sep/quickdeck";
 const ISSUES_URL = "https://github.com/nao7sep/quickdeck/issues";
 
 export function AboutModal({ onClose }: AboutModalProps) {
+  const { t } = useI18n();
   const [repoLinkFailed, setRepoLinkFailed] = useState(false);
   const [issuesLinkFailed, setIssuesLinkFailed] = useState(false);
   const linkAttempts = useRef({ repository: 0, issues: 0 });
@@ -38,19 +40,19 @@ export function AboutModal({ onClose }: AboutModalProps) {
 
   return (
     <ModalBase
-      title="About QuickDeck"
+      title={t("about.title")}
       onRequestClose={onClose}
-      passiveContentLabel="About QuickDeck"
+      passiveContentLabel={t("about.title")}
       footer={
         <button className="secondaryButton" type="button" onClick={onClose}>
-          Close
+          {t("common.close")}
         </button>
       }
     >
       <div className="aboutText">
         <p className="aboutTitle">QuickDeck</p>
-        <p className="aboutVersion">Version {__APP_VERSION__}</p>
-        <p>A local-first multi-pane plain text workspace.</p>
+        <p className="aboutVersion">{t("about.version", { version: __APP_VERSION__ })}</p>
+        <p>{t("about.tagline")}</p>
         <div className="aboutLinks">
           <button
             type="button"
@@ -65,7 +67,7 @@ export function AboutModal({ onClose }: AboutModalProps) {
             className="aboutLinkButton"
             onClick={() => void open("issues", ISSUES_URL, setIssuesLinkFailed)}
           >
-            Report Issue
+            {t("about.reportIssue")}
             <ExternalLink size={12} />
           </button>
         </div>
@@ -73,17 +75,17 @@ export function AboutModal({ onClose }: AboutModalProps) {
           <div className="aboutLinkResults">
             {repoLinkFailed ? (
               <div className="aboutLinkResult" role="alert" aria-atomic="true">
-                <span>Could not open GitHub. Try again.</span>
+                <span>{t("about.linkFailed", { link: "GitHub" })}</span>
               </div>
             ) : null}
             {issuesLinkFailed ? (
               <div className="aboutLinkResult" role="alert" aria-atomic="true">
-                <span>Could not open Report Issue. Try again.</span>
+                <span>{t("about.linkFailed", { link: t("about.reportIssue") })}</span>
               </div>
             ) : null}
           </div>
         ) : null}
-        <p className="aboutMeta">© 2026 Yoshinao Inoguchi · GNU GPL v3 or later</p>
+        <p className="aboutMeta">© 2026 Yoshinao Inoguchi · {t("about.license")}</p>
       </div>
     </ModalBase>
   );

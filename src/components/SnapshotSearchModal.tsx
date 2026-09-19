@@ -6,6 +6,7 @@ import { useAppState } from "../state/AppStateContext";
 import { useComposing, isComposingKeyboardEvent } from "../hooks/useComposing";
 import { ModalBase } from "./ModalBase";
 import { formatSnapshotTimestamp } from "../utils/snapshotTimestamp";
+import { useI18n } from "../i18n/I18nContext";
 import { passiveScrollRegionProps } from "../utils/passiveScroll";
 
 type SnapshotSearchModalProps = {
@@ -14,11 +15,13 @@ type SnapshotSearchModalProps = {
 
 export function SnapshotSearchModal({ onClose }: SnapshotSearchModalProps) {
   const { settings } = useAppState();
+  const i18n = useI18n();
+  const { t } = i18n;
   const [query, setQuery] = useState("");
   const [rows, setRows] = useState<SnapshotSearchRow[]>([]);
   const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
   const composing = useComposing();
   const searchInFlightRef = useRef(false);
 
@@ -33,13 +36,13 @@ export function SnapshotSearchModal({ onClose }: SnapshotSearchModalProps) {
     if (trimmedQuery.length === 0) {
       setRows([]);
       setHasMore(false);
-      setError(null);
+      setFailed(false);
       return;
     }
 
     searchInFlightRef.current = true;
     setLoading(true);
-    setError(null);
+    setFailed(false);
     try {
       const result = await searchSnapshots(
         trimmedQuery,
@@ -52,7 +55,7 @@ export function SnapshotSearchModal({ onClose }: SnapshotSearchModalProps) {
       // Report modal-local failures inline; the modal stays usable, so there is
       // no need to spawn an app-level toast over it.
       logWarn("snapshot search failed", { offset: nextOffset, error: serializeError(err) });
-      setError("Snapshots could not be searched. Try again.");
+      setFailed(true);
       if (nextOffset === 0) {
         setRows([]);
         setHasMore(false);
@@ -65,15 +68,15 @@ export function SnapshotSearchModal({ onClose }: SnapshotSearchModalProps) {
 
   return (
     <ModalBase
-      title="Snapshot Search"
+      title={t("snapshots.title")}
       onRequestClose={onClose}
       footer={
         <>
           <button className="secondaryButton" type="button" onClick={onClose}>
-            Close
+            {t("common.close")}
           </button>
           <button className="primaryButton" type="button" disabled={loading} onClick={() => void runSearch(0)}>
-            {loading ? "Searching" : "Search"}
+            {loading ? t("snapshots.searching") : t("snapshots.search")}
           </button>
         </>
       }
@@ -83,7 +86,7 @@ export function SnapshotSearchModal({ onClose }: SnapshotSearchModalProps) {
           <Search size={18} />
           <input
             type="search"
-            placeholder="Search snapshots"
+            placeholder={t("snapshots.placeholder")}
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             onCompositionStart={composing.handlers.onCompositionStart}
@@ -98,16 +101,16 @@ export function SnapshotSearchModal({ onClose }: SnapshotSearchModalProps) {
         </div>
       </div>
       <div className="snapshotResults">
-        {error ? <p className="errorText" role="alert">{error}</p> : null}
-        {!error && rows.length === 0 ? <p className="mutedText">No snapshot results.</p> : null}
+        {failed ? <p className="errorText" role="alert">{t("snapshots.failed")}</p> : null}
+        {!failed && rows.length === 0 ? <p className="mutedText">{t("snapshots.empty")}</p> : null}
         {rows.map((row) => {
-          const timestamp = formatSnapshotTimestamp(row.createdAtUtc);
+          const timestamp = formatSnapshotTimestamp(row.createdAtUtc, i18n.dateTime);
           return (
             <article className="snapshotResult" key={row.id}>
               <header>
                 <span>{timestamp}</span>
               </header>
-              <pre {...passiveScrollRegionProps(`Snapshot from ${timestamp}`)}>
+              <pre {...passiveScrollRegionProps(t("snapshots.entryLabel", { timestamp }))}>
                 {row.content}
               </pre>
             </article>
@@ -115,7 +118,7 @@ export function SnapshotSearchModal({ onClose }: SnapshotSearchModalProps) {
         })}
         {hasMore ? (
           <button className="secondaryButton loadMoreButton" type="button" disabled={loading} onClick={() => void runSearch(rows.length)}>
-            Load More
+            {t("snapshots.loadMore")}
           </button>
         ) : null}
       </div>

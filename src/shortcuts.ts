@@ -1,3 +1,4 @@
+import type { MessageKey } from "./i18n/catalogues";
 import { hasMod, isApplePlatform, primaryModWord } from "./utils/shortcuts";
 
 export type ShortcutId =
@@ -16,10 +17,12 @@ export type ShortcutId =
 // modal renders this list directly. `id` is present for shortcuts matched by
 // matchesShortcut(); the zoom shortcuts carry no id because they are matched
 // separately in utils/zoom.ts (they accept several keys across keyboard layouts).
+// `keys` stay English in every language (they name the keycaps); the
+// description is a catalogue key.
 export type ShortcutDefinition = {
   id?: ShortcutId;
   keys: string;
-  description: string;
+  description: MessageKey;
 };
 
 // The command modifier word is resolved at runtime from the running platform:
@@ -38,64 +41,64 @@ export const shortcutDefinitions: ShortcutDefinition[] = [
   {
     id: "addPane",
     keys: `${mod}+N`,
-    description: "Add pane",
+    description: "shortcuts.addPane",
   },
   {
     id: "focusPreviousPane",
     keys: `${mod}+${pageUp}`,
-    description: "Focus previous pane",
+    description: "shortcuts.focusPreviousPane",
   },
   {
     id: "focusNextPane",
     keys: `${mod}+${pageDown}`,
-    description: "Focus next pane",
+    description: "shortcuts.focusNextPane",
   },
   {
     id: "movePaneLeft",
     keys: `${mod}+Shift+${pageUp}`,
-    description: "Move pane left",
+    description: "shortcuts.movePaneLeft",
   },
   {
     id: "movePaneRight",
     keys: `${mod}+Shift+${pageDown}`,
-    description: "Move pane right",
+    description: "shortcuts.movePaneRight",
   },
   {
     id: "toggleZen",
     keys: `${mod}+K`,
-    description: "Toggle zen mode",
+    description: "shortcuts.toggleZen",
   },
   {
     id: "toggleTopmost",
     keys: `${mod}+T`,
-    description: "Toggle always on top",
+    description: "shortcuts.toggleTopmost",
   },
   {
     keys: `${mod}+Equal/Plus/Semicolon`,
-    description: "Zoom in",
+    description: "shortcuts.zoomIn",
   },
   {
     keys: `${mod}+Minus`,
-    description: "Zoom out",
+    description: "shortcuts.zoomOut",
   },
   {
     keys: `${mod}+0`,
-    description: "Reset zoom",
+    description: "shortcuts.zoomReset",
   },
   {
     id: "openSettings",
     keys: `${mod}+Comma`,
-    description: "Open settings",
+    description: "shortcuts.openSettings",
   },
   {
     id: "openShortcuts",
     keys: `${mod}+Slash / Question`,
-    description: "Open shortcuts",
+    description: "shortcuts.openShortcuts",
   },
   {
     id: "closeModal",
     keys: "Escape",
-    description: "Close modal",
+    description: "shortcuts.closeModal",
   },
 ];
 

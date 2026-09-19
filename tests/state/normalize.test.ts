@@ -80,8 +80,9 @@ describe("normalizeSettings", () => {
     expect(Object.keys(result).sort()).toEqual(Object.keys(defaultSettings).sort());
   });
 
-  it("emits keys in canonical order (theme, zen, topmost first)", () => {
+  it("emits keys in canonical order (language, theme, zen, topmost first)", () => {
     expect(Object.keys(normalizeSettings({ ...defaultSettings }))).toEqual([
+      "language",
       "theme",
       "zen",
       "topmost",
@@ -254,8 +255,8 @@ describe("SETTINGS_BOUNDS agreement between validation and clamping", () => {
 
 describe("normalizePanes", () => {
   it("returns an empty array for non-array input", () => {
-    expect(normalizePanes(undefined)).toEqual([]);
-    expect(normalizePanes("nope" as unknown as Pane[])).toEqual([]);
+    expect(normalizePanes(undefined, "New Buffer")).toEqual([]);
+    expect(normalizePanes("nope" as unknown as Pane[], "New Buffer")).toEqual([]);
   });
 
   it("drops panes without a usable id", () => {
@@ -263,14 +264,14 @@ describe("normalizePanes", () => {
       { id: "", title: "x", content: "", headerColor: "#aabbcc", backgroundColor: "#112233" },
       { title: "no id" },
     ] as unknown as Pane[];
-    expect(normalizePanes(panes)).toEqual([]);
+    expect(normalizePanes(panes, "New Buffer")).toEqual([]);
   });
 
   it("preserves valid colors and content", () => {
     const panes = [
       { id: "p1", title: "Title", content: "body", headerColor: "#aabbcc", backgroundColor: "#112233" },
     ] as Pane[];
-    expect(normalizePanes(panes)[0]).toEqual({
+    expect(normalizePanes(panes, "New Buffer")[0]).toEqual({
       id: "p1",
       title: "Title",
       content: "body",
@@ -283,17 +284,17 @@ describe("normalizePanes", () => {
     const panes = [
       { id: "p1", title: "T", content: "", headerColor: "red", backgroundColor: "#112233" },
     ] as unknown as Pane[];
-    const pane = normalizePanes(panes)[0];
+    const pane = normalizePanes(panes, "New Buffer")[0];
     expect(pane.headerColor).toMatch(HEX);
     expect(pane.backgroundColor).toMatch(HEX);
   });
 
-  it("applies title and content fallbacks", () => {
+  it("applies the given default title and the content fallback", () => {
     const panes = [
       { id: "p1", title: "" },
       { id: "p2", content: 42 },
     ] as unknown as Pane[];
-    const result = normalizePanes(panes);
+    const result = normalizePanes(panes, "New Buffer");
     expect(result[0].title).toBe("New Buffer");
     expect(result[1].content).toBe("");
   });

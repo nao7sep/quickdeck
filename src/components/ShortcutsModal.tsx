@@ -1,3 +1,4 @@
+import { useI18n } from "../i18n/I18nContext";
 import { shortcutDefinitions } from "../shortcuts";
 import { ModalBase } from "./ModalBase";
 
@@ -6,32 +7,29 @@ type ShortcutsModalProps = {
 };
 
 export function ShortcutsModal({ onClose }: ShortcutsModalProps) {
+  const { t } = useI18n();
   return (
     <ModalBase
-      title="Shortcuts"
+      title={t("shortcuts.title")}
       onRequestClose={onClose}
-      passiveContentLabel="Keyboard shortcuts"
+      passiveContentLabel={t("shortcuts.contentLabel")}
       footer={
         <button className="secondaryButton" type="button" onClick={onClose}>
-          Close
+          {t("common.close")}
         </button>
       }
     >
       <div className="shortcutList">
         {shortcutDefinitions.map((shortcut) => (
           <div className="shortcutRow" key={shortcut.description}>
-            <span>{shortcut.description}</span>
+            <span>{t(shortcut.description)}</span>
             <kbd>{shortcut.keys}</kbd>
           </div>
         ))}
       </div>
       {/* The catalogue-matches-bindings rule: a chord that stands down in some
           context says so (keyboard-shortcut-conventions). */}
-      <p className="shortcutNote">
-        On macOS, Ctrl chords that overlap the system's text-editing keys yield
-        to the text field while you are typing in one; their Cmd forms remain
-        available.
-      </p>
+      <p className="shortcutNote">{t("shortcuts.macNote")}</p>
     </ModalBase>
   );
 }

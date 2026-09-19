@@ -35,6 +35,17 @@ sha2 = "0.11.0"
 chrono = { version = "0.4.45", features = ["serde"] }
 getrandom = "0.4.3"
 tauri-plugin-opener = "2.5.4"
+# The computer's preferred languages, read once at launch (src/i18n.rs).
+sys-locale = "0.3.2"
+# The home directory, resolved exactly as Tauri's path resolver does, so the
+# saved language can be read before Tauri builds the app.
+dirs = "6.0.0"
+
+# AppKit's language is aligned with the interface language before the app is
+# built (i18n::align_appkit).
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6.4"
+objc2-foundation = { version = "0.3.2", default-features = false, features = ["std", "NSArray", "NSDictionary", "NSObject", "NSString", "NSUserDefaults"] }
 
 [dev-dependencies]
 # Serializes the tests that share process-global state — the backup-store

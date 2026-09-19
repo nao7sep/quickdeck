@@ -26,6 +26,15 @@ pub fn app_data_dir(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(dir)
 }
 
+// The data directory as the app will resolve it, found before Tauri builds the
+// app (the interface language must be read before then; see i18n::align_appkit).
+// It uses the same home directory Tauri's path resolver returns and creates
+// nothing; None if the home or the override cannot be resolved.
+pub fn data_dir_before_launch() -> Option<PathBuf> {
+    let home = dirs::home_dir()?;
+    resolve_root(&home, std::env::var(HOME_ENV_VAR).ok()).ok()
+}
+
 // Root resolution, factored out so it can be unit-tested with an injected home
 // directory. `override_value` is the raw `QUICKDECK_HOME` value (if any). The
 // value is expanded (environment references first, then a leading `~`) and made

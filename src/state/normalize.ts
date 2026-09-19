@@ -9,6 +9,7 @@ import type { AppSettings, Pane } from "../types";
 import { defaultSettings } from "./defaults";
 import { randomPaneColor } from "../utils/paneColors";
 import { singleLine } from "../utils/textCleanup";
+import { normalizeLanguagePreference } from "../i18n/languages";
 import { normalizeThemePreference } from "../utils/theme";
 import { ZOOM_DEFAULT, ZOOM_MAX, ZOOM_MIN } from "../utils/zoom";
 
@@ -73,6 +74,7 @@ export function normalizeSettings(settings: AppSettings | null): AppSettings {
   // the retired "dark" boolean) back into every save; listing fields explicitly
   // keeps config.json pinned to the current schema.
   return {
+    language: normalizeLanguagePreference(settings.language),
     theme: normalizeThemePreference(settings.theme),
     zen: asBoolean(settings.zen, defaultSettings.zen),
     topmost: asBoolean(settings.topmost, defaultSettings.topmost),
@@ -122,6 +124,7 @@ export function settingsShapeIssues(loaded: unknown): string[] {
   const isBool = (v: unknown) => typeof v === "boolean";
   const isNum = (v: unknown) => typeof v === "number" && Number.isFinite(v);
   const isStr = (v: unknown) => typeof v === "string";
+  expect("language", isStr, "string");
   expect("theme", isStr, "string");
   expect("zen", isBool, "boolean");
   expect("topmost", isBool, "boolean");
@@ -194,7 +197,8 @@ export function normalizeZoomLevel(value: unknown): number {
   );
 }
 
-export function normalizePanes(panes: Pane[] | undefined): Pane[] {
+// `defaultTitle` is the localized name given to a pane whose title is missing.
+export function normalizePanes(panes: Pane[] | undefined, defaultTitle: string): Pane[] {
   if (!Array.isArray(panes)) {
     return [];
   }
@@ -218,7 +222,7 @@ export function normalizePanes(panes: Pane[] | undefined): Pane[] {
 
       return {
         id: pane.id,
-        title: typeof pane.title === "string" && pane.title.length > 0 ? pane.title : "New Buffer",
+        title: typeof pane.title === "string" && pane.title.length > 0 ? pane.title : defaultTitle,
         content: typeof pane.content === "string" ? pane.content : "",
         headerColor: colors.header,
         backgroundColor: colors.background,

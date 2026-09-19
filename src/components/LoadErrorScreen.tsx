@@ -1,5 +1,7 @@
 import { isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { useI18n } from "../i18n/I18nContext";
+import type { Message } from "../i18n/translate";
 import { logWarn, serializeError } from "../services/logger";
 
 // Non-dismissible halt shown when persisted state could not be prepared.
@@ -11,7 +13,7 @@ import { logWarn, serializeError } from "../services/logger";
 // directory by hand.
 
 type LoadErrorScreenProps = {
-  error: string;
+  error: Message;
   // Present only for the corrupt-panes halt: the user-commanded reset that
   // sets the unreadable file aside (preserving its bytes) and starts fresh —
   // a halting store must be clearable from the surface that reported the
@@ -20,6 +22,7 @@ type LoadErrorScreenProps = {
 };
 
 export function LoadErrorScreen({ error, onSetAsideAndReset }: LoadErrorScreenProps) {
+  const { t, rich, text } = useI18n();
   function quit() {
     if (isTauri()) {
       void getCurrentWindow()
@@ -38,22 +41,22 @@ export function LoadErrorScreen({ error, onSetAsideAndReset }: LoadErrorScreenPr
   return (
     <main className="loadErrorShell">
       <div className="loadErrorPanel">
-        <h1 className="loadErrorTitle">QuickDeck couldn't prepare saved data</h1>
-        <p className="loadErrorMessage">{error}</p>
+        <h1 className="loadErrorTitle">{t("load.title")}</h1>
+        <p className="loadErrorMessage">{text(error)}</p>
         <p className="loadErrorHint">
-          To protect your existing data, QuickDeck will not save changes in this
-          state. Your files live in the app's data folder (<code>~/.quickdeck</code>{" "}
-          by default, or <code>QUICKDECK_HOME</code> if set). Quit the app,
-          repair or move the affected file, then relaunch.
+          {rich("load.hint", {
+            dataDir: <code>~/.quickdeck</code>,
+            envVar: <code>QUICKDECK_HOME</code>,
+          })}
         </p>
         <div className="loadErrorActions">
           {onSetAsideAndReset && (
             <button type="button" className="secondaryButton" onClick={onSetAsideAndReset}>
-              Set the file aside and start fresh
+              {t("load.setAside")}
             </button>
           )}
           <button type="button" className="primaryButton" onClick={quit}>
-            Quit
+            {t("load.quit")}
           </button>
         </div>
       </div>

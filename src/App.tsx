@@ -27,6 +27,10 @@ import { ShortcutsModal } from "./components/ShortcutsModal";
 import { ToastViewport } from "./components/ToastViewport";
 import { matchesShortcut } from "./shortcuts";
 import { applyWindowTheme } from "./services/windowTheme";
+import { applyLanguage } from "./services/persistence";
+import { useI18n } from "./i18n/I18nContext";
+import type { MessageKey } from "./i18n/catalogues";
+import { message } from "./i18n/translate";
 import { isEditableTarget, shadowsMacTextEditing } from "./utils/shortcuts";
 import { isComposingEvent } from "./hooks/useComposing";
 import { logError, logWarn, serializeError } from "./services/logger";
@@ -38,9 +42,17 @@ import {
   PANE_MIN_HEIGHT,
 } from "./utils/layoutMetrics";
 import { clampPaneIndex } from "./utils/paneIndex";
+import type { SaveState } from "./types";
 import { isZoomIn, isZoomOut, isZoomReset, stepZoomIn, stepZoomOut, ZOOM_DEFAULT } from "./utils/zoom";
 
 type OpenModal = "settings" | "shortcuts" | "about" | "snapshots" | null;
+
+const SAVE_STATE_LABELS: Record<SaveState, MessageKey> = {
+  saved: "status.saved",
+  saving: "status.saving",
+  unsaved: "status.unsaved",
+  error: "status.saveFailed",
+};
 
 export function App() {
   const {
@@ -54,6 +66,7 @@ export function App() {
     loadStatus,
     saveState,
     settings,
+    language,
     zoomLevel,
     setZoomLevel,
     setActivePaneId,
@@ -67,9 +80,12 @@ export function App() {
     snapshotJustSavedAt,
     updateSettings,
   } = useAppState();
+  const i18n = useI18n();
+  const { t } = i18n;
   const [openModal, setOpenModal] = useState<OpenModal>(null);
   const [snapshotPulse, setSnapshotPulse] = useState(false);
   const [themeApplicationFailed, setThemeApplicationFailed] = useState(false);
+  const [languageApplicationFailed, setLanguageApplicationFailed] = useState(false);
   const [zoomApplicationFailed, setZoomApplicationFailed] = useState(false);
   const [topmostApplicationFailed, setTopmostApplicationFailed] = useState(false);
   const [statusBarContentWidth, setStatusBarContentWidth] = useState(0);
@@ -128,6 +144,27 @@ export function App() {
     };
   }, [loadStatus, settings.theme]);
 
+  // The native menu follows the interface language. The Rust core built it in
+  // the saved language before the window was shown; this rebuilds it after a
+  // change is saved (and is a no-op for the language it already has).
+  useEffect(() => {
+    if (!isTauri() || loadStatus !== "ready") return undefined;
+
+    let current = true;
+    void applyLanguage(language)
+      .then(() => {
+        if (current) setLanguageApplicationFailed(false);
+      })
+      .catch((error) => {
+        logWarn("apply language failed", { language, error: serializeError(error) });
+        if (current) setLanguageApplicationFailed(true);
+      });
+
+    return () => {
+      current = false;
+    };
+  }, [language, loadStatus]);
+
   // Apply zoom level to the Tauri webview whenever it changes.
   useEffect(() => {
     if (!isTauri()) return undefined;
@@ -178,6 +215,7 @@ export function App() {
     setStatusBarContentWidth((current) => current === naturalWidth ? current : naturalWidth);
   }, [
     activePaneId,
+    language,
     panes.length,
     saveState,
     settings.topmost,
@@ -466,10 +504,7 @@ export function App() {
         return true;
       } catch (error) {
         logError("save on close failed", { error: serializeError(error) });
-        showBlockingErrorRef.current(
-          "QuickDeck couldn't save your data",
-          "Your latest changes remain open. Free some storage or restore access to the data folder, then try closing again.",
-        );
+        showBlockingErrorRef.current(message("saveError.title"), message("saveError.onClose"));
         return false;
       }
     }
@@ -503,7 +538,7 @@ export function App() {
           await appWindow.destroy();
         } catch (error) {
           logError("close window failed", { error: serializeError(error) });
-          showToastRef.current("error", "QuickDeck could not close the window. Try closing it again.");
+          showToastRef.current("error", message("toast.closeFailed"));
         } finally {
           closeInFlight = false;
         }
@@ -511,10 +546,7 @@ export function App() {
         closeUnlisten = unlisten;
       }).catch((error) => {
         logWarn("register close handler failed", { error: serializeError(error) });
-        showToastRef.current(
-          "warning",
-          "QuickDeck could not protect unsaved changes during window close. Save your work before quitting.",
-        );
+        showToastRef.current("warning", message("toast.closeUnprotected"));
       });
     }
 
@@ -524,10 +556,16 @@ export function App() {
     };
   }, []);
 
+  // Nothing renders until the saved data (and with it the language) is known,
+  // so the first text on screen is already in the right language.
+  if (loadStatus === "loading") {
+    return <main className="appShell" />;
+  }
+
   if (loadStatus === "failed") {
     return (
       <LoadErrorScreen
-        error={loadError ?? "Unknown error while loading saved data."}
+        error={loadError ?? message("load.unknown")}
         onSetAsideAndReset={loadErrorIsCorruptPanes ? () => void resetCorruptPanes() : undefined}
       />
     );
@@ -558,62 +596,64 @@ export function App() {
           {!settings.zen ? (
             <>
               <span className="statusBadge statusBadge-panes">
-                {panes.length} {panes.length === 1 ? "pane" : "panes"}
+                {t("status.panes", { count: panes.length })}
               </span>
               <span className="statusBadge statusBadge-snapshots">
-                {snapshotCount.toLocaleString()} snapshots
+                {t("status.snapshots", { count: snapshotCount })}
               </span>
             </>
           ) : null}
           {snapshotPulse ? (
-            <span className="statusBadge statusBadge-snapshot">Snapshot saved</span>
+            <span className="statusBadge statusBadge-snapshot">{t("status.snapshotSaved")}</span>
           ) : null}
           {settings.zen ? (
             <button
               type="button"
               className="statusBadge statusBadge-zen statusBadgeButton"
-              title="Click to disable zen mode"
+              title={t("status.zenHint")}
               aria-pressed={settings.zen}
               onClick={toggleZen}
             >
-              Zen
+              {t("status.zen")}
             </button>
           ) : null}
           {settings.topmost ? (
             <button
               type="button"
               className="statusBadge statusBadge-topmost statusBadgeButton"
-              title="Click to disable always on top"
+              title={t("status.topmostHint")}
               aria-pressed={settings.topmost}
               onClick={toggleTopmost}
             >
-              Topmost
+              {t("status.topmost")}
             </button>
           ) : null}
-          <span className={`statusBadge saveState saveState-${saveState}`}>{saveState}</span>
+          <span className={`statusBadge saveState saveState-${saveState}`}>
+            {t(SAVE_STATE_LABELS[saveState])}
+          </span>
           <Menu
-            label="App menu"
+            label={t("menu.label")}
             panelClassName="menuPanelUp"
             trigger={(triggerProps) => (
-              <button className="statusMenuButton" type="button" aria-label="Open menu" {...triggerProps}>
+              <button className="statusMenuButton" type="button" aria-label={t("menu.open")} {...triggerProps}>
                 <MenuIcon size={18} />
               </button>
             )}
           >
             <MenuItem onSelect={() => addPane()}>
               <Plus size={16} />
-              Add Pane
+              {t("menu.addPane")}
             </MenuItem>
             <MenuItem onSelect={() => openMenuModal("settings")}>
               <Settings size={16} />
-              Settings
+              {t("menu.settings")}
             </MenuItem>
             <div className="menuDivider" />
             {/* A contained zoom stepper, skipped by the menu's arrow navigation:
                 its buttons are tabIndex=-1 and are driven by pointer plus the
                 global zoom shortcuts, not promoted into menu items. */}
             <div className="menuZoomRow">
-              <span>Zoom</span>
+              <span>{t("menu.zoom")}</span>
               <div className="menuZoomControls">
                 <button
                   type="button"
@@ -621,7 +661,7 @@ export function App() {
                   tabIndex={-1}
                   onClick={() => setZoomLevel(stepZoomOut(zoomLevel))}
                   disabled={stepZoomOut(zoomLevel) === zoomLevel}
-                  title="Zoom out"
+                  title={t("menu.zoomOut")}
                 >
                   <Minus size={12} />
                 </button>
@@ -631,13 +671,13 @@ export function App() {
                     className="menuZoomLabel menuZoomLabelClickable"
                     tabIndex={-1}
                     onClick={() => setZoomLevel(ZOOM_DEFAULT)}
-                    title="Reset to 100%"
+                    title={t("menu.zoomReset", { percent: i18n.percent(ZOOM_DEFAULT) })}
                   >
-                    {Math.round(zoomLevel * 100)}%
+                    {i18n.percent(zoomLevel)}
                   </button>
                 ) : (
                   <span className="menuZoomLabel">
-                    {Math.round(zoomLevel * 100)}%
+                    {i18n.percent(zoomLevel)}
                   </span>
                 )}
                 <button
@@ -646,7 +686,7 @@ export function App() {
                   tabIndex={-1}
                   onClick={() => setZoomLevel(stepZoomIn(zoomLevel))}
                   disabled={stepZoomIn(zoomLevel) === zoomLevel}
-                  title="Zoom in"
+                  title={t("menu.zoomIn")}
                 >
                   <Plus size={12} />
                 </button>
@@ -655,15 +695,15 @@ export function App() {
             <div className="menuDivider" />
             <MenuItem onSelect={() => openMenuModal("shortcuts")}>
               <Keyboard size={16} />
-              Shortcuts
+              {t("menu.shortcuts")}
             </MenuItem>
             <MenuItem onSelect={() => openMenuModal("snapshots")}>
               <History size={16} />
-              Snapshot Search
+              {t("menu.snapshotSearch")}
             </MenuItem>
             <MenuItem onSelect={() => openMenuModal("about")}>
               <Info size={16} />
-              About
+              {t("menu.about")}
             </MenuItem>
           </Menu>
         </div>
@@ -675,9 +715,11 @@ export function App() {
       {blockingError ? <ErrorModal error={blockingError} onClose={dismissBlockingError} /> : null}
       <ToastViewport
         themeApplicationFailed={themeApplicationFailed}
+        languageApplicationFailed={languageApplicationFailed}
         zoomApplicationFailed={zoomApplicationFailed}
         topmostApplicationFailed={topmostApplicationFailed}
         onDismissThemeApplicationFailure={() => setThemeApplicationFailed(false)}
+        onDismissLanguageApplicationFailure={() => setLanguageApplicationFailed(false)}
         onDismissZoomApplicationFailure={() => setZoomApplicationFailed(false)}
         onDismissTopmostApplicationFailure={() => setTopmostApplicationFailed(false)}
       />

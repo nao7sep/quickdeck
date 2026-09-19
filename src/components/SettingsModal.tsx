@@ -3,6 +3,9 @@ import { useAppState } from "../state/AppStateContext";
 import type { AppSettings } from "../types";
 import { SETTINGS_BOUNDS, isSettingsDraftValid, normalizeSettings } from "../state/normalize";
 import { THEME_PREFERENCES } from "../utils/theme";
+import { CATALOGUES } from "../i18n/catalogues";
+import { useI18n } from "../i18n/I18nContext";
+import { LANGUAGES, normalizeLanguagePreference } from "../i18n/languages";
 import { ConfirmCloseModal } from "./ConfirmCloseModal";
 import { ModalBase } from "./ModalBase";
 
@@ -12,6 +15,8 @@ type SettingsModalProps = {
 
 export function SettingsModal({ onClose }: SettingsModalProps) {
   const { settings, updateSettings } = useAppState();
+  const i18n = useI18n();
+  const { t } = i18n;
   const [draft, setDraft] = useState<AppSettings>(settings);
   const [confirmingClose, setConfirmingClose] = useState(false);
 
@@ -47,13 +52,13 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
   return (
     <>
       <ModalBase
-        title="Settings"
+        title={t("settings.title")}
         closeDisabled={confirmingClose}
         onRequestClose={requestClose}
         footer={
           <>
             <button className="secondaryButton" type="button" onClick={requestClose}>
-              Cancel
+              {t("common.cancel")}
             </button>
             <button
               className="primaryButton"
@@ -61,17 +66,33 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
               disabled={!isDirty || !isValid}
               onClick={save}
             >
-              Save Settings
+              {t("settings.save")}
             </button>
           </>
         }
       >
         <div className="formGrid">
+          {/* Each language is listed by its own name, in its own script, so a
+              reader of any of them can find it whatever language is showing. */}
+          <label>
+            <span>{t("settings.language")}</span>
+            <select
+              value={draft.language}
+              onChange={(event) => setField("language", normalizeLanguagePreference(event.target.value))}
+            >
+              <option value="system">{t("settings.languageSystem")}</option>
+              {LANGUAGES.map((language) => (
+                <option key={language} value={language} lang={language}>
+                  {CATALOGUES[language]["language.name"] as string}
+                </option>
+              ))}
+            </select>
+          </label>
           {/* A native radio group: one tab stop, arrow keys move and select
               (composite-control conventions). Applied on Save like every other
               field here. */}
           <fieldset className="radioGroup">
-            <legend>Theme</legend>
+            <legend>{t("settings.theme")}</legend>
             <div className="radioGroupOptions">
               {THEME_PREFERENCES.map(({ value, label }) => (
                 <label className="radioRow" key={value}>
@@ -82,7 +103,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
                     checked={draft.theme === value}
                     onChange={() => setField("theme", value)}
                   />
-                  <span>{label}</span>
+                  <span>{t(label)}</span>
                 </label>
               ))}
             </div>
@@ -93,7 +114,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
               checked={draft.zen}
               onChange={(event) => setField("zen", event.target.checked)}
             />
-            <span>Zen mode (show only the focused pane)</span>
+            <span>{t("settings.zen")}</span>
           </label>
           <label className="checkboxRow">
             <input
@@ -101,19 +122,19 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
               checked={draft.topmost}
               onChange={(event) => setField("topmost", event.target.checked)}
             />
-            <span>Keep window on top of other windows</span>
+            <span>{t("settings.topmost")}</span>
           </label>
           <label>
-            <span>UI font</span>
+            <span>{t("settings.uiFont")}</span>
             <input
               type="text"
               value={draft.uiFontFamily}
               onChange={(event) => setField("uiFontFamily", event.target.value)}
-              placeholder="Default"
+              placeholder={t("settings.uiFontPlaceholder")}
             />
           </label>
           <label>
-            <span>Editor font family</span>
+            <span>{t("settings.editorFontFamily")}</span>
             <input
               type="text"
               value={draft.editorFontFamily}
@@ -123,9 +144,9 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
           </label>
           <label>
             <span>
-              Editor font size (px){" "}
+              {t("settings.editorFontSize")}{" "}
               <span className="fieldRange">
-                {SETTINGS_BOUNDS.editorFontSize.min}–{SETTINGS_BOUNDS.editorFontSize.max}
+                {i18n.number(SETTINGS_BOUNDS.editorFontSize.min)}–{i18n.number(SETTINGS_BOUNDS.editorFontSize.max)}
               </span>
             </span>
             <input
@@ -138,9 +159,9 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
           </label>
           <label>
             <span>
-              Editor line height{" "}
+              {t("settings.editorLineHeight")}{" "}
               <span className="fieldRange">
-                {SETTINGS_BOUNDS.editorLineHeight.min}–{SETTINGS_BOUNDS.editorLineHeight.max}
+                {i18n.number(SETTINGS_BOUNDS.editorLineHeight.min)}–{i18n.number(SETTINGS_BOUNDS.editorLineHeight.max)}
               </span>
             </span>
             <input
@@ -154,9 +175,9 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
           </label>
           <label>
             <span>
-              Editor padding (px){" "}
+              {t("settings.editorPadding")}{" "}
               <span className="fieldRange">
-                {SETTINGS_BOUNDS.editorPadding.min}–{SETTINGS_BOUNDS.editorPadding.max}
+                {i18n.number(SETTINGS_BOUNDS.editorPadding.min)}–{i18n.number(SETTINGS_BOUNDS.editorPadding.max)}
               </span>
             </span>
             <input
@@ -173,7 +194,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
               checked={draft.editorBold}
               onChange={(event) => setField("editorBold", event.target.checked)}
             />
-            <span>Bold editor text</span>
+            <span>{t("settings.editorBold")}</span>
           </label>
           <label className="checkboxRow">
             <input
@@ -181,7 +202,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
               checked={draft.editorItalic}
               onChange={(event) => setField("editorItalic", event.target.checked)}
             />
-            <span>Italic editor text</span>
+            <span>{t("settings.editorItalic")}</span>
           </label>
           <label className="checkboxRow">
             <input
@@ -189,13 +210,13 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
               checked={draft.editorUnderline}
               onChange={(event) => setField("editorUnderline", event.target.checked)}
             />
-            <span>Underline editor text</span>
+            <span>{t("settings.editorUnderline")}</span>
           </label>
           <label>
             <span>
-              Autosave delay after edits (seconds){" "}
+              {t("settings.autosaveDelay")}{" "}
               <span className="fieldRange">
-                {SETTINGS_BOUNDS.autosaveDelaySeconds.min}–{SETTINGS_BOUNDS.autosaveDelaySeconds.max}
+                {i18n.number(SETTINGS_BOUNDS.autosaveDelaySeconds.min)}–{i18n.number(SETTINGS_BOUNDS.autosaveDelaySeconds.max)}
               </span>
             </span>
             <input
@@ -208,9 +229,9 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
           </label>
           <label>
             <span>
-              Snapshot search results per page{" "}
+              {t("settings.snapshotPageSize")}{" "}
               <span className="fieldRange">
-                {SETTINGS_BOUNDS.snapshotSearchPageSize.min}–{SETTINGS_BOUNDS.snapshotSearchPageSize.max}
+                {i18n.number(SETTINGS_BOUNDS.snapshotSearchPageSize.min)}–{i18n.number(SETTINGS_BOUNDS.snapshotSearchPageSize.max)}
               </span>
             </span>
             <input

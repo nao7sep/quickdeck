@@ -6,6 +6,7 @@ import { getTextCounts } from "../utils/counts";
 import { darkPaneBackground } from "../utils/paneColors";
 import { shouldPullEditorFocus } from "../utils/paneFocus";
 import { panePanelDomId } from "../utils/paneDomIds";
+import { useI18n } from "../i18n/I18nContext";
 
 type PaneViewProps = {
   pane: Pane;
@@ -22,6 +23,8 @@ export function PaneView({ pane }: PaneViewProps) {
     deletePane,
     recordSnapshot,
   } = useAppState();
+  const i18n = useI18n();
+  const { t } = i18n;
   const editorRef = useRef<HTMLTextAreaElement | null>(null);
   const titleRef = useRef<HTMLInputElement | null>(null);
   const pendingPasteSnapshotRef = useRef(false);
@@ -48,7 +51,7 @@ export function PaneView({ pane }: PaneViewProps) {
     <section
       id={settings.zen ? panePanelDomId(pane.id) : undefined}
       role={settings.zen ? "tabpanel" : undefined}
-      aria-label={settings.zen ? `Pane: ${pane.title}` : undefined}
+      aria-label={settings.zen ? t("pane.region", { title: pane.title }) : undefined}
       className={`pane ${active ? "pane-active" : ""}`}
       style={
         {
@@ -62,7 +65,7 @@ export function PaneView({ pane }: PaneViewProps) {
       <header className="paneHeader">
         <input
           ref={titleRef}
-          aria-label="Pane title"
+          aria-label={t("pane.titleLabel")}
           className="paneTitleInput"
           value={pane.title}
           spellCheck={false}
@@ -85,7 +88,7 @@ export function PaneView({ pane }: PaneViewProps) {
         <button
           className="iconButton paneDeleteButton"
           type="button"
-          aria-label="Delete pane"
+          aria-label={t("pane.delete")}
           onClick={(event) => {
             event.stopPropagation();
             deletePane(pane.id);
@@ -126,10 +129,11 @@ export function PaneView({ pane }: PaneViewProps) {
         }}
       />
       <footer className="paneFooter">
-        <span>Words {counts.words}</span>
-        <span>Chars {counts.chars}</span>
+        <span>{t("pane.words", { count: counts.words })}</span>
+        <span>{t("pane.chars", { count: counts.chars })}</span>
+        {/* "X" is the service's name, so it stays as it is in every language. */}
         <span className={counts.xValid ? undefined : "countOverLimit"}>
-          X {counts.xWeightedChars}/{counts.xLimit}
+          X {i18n.number(counts.xWeightedChars)}/{i18n.number(counts.xLimit)}
         </span>
       </footer>
     </section>

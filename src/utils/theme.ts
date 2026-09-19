@@ -1,3 +1,4 @@
+import type { MessageKey } from "../i18n/catalogues";
 import type { ThemePreference } from "../types";
 
 // The native window theme is the single theme authority (app-chrome
@@ -7,10 +8,10 @@ import type { ThemePreference } from "../types";
 // window through prefers-color-scheme, so nothing here resolves System against
 // the OS.
 
-export const THEME_PREFERENCES: ReadonlyArray<{ value: ThemePreference; label: string }> = [
-  { value: "system", label: "System" },
-  { value: "light", label: "Light" },
-  { value: "dark", label: "Dark" },
+export const THEME_PREFERENCES: ReadonlyArray<{ value: ThemePreference; label: MessageKey }> = [
+  { value: "system", label: "settings.themeSystem" },
+  { value: "light", label: "settings.themeLight" },
+  { value: "dark", label: "settings.themeDark" },
 ];
 
 // A missing, retired, or hand-edited value follows the OS.

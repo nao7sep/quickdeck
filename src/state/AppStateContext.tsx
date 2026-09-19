@@ -36,6 +36,14 @@ import {
   saveState as persistState,
 } from "../services/persistence";
 import { logError, logInfo, logWarn, serializeError, setDebugEnabled } from "../services/logger";
+import { I18nProvider } from "../i18n/I18nContext";
+import {
+  effectiveLanguage,
+  formattingLocale,
+  isLanguage,
+  type Language,
+} from "../i18n/languages";
+import { createTranslator, message, type Message } from "../i18n/translate";
 import type {
   AppSettings,
   BlockingError,
@@ -52,6 +60,9 @@ type AppStateContextValue = {
   activePaneId: string;
   activePane: Pane;
   settings: AppSettings;
+  // The interface language: the saved choice, with System resolved to the
+  // computer's language.
+  language: Language;
   // The webview zoom — session state (state.json), not a setting, so it rides
   // beside `settings` rather than inside it (persisted-store-separation).
   zoomLevel: number;
@@ -60,7 +71,7 @@ type AppStateContextValue = {
   blockingError: BlockingError | null;
   dataDir: string;
   loadStatus: LoadStatus;
-  loadError: string | null;
+  loadError: Message | null;
   loadErrorIsCorruptPanes: boolean;
   snapshotCount: number;
   snapshotJustSavedAt: number | null;
@@ -80,21 +91,17 @@ type AppStateContextValue = {
   saveNow: () => Promise<void>;
   recordSnapshot: (paneId: string, trigger: SnapshotTrigger, content: string) => void;
   snapshotAllPanes: (trigger: SnapshotTrigger) => Promise<void>;
-  showToast: (kind: ToastKind, message: string) => void;
+  showToast: (kind: ToastKind, message: Message) => void;
   dismissToast: (toastId: string) => void;
-  showBlockingError: (title: string, message: string) => void;
+  showBlockingError: (title: Message, message: Message) => void;
   dismissBlockingError: () => void;
 };
 
 const AppStateContext = createContext<AppStateContextValue | undefined>(undefined);
 
-const PANE_READ_FAILURE_MESSAGE = "Your pane text file (panes.json) could not be read and has been left exactly where it is. Check that the data folder is available and that QuickDeck has access, then try again. Diagnostic details are in the log.";
-const PANE_SHAPE_FAILURE_MESSAGE = "Your pane text file (panes.json) is damaged and has been left exactly where it is. Diagnostic details are in the log.";
-const SETTINGS_RESET_MESSAGE = "A settings file was unreadable, so QuickDeck preserved it and started with defaults for it. The preserved copy's location is recorded in the log. Your pane text is untouched.";
-const FIRST_RUN_CONFIG_WRITE_FAILURE_MESSAGE = "QuickDeck could not create its settings file. No files were changed. Restore write access to the data folder, then relaunch QuickDeck.";
-
 export function AppStateProvider({ children }: { children: ReactNode }) {
-  const firstPane = useMemo(() => createDefaultPane(nanoid()), []);
+  // Titled once the language is known at load; nothing renders before then.
+  const firstPane = useMemo(() => createDefaultPane(nanoid(), ""), []);
   const [panes, setPanes] = useState<Pane[]>([firstPane]);
   const [activePaneId, setActivePaneId] = useState(firstPane.id);
   const [settings, setSettings] = useState(defaultSettings);
@@ -102,14 +109,19 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const [saveState, setSaveState] = useState<SaveState>("saved");
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [blockingError, setBlockingError] = useState<BlockingError | null>(null);
-  const [dataDir, setDataDir] = useState("Loading...");
+  const [dataDir, setDataDir] = useState("");
+  const [systemLanguage, setSystemLanguage] = useState<Language>("en");
+  const [systemLocale, setSystemLocale] = useState<string | null>(null);
   const [loadStatus, setLoadStatus] = useState<LoadStatus>("loading");
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<Message | null>(null);
   // True when the failure is specifically a corrupt panes.json — the one halt
   // whose screen offers the explicit set-aside reset.
   const [loadErrorIsCorruptPanes, setLoadErrorIsCorruptPanes] = useState(false);
   const [snapshotCount, setSnapshotCount] = useState(0);
   const [snapshotJustSavedAt, setSnapshotJustSavedAt] = useState<number | null>(null);
+  const language = effectiveLanguage(settings.language, systemLanguage);
+  const locale = formattingLocale(language, systemLocale);
+  const translator = useMemo(() => createTranslator(language, locale), [language, locale]);
   const panesRef = useRef(panes);
   const activePaneIdRef = useRef(activePaneId);
   const zoomLevelRef = useRef(zoomLevel);
@@ -133,9 +145,9 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     return panes.find((pane) => pane.id === activePaneId) ?? panes[0];
   }, [activePaneId, panes]);
 
-  const showToast = useCallback((kind: ToastKind, message: string) => {
+  const showToast = useCallback((kind: ToastKind, text: Message) => {
     const id = nanoid();
-    setToasts((current) => [...current, { id, kind, message }]);
+    setToasts((current) => [...current, { id, kind, message: text }]);
     const lifetime = toastLifetimeMs(kind);
     if (lifetime !== null) {
       window.setTimeout(() => {
@@ -148,8 +160,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     setToasts((current) => current.filter((toast) => toast.id !== toastId));
   }, []);
 
-  const showBlockingError = useCallback((title: string, message: string) => {
-    setBlockingError({ title, message });
+  const showBlockingError = useCallback((title: Message, text: Message) => {
+    setBlockingError({ title, message: text });
   }, []);
 
   const dismissBlockingError = useCallback(() => {
@@ -169,6 +181,17 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       setDebugEnabled(data.debugEnabled);
       setDataDir(data.dataDir);
 
+      // The language is settled before anything renders, including a halt
+      // screen: the saved choice if config.json could be read, else System.
+      const loadedSystemLanguage = isLanguage(data.systemLanguage) ? data.systemLanguage : "en";
+      const loadedSettings = normalizeSettings(data.config);
+      setSystemLanguage(loadedSystemLanguage);
+      setSystemLocale(data.systemLocale);
+      setSettings(loadedSettings);
+      const loadTranslator = createTranslator(
+        effectiveLanguage(loadedSettings.language, loadedSystemLanguage),
+      );
+
       // panes.json carries the user's text: present-but-unreadable HALTS the
       // app (the file is left exactly in place; the error screen offers the
       // explicit set-aside reset) while config and state still loaded — each
@@ -176,7 +199,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       if (data.panesError !== null) {
         logError("panes load failed", { error: data.panesError });
         setLoadErrorIsCorruptPanes(true);
-        setLoadError(PANE_READ_FAILURE_MESSAGE);
+        setLoadError(message("load.panesUnreadable"));
         setLoadStatus("failed");
         return;
       }
@@ -187,9 +210,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       if (typeof panesVersion === "number" && panesVersion > 1) {
         logError("panes.json is from a newer build", { version: panesVersion });
         setLoadErrorIsCorruptPanes(false);
-        setLoadError(
-          `Your pane text file (panes.json) was written by a newer version of QuickDeck (format ${panesVersion}) and has been left exactly in place. Update QuickDeck to open it.`,
-        );
+        setLoadError(message("load.panesNewer", { version: panesVersion }));
         setLoadStatus("failed");
         return;
       }
@@ -199,7 +220,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         if (paneIssues.length > 0) {
           logError("panes.json failed its shape check", { issues: paneIssues });
           setLoadErrorIsCorruptPanes(true);
-          setLoadError(PANE_SHAPE_FAILURE_MESSAGE);
+          setLoadError(message("load.panesDamaged"));
           setLoadStatus("failed");
           return;
         }
@@ -223,8 +244,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         }
       }
 
-      const effectiveSettings = normalizeSettings(data.config);
-      setSettings(effectiveSettings);
+      const effectiveSettings = loadedSettings;
       // Startup baseline: record the key effective configuration.
       logInfo("config loaded", {
         settings: effectiveSettings,
@@ -234,10 +254,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       });
 
       if (data.configQuarantinedTo !== null || configShapeQuarantinedTo !== null) {
-        showBlockingError(
-          "A Settings File Was Reset",
-          SETTINGS_RESET_MESSAGE,
-        );
+        showBlockingError(message("settingsReset.title"), message("settingsReset.body"));
       }
 
       // Materialize config.json on first run so the settings file exists on disk immediately,
@@ -258,7 +275,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
           if (!canceledRef.current) {
             setSaveState("error");
             setLoadErrorIsCorruptPanes(false);
-            setLoadError(FIRST_RUN_CONFIG_WRITE_FAILURE_MESSAGE);
+            setLoadError(message("load.configCreateFailed"));
             setLoadStatus("failed");
           }
           return;
@@ -278,8 +295,11 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
 
       setZoomLevelState(normalizeZoomLevel(data.state?.zoomLevel));
 
-      const loadedPanes = normalizePanes(data.panes?.panes);
-      if (loadedPanes.length > 0) {
+      const defaultTitle = loadTranslator.t("pane.defaultTitle");
+      const loadedPanes = normalizePanes(data.panes?.panes, defaultTitle);
+      if (loadedPanes.length === 0) {
+        setPanes([{ ...firstPane, title: defaultTitle }]);
+      } else {
         setPanes(loadedPanes);
         const loadedActivePane = loadedPanes.some((pane) => pane.id === data.state?.activePaneId)
           ? data.state?.activePaneId
@@ -297,11 +317,11 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         // default in-memory state.
         logError("load failed", { error: serializeError(error) });
         setLoadErrorIsCorruptPanes(false);
-        setLoadError("QuickDeck could not read its saved data. The diagnostic details are in the log.");
+        setLoadError(message("load.failed"));
         setLoadStatus("failed");
       }
     }
-  }, [showBlockingError]);
+  }, [firstPane, showBlockingError]);
 
   useEffect(() => {
     canceledRef.current = false;
@@ -324,7 +344,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       await loadPersistedState();
     } catch (error) {
       logError("panes reset failed", { error: serializeError(error) });
-      setLoadError("The damaged pane file could not be set aside. Your existing files were not changed.");
+      setLoadError(message("load.setAsideFailed"));
       setLoadStatus("failed");
     }
   }, [loadPersistedState]);
@@ -379,11 +399,12 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
 
   const addPane = useCallback(() => {
     const paneId = nanoid();
-    setPanes((current) => appendPane(current, paneId));
+    const title = translator.t("pane.defaultTitle");
+    setPanes((current) => appendPane(current, paneId, title));
     setActivePaneId(paneId);
     markUnsaved();
     logInfo("pane added", { paneId });
-  }, [markUnsaved]);
+  }, [markUnsaved, translator]);
 
   const deletePane = useCallback(
     (paneId: string) => {
@@ -395,10 +416,10 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         case "blocked-last":
           // Expected, anticipated outcomes surfaced to the user as toasts — not
           // logged incidents.
-          showToast("warning", "At least one pane must remain.");
+          showToast("warning", message("toast.lastPane"));
           return;
         case "blocked-non-empty":
-          showToast("warning", "Only empty panes can be deleted.");
+          showToast("warning", message("toast.nonEmptyPane"));
           return;
         case "deleted":
           setPanes(outcome.panes);
@@ -447,7 +468,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         })
         .catch((error) => {
           logWarn("snapshot not saved", { trigger, error: serializeError(error) });
-          showToast("warning", "The snapshot wasn’t saved. Your pane content is still open.");
+          showToast("warning", message("toast.snapshotFailed"));
         });
     },
     [loadStatus, showToast],
@@ -531,10 +552,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     const timeoutId = window.setTimeout(() => {
       saveNow().catch((error) => {
         logError("autosave failed", { error: serializeError(error) });
-        showBlockingError(
-          "QuickDeck couldn't save your data",
-          "Your latest changes remain open. Free some storage or restore access to the data folder, then try again.",
-        );
+        showBlockingError(message("saveError.title"), message("saveError.autosave"));
       });
     }, Math.max(1, settings.autosaveDelaySeconds) * 1000);
 
@@ -547,6 +565,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       activePaneId,
       activePane,
       settings,
+      language,
       zoomLevel,
       saveState,
       toasts,
@@ -589,6 +608,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       loadErrorIsCorruptPanes,
       loadStatus,
       movePane,
+      language,
       panes,
       recordSnapshot,
       resetCorruptPanes,
@@ -609,7 +629,13 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     ],
   );
 
-  return <AppStateContext.Provider value={value}>{children}</AppStateContext.Provider>;
+  return (
+    <AppStateContext.Provider value={value}>
+      <I18nProvider language={language} locale={locale}>
+        {children}
+      </I18nProvider>
+    </AppStateContext.Provider>
+  );
 }
 
 export function useAppState() {

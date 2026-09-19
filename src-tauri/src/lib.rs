@@ -1,6 +1,8 @@
 pub mod backup_store;
+mod i18n;
 mod instance_owner;
 mod logging;
+mod menu;
 mod nanoid;
 mod paths;
 pub mod storage;
@@ -11,56 +13,12 @@ use serde_json::{json, Map, Value as JsonValue};
 use storage::{
     LoadedAppData, SnapshotInput, SnapshotSearchResult, SnapshotWriteResult,
 };
-use tauri::menu::{Menu, MenuItem};
-use tauri::{AppHandle, Manager, RunEvent};
-
-const SAFE_QUIT_MENU_ID: &str = "quickdeck.safe-quit";
-
-#[cfg(any(target_os = "macos", target_os = "windows"))]
-fn menu_with_safe_quit(app: &AppHandle) -> Result<Menu<tauri::Wry>, String> {
-    let menu = Menu::default(app).map_err(|error| error.to_string())?;
-    let target_title = if cfg!(target_os = "macos") {
-        app.package_info().name.as_str()
-    } else {
-        "File"
-    };
-    let submenu = menu
-        .items()
-        .map_err(|error| error.to_string())?
-        .into_iter()
-        .filter_map(|item| item.as_submenu().cloned())
-        .find(|item| item.text().is_ok_and(|text| text == target_title))
-        .ok_or_else(|| format!("default {target_title} menu is unavailable"))?;
-    let items = submenu.items().map_err(|error| error.to_string())?;
-    let quit_index = items
-        .len()
-        .checked_sub(1)
-        .ok_or_else(|| format!("default {target_title} menu is empty"))?;
-    if items[quit_index].as_predefined_menuitem().is_none() {
-        return Err(format!("default {target_title} menu has no trailing quit item"));
-    }
-    submenu
-        .remove_at(quit_index)
-        .map_err(|error| error.to_string())?;
-    let quit_text = if cfg!(target_os = "macos") {
-        format!("Quit {}", app.package_info().name)
-    } else {
-        "Exit".to_string()
-    };
-    let quit = MenuItem::with_id(
-        app,
-        SAFE_QUIT_MENU_ID,
-        quit_text,
-        true,
-        Some("CmdOrCtrl+Q"),
-    )
-    .map_err(|error| error.to_string())?;
-    submenu.append(&quit).map_err(|error| error.to_string())?;
-    Ok(menu)
-}
+use i18n::LanguageState;
+use menu::SAFE_QUIT_MENU_ID;
+use tauri::{AppHandle, Manager, RunEvent, State};
 
 #[tauri::command]
-fn load_app_data(app: AppHandle) -> Result<LoadedAppData, String> {
+fn load_app_data(app: AppHandle, language: State<LanguageState>) -> Result<LoadedAppData, String> {
     logging::boundary(
         "load_app_data",
         json!({}),
@@ -68,6 +26,8 @@ fn load_app_data(app: AppHandle) -> Result<LoadedAppData, String> {
             // The frontend gates its debug logging on this resolved flag.
             storage::load_app_data(&app).map(|mut data| {
                 data.debug_enabled = logging::debug_enabled();
+                data.system_language = language.system_language.to_string();
+                data.system_locale = language.system_locale.clone();
                 data
             })
         },
@@ -79,6 +39,8 @@ fn load_app_data(app: AppHandle) -> Result<LoadedAppData, String> {
                 "panesError": data.panes_error,
                 "dataDir": data.data_dir,
                 "debugEnabled": data.debug_enabled,
+                "systemLanguage": data.system_language,
+                "systemLocale": data.system_locale,
             })
         },
     )
@@ -90,6 +52,38 @@ fn apply_theme(window: tauri::WebviewWindow, preference: String) -> Result<(), S
         "apply_theme",
         json!({ "preference": preference }),
         || theme::apply(&window, theme::window_theme_for(&preference)),
+        |_| json!({}),
+    )
+}
+
+// Rebuilds the native menu in the interface language after a change is saved.
+// The frontend sends the resolved language (System already resolved), so only a
+// supported tag is accepted.
+#[tauri::command]
+fn apply_language(
+    app: AppHandle,
+    state: State<LanguageState>,
+    language: String,
+) -> Result<(), String> {
+    logging::boundary(
+        "apply_language",
+        json!({ "language": language }),
+        || {
+            let language = i18n::normalize_preference(Some(&language))
+                .ok_or_else(|| format!("unsupported language {language:?}"))?;
+            if state.current() == language {
+                return Ok(());
+            }
+            #[cfg(any(target_os = "macos", target_os = "windows"))]
+            {
+                let menu = menu::build(&app, language).map_err(|error| error.to_string())?;
+                app.set_menu(menu).map_err(|error| error.to_string())?;
+            }
+            #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+            let _ = &app;
+            state.set_current(language);
+            Ok(())
+        },
         |_| json!({}),
     )
 }
@@ -224,7 +218,17 @@ pub fn run() {
     let placement_state = window_placement::new_state();
     let event_placement_state = placement_state.clone();
     let setup_placement_state = placement_state.clone();
+    // The interface language is settled before Tauri builds the app: macOS fixes
+    // AppKit's language when the application object is created.
+    let language = LanguageState::detect(
+        paths::data_dir_before_launch()
+            .map(|dir| dir.join(storage::CONFIG_FILE_NAME))
+            .as_deref(),
+    );
+    #[cfg(target_os = "macos")]
+    i18n::align_appkit(language.current());
     let app = tauri::Builder::default()
+        .manage(language)
         .plugin(instance_owner::init())
         .plugin(tauri_plugin_opener::init())
         .on_window_event(move |window, event| {
@@ -279,7 +283,8 @@ pub fn run() {
             }
             #[cfg(any(target_os = "macos", target_os = "windows"))]
             {
-                let menu = menu_with_safe_quit(app.handle()).map_err(std::io::Error::other)?;
+                let language = app.state::<LanguageState>().current();
+                let menu = menu::build(app.handle(), language)?;
                 app.set_menu(menu)?;
             }
             if let Some(window) = main_window {
@@ -288,6 +293,7 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            apply_language,
             apply_theme,
             load_app_data,
             save_config,
