@@ -13,8 +13,7 @@
     "preview": "vite preview --host 127.0.0.1",
     "tauri": "tauri",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.test.json",
-    "test": "vitest run",
-    "check": "npm run typecheck && npm test && cargo test --manifest-path src-tauri/Cargo.toml",
+    "test": "npm run typecheck && vitest run && cargo test --manifest-path src-tauri/Cargo.toml",
     "check:release-tag": "node scripts/check-release-tag.mjs",
     "test:coverage": "vitest run --coverage"
   },

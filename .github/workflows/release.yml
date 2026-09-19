@@ -22,7 +22,7 @@ permissions:
   contents: read
 
 jobs:
-  # Gate on both supported platforms through the repository's canonical check.
+  # Gate on both supported platforms through its whole test run.
   # Both build jobs depend on every matrix leg.
   test:
     strategy:
@@ -46,7 +46,7 @@ jobs:
         run: npm run check:release-tag
         env:
           RELEASE_TAG: ${{ github.ref_name }}
-      - run: npm run check
+      - run: npm test
 
   build:
     needs: test
