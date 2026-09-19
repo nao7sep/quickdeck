@@ -1306,6 +1306,14 @@ kbd {
   max-height: calc(100vh - var(--status-bar-height) - 32px);
   overflow-y: auto;
   overscroll-behavior: contain;
+  /* The scroll region clips its children, so a toast's own box-shadow would be
+     cut off at the region's edge — entirely, for a single toast. The shadow is
+     drawn from the region's rendered toasts instead, which neither clips nor
+     widens the region's hit area. A drop-shadow blur is a standard deviation,
+     half a box-shadow blur radius, so these reproduce the former box-shadow. */
+  filter:
+    drop-shadow(0 8px 12px rgba(30, 27, 75, 0.14))
+    drop-shadow(0 2px 3px rgba(30, 27, 75, 0.08));
 }
 
 .toast {
@@ -1321,9 +1329,6 @@ kbd {
   border-radius: 12px;
   background: var(--surface);
   padding: 4px 8px 4px 12px;
-  box-shadow:
-    0 8px 24px rgba(30, 27, 75, 0.14),
-    0 2px 6px rgba(30, 27, 75, 0.08);
   font-size: 13px;
   font-weight: 500;
   line-height: 20px;

@@ -16,6 +16,14 @@ describe("toast viewport reachability", () => {
     expect(rule).toContain("overscroll-behavior:contain");
   });
 
+  it("draws the toast shadow from the scroll region so the region cannot clip it", () => {
+    const viewportRule = compact.match(/\.toastViewport\{[^}]*\}/)?.[0] ?? "";
+    const toastRule = compact.match(/\.toast\{[^}]*\}/)?.[0] ?? "";
+
+    expect(viewportRule).toContain("filter:drop-shadow(");
+    expect(toastRule).not.toContain("box-shadow");
+  });
+
   it("keeps a one-line message and its close control in the same line box", () => {
     const toastRule = compact.match(/\.toast\{[^}]*\}/)?.[0] ?? "";
     const messageRule = compact.match(/\.toast>span\{[^}]*\}/)?.[0] ?? "";
