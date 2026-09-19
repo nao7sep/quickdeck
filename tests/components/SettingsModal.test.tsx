@@ -48,7 +48,7 @@ describe("SettingsModal language", () => {
       ["es", "Español", "es"],
       ["fr", "Français", "fr"],
       ["it", "Italiano", "it"],
-      ["pt-BR", "Português (Brasil)", "pt-BR"],
+      ["pt-BR", "Português", "pt-BR"],
       ["ru", "Русский", "ru"],
       ["ja", "日本語", "ja"],
       ["ko", "한국어", "ko"],

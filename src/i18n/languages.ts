@@ -3,6 +3,12 @@
 // names, then Cyrillic, then CJK. Each tag names a catalogue in ./locales, and
 // the Rust core embeds the same catalogues (src-tauri/src/i18n.rs), which
 // resolves the computer's language to one of these tags.
+//
+// A tag says exactly which variety a catalogue is written in, while the picker
+// shows each language by its plain name: zh-Hans is Simplified Chinese, shown
+// as 中文, and pt-BR is Brazilian Portuguese, shown as Português. Each is the
+// app's only variety of its language, so every Chinese or Portuguese computer
+// resolves to it.
 export const LANGUAGES = ["en", "de", "es", "fr", "it", "pt-BR", "ru", "ja", "ko", "zh-Hans"] as const;
 
 export type Language = (typeof LANGUAGES)[number];
