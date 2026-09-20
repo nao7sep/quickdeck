@@ -16,31 +16,6 @@ pub const SAFE_QUIT_MENU_ID: &str = "quickdeck.safe-quit";
 
 /// Every catalogue key the native menu reads; the tests check each one exists
 /// in every language.
-#[cfg(test)]
-const KEYS: [&str; 22] = [
-    "nativeMenu.about",
-    "nativeMenu.services",
-    "nativeMenu.hide",
-    "nativeMenu.hideOthers",
-    "nativeMenu.quit",
-    "nativeMenu.exit",
-    "nativeMenu.file",
-    "nativeMenu.closeWindow",
-    "nativeMenu.edit",
-    "nativeMenu.undo",
-    "nativeMenu.redo",
-    "nativeMenu.cut",
-    "nativeMenu.copy",
-    "nativeMenu.paste",
-    "nativeMenu.selectAll",
-    "nativeMenu.view",
-    "nativeMenu.fullscreen",
-    "nativeMenu.window",
-    "nativeMenu.minimize",
-    "nativeMenu.zoom",
-    "nativeMenu.maximize",
-    "nativeMenu.help",
-];
 
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 pub fn build(app: &AppHandle, language: &str) -> tauri::Result<Menu<Wry>> {
@@ -140,16 +115,7 @@ pub fn build(app: &AppHandle, language: &str) -> tauri::Result<Menu<Wry>> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn every_menu_key_is_in_every_language() {
-        for language in i18n::LANGUAGES {
-            let text = i18n::catalogue(language);
-            for key in KEYS {
-                assert!(text.has(key), "{language} lacks {key}");
-            }
-        }
-    }
-}
+// EXCEPTION to tests-folder conventions: the module is private to the crate, and the tests read
+// the test-only `KEYS` table.
+#[path = "../tests/unit/menu.rs"]
+mod tests;
