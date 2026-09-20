@@ -575,6 +575,15 @@ fn ensure_snapshot_db(data_dir: &Path) -> Result<(), String> {
     init_schema(&conn)
 }
 
+// The store keeps every copy until someone deletes it: there is no age, count or
+// size rule here, and its absence is a decision rather than an omission. The row
+// a rule would drop is often the only one left — a pane must be emptied before it
+// can be deleted, so once it is gone these copies hold the last of what was in
+// it — and nothing about a copy's age or position says whether it still matters.
+// The window browses and searches every row, the count is on screen, and Delete
+// and Delete all are one action each, so forgetting stays the reader's to decide.
+// The unique index on (pane_id, content_hash) is what keeps that affordable:
+// repeating a copy writes nothing, so only genuinely new text adds a row.
 fn init_schema(conn: &Connection) -> Result<(), String> {
     conn.execute_batch(
         "
