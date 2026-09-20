@@ -70,12 +70,14 @@
   /* Window chrome (title-bar strip + status bar) — constant across themes. */
   --chrome-gradient: linear-gradient(135deg, #1e1b4b 0%, #312e81 50%, #4c1d95 100%);
 
-  /* Explicit stacking layers. Toasts sit above menus/popovers but below modals
-     so a toast can never cover a modal's actions. Stacked dialogs (e.g. a
-     dirty-close confirmation over Settings) share the modal layer and order by
-     DOM order plus the modal stack. */
-  --z-menu: 20;
-  --z-toast: 30;
+  /* Explicit stacking layers. A menu the user opened owns the surface while it
+     is open: the status bar's menu rises through the same bottom-right column
+     the notices occupy, so a toast below it would sit over the menu's lower
+     items. Modals stay above both, so a toast can never cover a modal's
+     actions. Stacked dialogs (e.g. a dirty-close confirmation over Settings)
+     share the modal layer and order by DOM order plus the modal stack. */
+  --z-toast: 20;
+  --z-menu: 30;
   --z-modal: 50;
 
   /* One height for every one-line field and every action button, so a row that
