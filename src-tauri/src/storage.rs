@@ -75,16 +75,17 @@ pub struct SnapshotInput {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct SnapshotSearchRow {
+pub struct SnapshotRow {
     pub id: String,
+    pub pane_id: String,
     pub created_at_utc: String,
     pub content: String,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct SnapshotSearchResult {
-    pub rows: Vec<SnapshotSearchRow>,
+pub struct SnapshotListResult {
+    pub rows: Vec<SnapshotRow>,
     pub has_more: bool,
 }
 
@@ -222,40 +223,36 @@ pub fn create_snapshots(
     Ok(results)
 }
 
-pub fn search_snapshots(
+pub fn list_snapshots(
     app: &AppHandle,
     query: String,
     limit: u32,
     offset: u32,
-) -> Result<SnapshotSearchResult, String> {
+) -> Result<SnapshotListResult, String> {
     let data_dir = app_data_dir(app)?;
     let conn = open_snapshot_db(&data_dir)?;
-    search_snapshots_with_connection(&conn, &query, limit, offset)
+    list_snapshots_with_connection(&conn, &query, limit, offset)
 }
 
-fn search_snapshots_with_connection(
+// A blank query lists the whole store newest-first; terms narrow that list. The
+// browse path carries no `where` clause at all, so `snapshots_time` serves the
+// ordering directly instead of the scan a `like` filter forces.
+fn list_snapshots_with_connection(
     conn: &Connection,
     query: &str,
     limit: u32,
     offset: u32,
-) -> Result<SnapshotSearchResult, String> {
+) -> Result<SnapshotListResult, String> {
     let terms = query
         .split_whitespace()
         .map(|term| term.to_lowercase())
         .filter(|term| !term.is_empty())
         .collect::<Vec<_>>();
 
-    if terms.is_empty() {
-        return Ok(SnapshotSearchResult {
-            rows: Vec::new(),
-            has_more: false,
-        });
-    }
-
     let bounded_limit = limit.clamp(1, 200);
     let fetch_limit = bounded_limit + 1;
     let mut sql =
-        String::from("select id, created_at_utc, content from snapshots where 1 = 1");
+        String::from("select id, pane_id, created_at_utc, content from snapshots where 1 = 1");
     let mut values: Vec<Value> = Vec::new();
 
     for term in terms {
@@ -274,10 +271,11 @@ fn search_snapshots_with_connection(
     let mut statement = conn.prepare(&sql).map_err(to_string_error)?;
     let mut rows = statement
         .query_map(params_from_iter(values.iter()), |row| {
-            Ok(SnapshotSearchRow {
+            Ok(SnapshotRow {
                 id: row.get(0)?,
-                created_at_utc: row.get(1)?,
-                content: row.get(2)?,
+                pane_id: row.get(1)?,
+                created_at_utc: row.get(2)?,
+                content: row.get(3)?,
             })
         })
         .map_err(to_string_error)?
@@ -287,7 +285,7 @@ fn search_snapshots_with_connection(
     let has_more = rows.len() > bounded_limit as usize;
     rows.truncate(bounded_limit as usize);
 
-    Ok(SnapshotSearchResult { rows, has_more })
+    Ok(SnapshotListResult { rows, has_more })
 }
 
 fn create_snapshot_from_input(
@@ -733,25 +731,66 @@ mod tests {
         assert_eq!(escape_like("plain"), "plain");
     }
 
-    // --- search_snapshots_with_connection ----------------------------------
+    // --- list_snapshots_with_connection ----------------------------------
 
     #[test]
-    fn search_with_empty_or_blank_query_returns_nothing() {
+    fn blank_query_lists_the_whole_store_newest_first() {
         let conn = mem_db();
         insert_row(&conn, "id1", "p1", "2026-01-01T00:00:01.000Z", "hello world");
+        insert_row(&conn, "id2", "p2", "2026-01-01T00:00:02.000Z", "nothing in common");
 
         for query in ["", "   ", "\t\n"] {
-            let result = search_snapshots_with_connection(&conn, query, 25, 0).unwrap();
-            assert!(result.rows.is_empty(), "query {query:?} should match nothing");
+            let result = list_snapshots_with_connection(&conn, query, 25, 0).unwrap();
+            let ids = result.rows.iter().map(|row| row.id.as_str()).collect::<Vec<_>>();
+            assert_eq!(ids, ["id2", "id1"], "query {query:?} should list every row");
             assert!(!result.has_more);
         }
+    }
+
+    #[test]
+    fn blank_query_paginates_like_a_search() {
+        let conn = mem_db();
+        for index in 1..=3 {
+            insert_row(
+                &conn,
+                &format!("id{index}"),
+                "p1",
+                &format!("2026-01-01T00:00:0{index}.000Z"),
+                &format!("row {index}"),
+            );
+        }
+
+        let first = list_snapshots_with_connection(&conn, "", 2, 0).unwrap();
+        assert_eq!(
+            first.rows.iter().map(|row| row.id.as_str()).collect::<Vec<_>>(),
+            ["id3", "id2"]
+        );
+        assert!(first.has_more);
+
+        let second = list_snapshots_with_connection(&conn, "", 2, 2).unwrap();
+        assert_eq!(
+            second.rows.iter().map(|row| row.id.as_str()).collect::<Vec<_>>(),
+            ["id1"]
+        );
+        assert!(!second.has_more);
+    }
+
+    // The modal resolves this id against the live panes to colour a row; a
+    // snapshot from a deleted pane simply finds no match.
+    #[test]
+    fn rows_carry_the_pane_they_came_from() {
+        let conn = mem_db();
+        insert_row(&conn, "id1", "pane-abc", "2026-01-01T00:00:01.000Z", "hello world");
+
+        let result = list_snapshots_with_connection(&conn, "", 25, 0).unwrap();
+        assert_eq!(result.rows[0].pane_id, "pane-abc");
     }
 
     #[test]
     fn search_is_case_insensitive() {
         let conn = mem_db();
         insert_row(&conn, "id1", "p1", "2026-01-01T00:00:01.000Z", "The Quick Brown Fox");
-        let result = search_snapshots_with_connection(&conn, "QUICK", 25, 0).unwrap();
+        let result = list_snapshots_with_connection(&conn, "QUICK", 25, 0).unwrap();
         assert_eq!(result.rows.len(), 1);
         assert_eq!(result.rows[0].id, "id1");
     }
@@ -762,7 +801,7 @@ mod tests {
         insert_row(&conn, "both", "p1", "2026-01-01T00:00:02.000Z", "alpha beta gamma");
         insert_row(&conn, "one", "p1", "2026-01-01T00:00:01.000Z", "alpha only");
 
-        let result = search_snapshots_with_connection(&conn, "alpha gamma", 25, 0).unwrap();
+        let result = list_snapshots_with_connection(&conn, "alpha gamma", 25, 0).unwrap();
         assert_eq!(result.rows.len(), 1);
         assert_eq!(result.rows[0].id, "both");
     }
@@ -774,7 +813,7 @@ mod tests {
         insert_row(&conn, "plain", "p1", "2026-01-01T00:00:01.000Z", "500 dollars");
 
         // Without LIKE escaping, "50%" would match "500" too.
-        let result = search_snapshots_with_connection(&conn, "50%", 25, 0).unwrap();
+        let result = list_snapshots_with_connection(&conn, "50%", 25, 0).unwrap();
         assert_eq!(result.rows.len(), 1);
         assert_eq!(result.rows[0].id, "pct");
     }
@@ -786,7 +825,7 @@ mod tests {
         insert_row(&conn, "new", "p1", "2026-01-01T00:00:03.000Z", "note two");
         insert_row(&conn, "mid", "p1", "2026-01-01T00:00:02.000Z", "note three");
 
-        let result = search_snapshots_with_connection(&conn, "note", 25, 0).unwrap();
+        let result = list_snapshots_with_connection(&conn, "note", 25, 0).unwrap();
         let ids: Vec<_> = result.rows.iter().map(|r| r.id.as_str()).collect();
         assert_eq!(ids, vec!["new", "mid", "old"]);
     }
@@ -800,7 +839,7 @@ mod tests {
         insert_row(&conn, "id-early", "p1", "2026-01-01T00:00:01.100Z", "note alpha");
         insert_row(&conn, "id-late", "p1", "2026-01-01T00:00:01.900Z", "note beta");
 
-        let result = search_snapshots_with_connection(&conn, "note", 25, 0).unwrap();
+        let result = list_snapshots_with_connection(&conn, "note", 25, 0).unwrap();
         let ids: Vec<_> = result.rows.iter().map(|r| r.id.as_str()).collect();
         assert_eq!(ids, vec!["id-late", "id-early"]);
     }
@@ -818,11 +857,11 @@ mod tests {
             );
         }
 
-        let page = search_snapshots_with_connection(&conn, "term", 2, 0).unwrap();
+        let page = list_snapshots_with_connection(&conn, "term", 2, 0).unwrap();
         assert_eq!(page.rows.len(), 2);
         assert!(page.has_more);
 
-        let rest = search_snapshots_with_connection(&conn, "term", 2, 2).unwrap();
+        let rest = list_snapshots_with_connection(&conn, "term", 2, 2).unwrap();
         assert_eq!(rest.rows.len(), 1);
         assert!(!rest.has_more);
     }
@@ -837,8 +876,8 @@ mod tests {
             insert_row(&conn, &format!("id{i}"), "p1", ts, &format!("term {i}"));
         }
 
-        let page1 = search_snapshots_with_connection(&conn, "term", 2, 0).unwrap();
-        let page2 = search_snapshots_with_connection(&conn, "term", 2, 2).unwrap();
+        let page1 = list_snapshots_with_connection(&conn, "term", 2, 0).unwrap();
+        let page2 = list_snapshots_with_connection(&conn, "term", 2, 2).unwrap();
 
         let mut paged: Vec<_> = page1
             .rows
@@ -874,7 +913,7 @@ mod tests {
             );
         }
         // limit 0 clamps up to 1.
-        let result = search_snapshots_with_connection(&conn, "term", 0, 0).unwrap();
+        let result = list_snapshots_with_connection(&conn, "term", 0, 0).unwrap();
         assert_eq!(result.rows.len(), 1);
         assert!(result.has_more);
     }

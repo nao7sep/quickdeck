@@ -54,3 +54,40 @@ export function multiline(
   }
   return out.join("\n");
 }
+
+// Multiline-truncation for the one-line excerpt a snapshot row shows: the first
+// part of a possibly-multiline body, rendered on one line. Copied verbatim from
+// the convention's verified reference; do not rewrite it locally.
+//
+// `n` is a minimum, not an exact length — a few graphemes over is intended, and
+// CSS does the visual fitting. Reading by grapheme is what keeps an emoji or a
+// combining sequence from splitting. No ellipsis: `truncated` tells the caller
+// whether to append its own marker.
+export interface TruncateResult {
+  text: string;
+  truncated: boolean;
+}
+
+export function truncate(text: string, n: number): TruncateResult {
+  if (n <= 0) return { text: "", truncated: false };
+  const out: string[] = [];
+  let pendingSpace = false;
+  let budgetMet = false;
+  let truncated = false;
+  for (const { segment } of new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(text)) {
+    const isWhitespace = segment.trim() === "";
+    if (!budgetMet) {
+      if (isWhitespace) {
+        if (out.length > 0) pendingSpace = true;
+        continue;
+      }
+      if (pendingSpace) { out.push(" "); pendingSpace = false; }
+      out.push(segment);
+      if (out.length >= n) budgetMet = true;
+    } else if (!isWhitespace) {
+      truncated = true;
+      break;
+    }
+  }
+  return { text: out.join(""), truncated };
+}

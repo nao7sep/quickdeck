@@ -11,7 +11,7 @@ pub mod window_placement;
 
 use serde_json::{json, Map, Value as JsonValue};
 use storage::{
-    LoadedAppData, SnapshotInput, SnapshotSearchResult, SnapshotWriteResult,
+    LoadedAppData, SnapshotInput, SnapshotListResult, SnapshotWriteResult,
 };
 use i18n::LanguageState;
 use menu::SAFE_QUIT_MENU_ID;
@@ -175,19 +175,34 @@ fn create_snapshots(
 }
 
 #[tauri::command]
-fn search_snapshots(
+fn list_snapshots(
     app: AppHandle,
     query: String,
     limit: u32,
     offset: u32,
-) -> Result<SnapshotSearchResult, String> {
+) -> Result<SnapshotListResult, String> {
     // The query is the user's own search text; log its length, not its content.
     let params = json!({ "queryLen": query.len(), "limit": limit, "offset": offset });
     logging::boundary(
-        "search_snapshots",
+        "list_snapshots",
         params,
-        move || storage::search_snapshots(&app, query, limit, offset),
+        move || storage::list_snapshots(&app, query, limit, offset),
         |result| json!({ "rows": result.rows.len(), "hasMore": result.has_more }),
+    )
+}
+
+// Puts a snapshot's text on the system clipboard. The text is the user's own
+// writing, so only its length is logged.
+#[tauri::command]
+fn copy_text(text: String) -> Result<(), String> {
+    logging::boundary(
+        "copy_text",
+        json!({ "textLen": text.len() }),
+        move || {
+            let mut clipboard = arboard::Clipboard::new().map_err(|error| error.to_string())?;
+            clipboard.set_text(text).map_err(|error| error.to_string())
+        },
+        |_| json!({}),
     )
 }
 
@@ -303,8 +318,9 @@ pub fn run() {
             quarantine_corrupt_panes,
             create_snapshot,
             create_snapshots,
-            search_snapshots,
+            list_snapshots,
             count_snapshots,
+            copy_text,
             log_event,
         ])
         .build(tauri::generate_context!())

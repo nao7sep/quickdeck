@@ -821,9 +821,12 @@ button:disabled {
   backdrop-filter: blur(4px);
 }
 
+/* Bands stacked top to bottom, with only the body flexible: a column rather
+   than fixed grid rows so an optional toolbar band between the header and the
+   body does not depend on counting children. */
 .modalSurface {
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  display: flex;
+  flex-direction: column;
   width: min(680px, 100%);
   max-height: 84vh;
   border: 1px solid var(--border);
@@ -840,10 +843,22 @@ button:disabled {
   outline: none;
 }
 
+/* A viewer surface, which benefits directly from more visible content. */
+/* A definite height, not merely a cap: the body and the split inside it size
+   against this, and a scroller with no bounded height never scrolls. The cap
+   keeps it inside the overlay's padded area on a short window. */
+.modalSurface-wide {
+  width: min(1100px, 100%);
+  height: 88vh;
+  max-height: 100%;
+}
+
 .modalHeader,
+.modalToolbar,
 .modalFooter {
   display: flex;
   align-items: center;
+  flex: 0 0 auto;
   padding: 14px 16px;
 }
 
@@ -871,10 +886,27 @@ button:disabled {
   background: rgba(255, 255, 255, 0.24);
 }
 
+/* Chrome, not content: fixed like the header above it, closed by its own line,
+   with equal room on both sides of its controls. */
+.modalToolbar {
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-muted);
+}
+
 .modalContent {
+  flex: 1 1 auto;
   min-height: 0;
   overflow: auto;
   padding: 20px;
+}
+
+/* A body whose content fills it and scrolls itself. Must follow .modalContent:
+   same specificity, so source order is what decides the overflow. Without it
+   the body scrolls too, and one wheel drags the whole surface. */
+.modalContent-fixed {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 .modalFooter {
@@ -1275,59 +1307,156 @@ kbd {
 }
 
 .snapshotSearchControls {
-  display: grid;
-  gap: 12px;
-}
-
-.snapshotResults {
-  display: grid;
-  gap: 10px;
-  margin-top: 16px;
-}
-
-.snapshotResult {
-  display: grid;
-  gap: 0;
-  border: 1.5px solid var(--border);
-  border-radius: 10px;
-  background: var(--surface);
-  overflow: hidden;
-  transition: border-color 160ms, box-shadow 160ms;
-}
-
-.snapshotResult:hover {
-  border-color: #a78bfa;
-  box-shadow: 0 2px 8px rgba(124, 58, 237, 0.1);
-}
-
-.snapshotResult header {
   display: flex;
-  justify-content: flex-start;
-  gap: 12px;
-  padding: 8px 12px;
-  background: var(--surface-accent);
-  color: var(--accent-strong);
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.snapshotSearchControls .searchBox {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* Master and detail. The content box never scrolls: the list and the selected
+   snapshot's text each own their own scrolling. */
+.snapshotBrowser {
+  display: grid;
+  grid-template-columns: minmax(240px, 34%) minmax(0, 1fr);
+  gap: 16px;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.snapshotListColumn {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+}
+
+.snapshotList {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  /* The list's scrolling stops at the list. Chaining would hand the wheel to
+     an ancestor and move the whole split. */
+  overscroll-behavior: contain;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-muted);
+}
+
+.snapshotList:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Flat rows, so hover and selection read as fills rather than as rings — a
+   ring at a row's edge clips against the scrolling container. */
+.snapshotRow {
+  display: grid;
+  gap: 2px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 120ms;
+}
+
+.snapshotRow + .snapshotRow {
+  margin-top: 2px;
+}
+
+.snapshotRow:hover {
+  background: var(--surface-hover);
+}
+
+.snapshotRow-selected {
+  background: var(--surface-selected);
+}
+
+.snapshotRowHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.snapshotRowDot {
+  width: 8px;
+  height: 8px;
+  flex-shrink: 0;
+  border-radius: 999px;
+  background: var(--border-strong);
+}
+
+.snapshotRowTime {
+  color: var(--text-muted);
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.2px;
-  border-bottom: 1px solid var(--border);
 }
 
-.snapshotResult pre {
-  max-height: 220px;
+.snapshotRowExcerpt {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 13px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* One surface with its own bands: an identifying strip over the text, so the
+   dot and time read as part of the pane rather than as loose text on the
+   modal. */
+.snapshotDetail {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.snapshotDetailBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex: 0 0 auto;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-accent);
+}
+
+.snapshotDetail > .mutedText {
+  margin: 0;
+  padding: 12px;
+}
+
+.snapshotDetail pre {
+  flex: 1 1 auto;
+  min-height: 0;
   margin: 0;
   padding: 12px;
   overflow: auto;
+  overscroll-behavior: contain;
+  background: var(--surface);
   white-space: pre-wrap;
   word-break: break-word;
-  background: var(--surface);
   font-family: inherit;
   font-size: 13px;
   line-height: 1.5;
 }
 
-.loadMoreButton {
-  justify-self: end;
+.snapshotListFoot {
+  margin: 6px 0 2px;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  text-align: center;
 }
 
 /* ── Toasts ──────────────────────────────────────────────────── */

@@ -5,7 +5,7 @@ QuickDeck is a local-first, multi-pane plain-text workspace for fast, buffer-bas
 ## Features
 
 - Multiple equal-width panes with vivid, auto-distinct header colors, editable titles, and keyboard reordering and focus
-- Configurable-delay autosave, plus deduped SQLite recovery snapshots on copy, paste, cut, and close — with searchable, timestamped history
+- Configurable-delay autosave, plus deduped SQLite recovery snapshots on copy, paste, cut, and close — browse the timestamped history newest-first, narrow it by search, and copy any snapshot's text back out
 - Word, character, and X/Twitter-weighted character counts
 - Zen mode that focuses a single pane, and an always-on-top toggle
 - An interface in English, Japanese, Chinese, Korean, Spanish, Portuguese, French, German, Italian, and Russian that follows the computer's language by default

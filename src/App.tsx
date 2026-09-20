@@ -16,7 +16,7 @@ import {
   Settings,
 } from "lucide-react";
 import { AboutModal } from "./components/AboutModal";
-import { SnapshotSearchModal } from "./components/SnapshotSearchModal";
+import { SnapshotsModal } from "./components/SnapshotsModal";
 import { ErrorModal } from "./components/ErrorModal";
 import { LoadErrorScreen } from "./components/LoadErrorScreen";
 import { Menu, MenuItem } from "./components/Menu";
@@ -703,7 +703,7 @@ export function App() {
             </MenuItem>
             <MenuItem onSelect={() => openMenuModal("snapshots")}>
               <History size={16} />
-              {t("menu.snapshotSearch")}
+              {t("menu.snapshots")}
             </MenuItem>
             <MenuItem onSelect={() => openMenuModal("about")}>
               <Info size={16} />
@@ -715,7 +715,7 @@ export function App() {
       {openModal === "settings" ? <SettingsModal onClose={() => setOpenModal(null)} /> : null}
       {openModal === "shortcuts" ? <ShortcutsModal onClose={() => setOpenModal(null)} /> : null}
       {openModal === "about" ? <AboutModal onClose={() => setOpenModal(null)} /> : null}
-      {openModal === "snapshots" ? <SnapshotSearchModal onClose={() => setOpenModal(null)} /> : null}
+      {openModal === "snapshots" ? <SnapshotsModal onClose={() => setOpenModal(null)} /> : null}
       {blockingError ? <ErrorModal error={blockingError} onClose={dismissBlockingError} /> : null}
       <ToastViewport
         themeApplicationFailed={themeApplicationFailed}

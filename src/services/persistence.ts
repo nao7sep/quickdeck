@@ -50,14 +50,17 @@ export type SnapshotWriteResult = {
   id: string | null;
 };
 
-export type SnapshotSearchRow = {
+export type SnapshotRow = {
   id: string;
+  // Which pane the text was captured from. The store never recorded the pane's
+  // title, so this resolves to a name only while that pane still exists.
+  paneId: string;
   createdAtUtc: string;
   content: string;
 };
 
-export type SnapshotSearchResult = {
-  rows: SnapshotSearchRow[];
+export type SnapshotListResult = {
+  rows: SnapshotRow[];
   hasMore: boolean;
 };
 
@@ -166,16 +169,17 @@ export async function createSnapshots(inputs: SnapshotWriteInput[]): Promise<Sna
   return invoke<SnapshotWriteResult[]>("create_snapshots", { snapshots: inputs });
 }
 
-export async function searchSnapshots(
+// A blank query lists the whole store newest-first; terms narrow that list.
+export async function listSnapshots(
   query: string,
   limit: number,
   offset: number,
-): Promise<SnapshotSearchResult> {
+): Promise<SnapshotListResult> {
   if (!isTauri()) {
     return { rows: [], hasMore: false };
   }
 
-  return invoke<SnapshotSearchResult>("search_snapshots", {
+  return invoke<SnapshotListResult>("list_snapshots", {
     query,
     limit,
     offset,

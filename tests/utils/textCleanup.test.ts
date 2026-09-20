@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { multiline, singleLine } from "../../src/utils/textCleanup";
+import { multiline, singleLine, truncate } from "../../src/utils/textCleanup";
 
 // These cover the behaviors quickdeck relies on: singleLine for the pane title
 // (committed on blur) and multiline for snapshot bodies (the trimSnapshotContent
@@ -61,5 +61,36 @@ describe("multiline (snapshot body — trimSnapshotContent replacement)", () => 
   it("normalizes CRLF and CR line endings to LF", () => {
     expect(multiline("a\r\nb")).toBe("a\nb");
     expect(multiline("a\rb")).toBe("a\nb");
+  });
+});
+
+// The snapshot list's one-line excerpt. The convention names these three as the
+// cases worth pinning per app: the minimum-length contract, `truncated` honesty
+// on an all-whitespace tail, and grapheme safety at an emoji boundary.
+describe("truncate (snapshot row excerpt)", () => {
+  it("reports a cut only when visible text follows it", () => {
+    expect(truncate("hello world", 5)).toEqual({ text: "hello", truncated: true });
+    expect(truncate("hello", 5)).toEqual({ text: "hello", truncated: false });
+    expect(truncate("hello   ", 5)).toEqual({ text: "hello", truncated: false });
+  });
+
+  it("renders a multiline body on one line", () => {
+    expect(truncate("a\nb\nc", 10)).toEqual({ text: "a b c", truncated: false });
+    expect(truncate("  padded  ", 3)).toEqual({ text: "pad", truncated: true });
+  });
+
+  it("never splits an emoji or a combining sequence", () => {
+    expect(truncate("\u{1F600}x", 1)).toEqual({ text: "\u{1F600}", truncated: true });
+    expect(truncate("\u{1F468}\u200D\u{1F469}\u200D\u{1F467}x", 1)).toEqual({
+      text: "\u{1F468}\u200D\u{1F469}\u200D\u{1F467}",
+      truncated: true,
+    });
+    expect(truncate("éllo", 2)).toEqual({ text: "él", truncated: true });
+  });
+
+  it("guards an empty body and a non-positive budget", () => {
+    expect(truncate("", 5)).toEqual({ text: "", truncated: false });
+    expect(truncate("   ", 5)).toEqual({ text: "", truncated: false });
+    expect(truncate("hello", 0)).toEqual({ text: "", truncated: false });
   });
 });

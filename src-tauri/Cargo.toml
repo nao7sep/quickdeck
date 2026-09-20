@@ -35,6 +35,16 @@ sha2 = "0.11.0"
 chrono = { version = "0.4.45", features = ["serde"] }
 getrandom = "0.4.3"
 tauri-plugin-opener = "2.5.4"
+# The system clipboard, behind the Copy control in the snapshots modal. The
+# webview's own navigator.clipboard is not reliably a secure context under the
+# tauri:// scheme, so the copy goes through a command instead.
+#
+# Used directly rather than through tauri-plugin-clipboard-manager, which pins
+# arboard's default features and so drags a whole image-decoding stack (image,
+# tiff, moxcms, half) into a text-only copy. Cargo unifies features additively,
+# so depending on the plugin makes that unavoidable. QuickDeck ships macOS and
+# Windows, where set_text outlives the Clipboard handle.
+arboard = { version = "3.6.1", default-features = false }
 # The computer's preferred languages, read once at launch (src/i18n.rs).
 sys-locale = "0.3.2"
 # The home directory, resolved exactly as Tauri's path resolver does, so the

@@ -15,6 +15,17 @@ type ModalBaseProps = {
   // Informational bodies opt in to the shared keyboard-scroll owner. Forms keep
   // their fields as the focus and keyboard owners.
   passiveContentLabel?: string;
+  // Chrome between the header and the body — a filter or search row. It is a
+  // band of its own, fixed like the header and footer, so it never scrolls away
+  // with the content it filters.
+  toolbar?: ReactNode;
+  // Surfaces that benefit directly from more visible content take most of the
+  // window instead of a readable content width.
+  wide?: boolean;
+  // Off when the body's own content fills it and owns its scrolling — a split
+  // whose halves each scroll. The body must not scroll too, or a wheel over one
+  // half chains into the body and drags the whole surface with it.
+  scrollableBody?: boolean;
 };
 
 export function ModalBase({
@@ -24,6 +35,9 @@ export function ModalBase({
   closeDisabled = false,
   onRequestClose,
   passiveContentLabel,
+  toolbar,
+  wide = false,
+  scrollableBody = true,
 }: ModalBaseProps) {
   const { t } = useI18n();
   const surfaceRef = useRef<HTMLDivElement | null>(null);
@@ -103,7 +117,7 @@ export function ModalBase({
       }}
     >
       <div
-        className="modalSurface"
+        className={`modalSurface ${wide ? "modalSurface-wide" : ""}`}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
@@ -123,11 +137,12 @@ export function ModalBase({
             <X size={18} />
           </button>
         </header>
+        {toolbar ? <div className="modalToolbar">{toolbar}</div> : null}
         <div
           {...(passiveContentLabel
             ? passiveScrollRegionProps(passiveContentLabel)
             : {})}
-          className="modalContent"
+          className={`modalContent ${scrollableBody ? "" : "modalContent-fixed"}`}
         >
           {children}
         </div>
