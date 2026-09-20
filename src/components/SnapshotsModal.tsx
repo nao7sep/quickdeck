@@ -25,6 +25,13 @@ type SnapshotsModalProps = {
 // Copied would give the second press no feedback at all.
 const COPIED_FEEDBACK_MS = 2000;
 
+// A snapshot's origin in words: the pane's name as it reads now while that pane exists,
+// otherwise the name it carried when the copy was taken. Empty for a copy saved before
+// names were recorded, which then shows nothing rather than a placeholder.
+function paneName(liveTitle: string | undefined, savedTitle: string): string {
+  return (liveTitle ?? savedTitle).trim();
+}
+
 // How close to the end of the list a scroll gets before the next page loads.
 const LOAD_MORE_THRESHOLD_PX = 120;
 
@@ -282,13 +289,17 @@ export function SnapshotsModal({ onClose }: SnapshotsModalProps) {
                   onFocus={() => setSelectedId(row.id)}
                 >
                   <span className="snapshotRowHead">
-                    {/* The store records only the pane's id, so a snapshot from a
-                        deleted pane simply carries no colour. */}
+                    {/* A snapshot from a deleted pane carries no colour, because the colour
+                        belongs to a pane that is gone — but it still says the pane's name,
+                        which it recorded for itself when it was taken. */}
                     <span
                       className="snapshotRowDot"
                       style={origin ? { background: origin.headerColor } : undefined}
                     />
                     <span className="snapshotRowTime">{timestamp}</span>
+                    {paneName(origin?.title, row.paneTitle) !== "" ? (
+                      <span className="snapshotRowPane">{paneName(origin?.title, row.paneTitle)}</span>
+                    ) : null}
                   </span>
                   <span className="snapshotRowExcerpt">
                     {excerpt.text}
@@ -324,6 +335,11 @@ export function SnapshotsModal({ onClose }: SnapshotsModalProps) {
                   <span className="snapshotRowTime">
                     {formatSnapshotTimestamp(selected.createdAtUtc, i18n.dateTime)}
                   </span>
+                  {paneName(selectedOrigin?.title, selected.paneTitle) !== "" ? (
+                    <span className="snapshotRowPane">
+                      {paneName(selectedOrigin?.title, selected.paneTitle)}
+                    </span>
+                  ) : null}
                 </span>
                 <button
                   className="iconTextButton"

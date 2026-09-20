@@ -455,6 +455,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
 
   const recordSnapshot = useCallback(
     (paneId: string, trigger: SnapshotTrigger, content: string) => {
+      const paneTitle = panesRef.current.find((pane) => pane.id === paneId)?.title ?? "";
       if (loadStatus !== "ready") {
         return;
       }
@@ -464,7 +465,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      void createSnapshot({ paneId, trigger, content: trimmed })
+      void createSnapshot({ paneId, paneTitle, trigger, content: trimmed })
         .then((result) => {
           if (result.inserted) {
             setSnapshotCount((current) => current + 1);
@@ -489,6 +490,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       const snapshots = panesRef.current
         .map((pane) => ({
           paneId: pane.id,
+          paneTitle: pane.title,
           trigger,
           content: multiline(pane.content),
         }))

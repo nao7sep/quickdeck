@@ -69,6 +69,10 @@ pub struct SnapshotWriteResult {
 #[serde(rename_all = "camelCase")]
 pub struct SnapshotInput {
     pub pane_id: String,
+    /// The pane's title as it read when the copy was taken. Stored beside the id because a
+    /// deleted pane cannot be asked for its name later, and a copy that cannot say where it
+    /// came from is worth less than one that can.
+    pub pane_title: String,
     pub trigger: String,
     pub content: String,
 }
@@ -78,6 +82,8 @@ pub struct SnapshotInput {
 pub struct SnapshotRow {
     pub id: String,
     pub pane_id: String,
+    /// Empty for a copy taken before titles were recorded.
+    pub pane_title: String,
     pub created_at_utc: String,
     pub content: String,
 }
@@ -195,6 +201,7 @@ pub fn quarantine_corrupt_panes(app: &AppHandle) -> Result<String, String> {
 pub fn create_snapshot(
     app: &AppHandle,
     pane_id: String,
+    pane_title: String,
     trigger: String,
     content: String,
 ) -> Result<SnapshotWriteResult, String> {
@@ -202,6 +209,7 @@ pub fn create_snapshot(
         app,
         SnapshotInput {
             pane_id,
+            pane_title,
             trigger,
             content,
         },
@@ -252,7 +260,7 @@ fn list_snapshots_with_connection(
     let bounded_limit = limit.clamp(1, 200);
     let fetch_limit = bounded_limit + 1;
     let mut sql =
-        String::from("select id, pane_id, created_at_utc, content from snapshots where 1 = 1");
+        String::from("select id, pane_id, pane_title, created_at_utc, content from snapshots where 1 = 1");
     let mut values: Vec<Value> = Vec::new();
 
     for term in terms {
@@ -274,8 +282,9 @@ fn list_snapshots_with_connection(
             Ok(SnapshotRow {
                 id: row.get(0)?,
                 pane_id: row.get(1)?,
-                created_at_utc: row.get(2)?,
-                content: row.get(3)?,
+                pane_title: row.get(2)?,
+                created_at_utc: row.get(3)?,
+                content: row.get(4)?,
             })
         })
         .map_err(to_string_error)?
@@ -351,11 +360,12 @@ fn create_snapshot_with_connection(
     // the managed-text backup layer (data-backup conventions). It also never touches
     // atomic_write_json, so it never reaches the record hook by construction.
     conn.execute(
-        "insert into snapshots (id, pane_id, created_at_utc, trigger, content_hash, content)
-         values (?1, ?2, ?3, ?4, ?5, ?6)",
+        "insert into snapshots (id, pane_id, pane_title, created_at_utc, trigger, content_hash, content)
+         values (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
         params![
             id,
             snapshot.pane_id,
+            snapshot.pane_title,
             created_at_utc,
             snapshot.trigger,
             content_hash,
@@ -542,6 +552,7 @@ fn init_schema(conn: &Connection) -> Result<(), String> {
         create table if not exists snapshots (
           id text primary key,
           pane_id text not null,
+          pane_title text not null default '',
           created_at_utc text not null,
           trigger text not null,
           content_hash text not null,
@@ -556,6 +567,18 @@ fn init_schema(conn: &Connection) -> Result<(), String> {
         ",
     )
     .map_err(to_string_error)?;
+
+    // A store written before titles were recorded gains the column; its existing rows keep
+    // the empty title they were saved with, which the app reads as "pane unknown".
+    let has_title = conn
+        .prepare("select 1 from pragma_table_info('snapshots') where name = 'pane_title'")
+        .and_then(|mut statement| statement.exists([]))
+        .map_err(to_string_error)?;
+    if !has_title {
+        conn.execute_batch("alter table snapshots add column pane_title text not null default '';")
+            .map_err(to_string_error)?;
+    }
+
     Ok(())
 }
 
@@ -593,6 +616,7 @@ mod tests {
     fn input(pane: &str, content: &str) -> SnapshotInput {
         SnapshotInput {
             pane_id: pane.to_string(),
+            pane_title: format!("{pane} title"),
             trigger: "copy".to_string(),
             content: content.to_string(),
         }
@@ -607,6 +631,42 @@ mod tests {
             params![id, pane, created_at_utc, hash_content(content), content],
         )
         .expect("insert row");
+    }
+
+    #[test]
+    fn a_snapshot_keeps_the_pane_title_it_was_taken_under() {
+        let conn = mem_db();
+        create_snapshot_with_connection(&conn, input("pane-1", "hello")).expect("insert");
+
+        let listed = list_snapshots_with_connection(&conn, "", 10, 0).expect("list");
+        let row = listed.rows.first().expect("one row");
+        assert_eq!(row.pane_title, "pane-1 title");
+    }
+
+    #[test]
+    fn a_store_written_before_titles_gains_the_column_and_reads_its_rows_as_unnamed() {
+        let conn = Connection::open_in_memory().expect("open in-memory db");
+        // The schema as it stood before a snapshot carried its pane's name.
+        conn.execute_batch(
+            "create table snapshots (
+               id text primary key,
+               pane_id text not null,
+               created_at_utc text not null,
+               trigger text not null,
+               content_hash text not null,
+               content text not null
+             );
+             insert into snapshots (id, pane_id, created_at_utc, trigger, content_hash, content)
+             values ('old', 'pane-1', '2026-09-08T00:00:00.000Z', 'copy', 'hash', 'kept text');",
+        )
+        .expect("old schema");
+
+        init_schema(&conn).expect("migrate");
+
+        let listed = list_snapshots_with_connection(&conn, "", 10, 0).expect("list");
+        let row = listed.rows.first().expect("the old row survives");
+        assert_eq!(row.content, "kept text");
+        assert_eq!(row.pane_title, "");
     }
 
     // --- config serialization ----------------------------------------------

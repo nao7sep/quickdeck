@@ -41,6 +41,9 @@ export type LoadedAppData = {
 
 export type SnapshotWriteInput = {
   paneId: string;
+  // The pane's title when the copy was taken. A deleted pane cannot be asked for its
+  // name later, so the copy carries it.
+  paneTitle: string;
   trigger: SnapshotTrigger;
   content: string;
 };
@@ -52,9 +55,10 @@ export type SnapshotWriteResult = {
 
 export type SnapshotRow = {
   id: string;
-  // Which pane the text was captured from. The store never recorded the pane's
-  // title, so this resolves to a name only while that pane still exists.
+  // Which pane the text was captured from, and what that pane was called at the time.
+  // The title is empty for a copy taken before titles were recorded.
   paneId: string;
+  paneTitle: string;
   createdAtUtc: string;
   content: string;
 };

@@ -18,7 +18,7 @@ vi.mock("../../src/services/logger", () => ({
 vi.mock("../../src/state/AppStateContext", () => ({
   useAppState: () => ({
     settings: { snapshotSearchPageSize: 20 },
-    panes: [{ id: "pane-1", headerColor: "#c72323" }],
+    panes: [{ id: "pane-1", title: "Notes", headerColor: "#c72323" }],
   }),
 }));
 
@@ -36,8 +36,8 @@ afterEach(async () => {
   mocks.logWarn.mockReset();
 });
 
-function row(id: string, content: string, paneId = "pane-1") {
-  return { id, paneId, createdAtUtc: "2026-09-08T00:00:00.000Z", content };
+function row(id: string, content: string, paneId = "pane-1", paneTitle = "Scratch") {
+  return { id, paneId, paneTitle, createdAtUtc: "2026-09-08T00:00:00.000Z", content };
 }
 
 async function open() {
@@ -150,6 +150,24 @@ describe("SnapshotsModal list as one composite control", () => {
     const dots = Array.from(document.querySelectorAll<HTMLElement>(".snapshotRowDot"));
     expect(dots[0].style.background).not.toBe("");
     expect(dots[1].style.background).toBe("");
+  });
+
+  it("names the pane a snapshot came from, from the pane itself or from the snapshot", async () => {
+    mocks.list.mockResolvedValue({
+      rows: [
+        // A live pane: the name it goes by now, even if the copy was taken under an older one.
+        row("a", "first", "pane-1", "Old name"),
+        // A deleted pane: the name the copy carries.
+        row("b", "second", "deleted-pane", "Shopping"),
+        // Saved before names were recorded: nothing rather than a placeholder.
+        row("c", "third", "deleted-pane", ""),
+      ],
+      hasMore: false,
+    });
+    await open();
+
+    const names = Array.from(document.querySelectorAll<HTMLElement>(".snapshotRow .snapshotRowPane"));
+    expect(names.map((name) => name.textContent)).toEqual(["Notes", "Shopping"]);
   });
 });
 

@@ -1398,6 +1398,17 @@ kbd {
   letter-spacing: 0.2px;
 }
 
+/* The pane a snapshot came from. It gives way before the time does, since the time is
+   what orders the list. */
+.snapshotRowPane {
+  color: var(--text-muted);
+  font-size: 11px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .snapshotRowExcerpt {
   overflow: hidden;
   color: var(--text);

@@ -142,6 +142,7 @@ fn quarantine_corrupt_panes(app: AppHandle) -> Result<String, String> {
 fn create_snapshot(
     app: AppHandle,
     pane_id: String,
+    pane_title: String,
     trigger: String,
     content: String,
 ) -> Result<SnapshotWriteResult, String> {
@@ -150,7 +151,7 @@ fn create_snapshot(
     logging::boundary(
         "create_snapshot",
         params,
-        move || storage::create_snapshot(&app, pane_id, trigger, content),
+        move || storage::create_snapshot(&app, pane_id, pane_title, trigger, content),
         |result| json!({ "inserted": result.inserted, "id": result.id }),
     )
 }
