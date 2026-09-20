@@ -49,8 +49,9 @@
   --input-border: #868ba3;
   --accent: #6d28d9;
   --accent-strong: #4c1d95;
-  --danger: #dc2626;
+  --danger: #b91c1c;
   --danger-surface: #fdecec;
+  --danger-surface-pressed: #fbdada;
   --warning: #f59e0b;
   --divider-subtle: rgba(0, 0, 0, 0.07);
   --overlay-hover: rgba(0, 0, 0, 0.08);
@@ -123,6 +124,7 @@
     --accent: #c4b5fd;
     --danger: #f87171;
     --danger-surface: #3a2020;
+    --danger-surface-pressed: #4a2626;
     --accent-strong: #ddd0ff;
     --divider-subtle: rgba(255, 255, 255, 0.08);
     --overlay-hover: rgba(255, 255, 255, 0.10);
@@ -968,15 +970,15 @@ button:disabled {
   min-width: 104px;
   padding: 0 16px;
   border: none;
-  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  background: linear-gradient(135deg, #4f46e5, #7c3aed);
   color: #ffffff;
-  box-shadow: 0 2px 10px rgba(99, 102, 241, 0.38);
+  box-shadow: 0 2px 10px rgba(79, 70, 229, 0.38);
   transition: filter 120ms, box-shadow 120ms;
 }
 
 .primaryButton:hover {
   filter: brightness(1.1);
-  box-shadow: 0 4px 16px rgba(99, 102, 241, 0.5);
+  box-shadow: 0 4px 16px rgba(79, 70, 229, 0.5);
 }
 
 /* A press steps the button's own surface; it does not resize the button. The
@@ -1021,13 +1023,13 @@ button:disabled {
   border-color: var(--danger);
 }
 
-/* No pressed step, and not an oversight: the only rung left is a deeper tint, and
-   the red letters already measure 4.23:1 on the hover tint in the light theme.
-   Deepening it takes them to 3.71, and a brightness step over the whole control
-   takes them to 4.08. The tint wants raising past the floor before this role can
-   answer a press. */
 .dangerTrigger:hover {
   background: var(--danger-surface);
+  border-color: var(--danger);
+}
+
+.dangerTrigger:active {
+  background: var(--danger-surface-pressed);
   border-color: var(--danger);
 }
 
@@ -1035,9 +1037,9 @@ button:disabled {
   min-width: 104px;
   padding: 0 16px;
   border: none;
-  background: linear-gradient(135deg, #ef4444, #dc2626);
+  background: linear-gradient(135deg, #b91c1c, #991b1b);
   color: #ffffff;
-  box-shadow: 0 2px 10px rgba(239, 68, 68, 0.32);
+  box-shadow: 0 2px 10px rgba(185, 28, 28, 0.32);
   transition: filter 120ms;
 }
 

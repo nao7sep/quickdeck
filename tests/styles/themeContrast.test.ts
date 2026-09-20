@@ -24,6 +24,8 @@ const TEXT_PAIRS: ReadonlyArray<[string, string]> = [
   ["--accent-strong", "--surface"],
   ["--accent-strong", "--surface-accent"],
   ["--danger", "--surface"],
+  ["--danger", "--danger-surface"],
+  ["--danger", "--danger-surface-pressed"],
   ["--kbd-text", "--kbd-bg"],
 ];
 
