@@ -1,4 +1,5 @@
 import { isValidElement, type ReactElement } from "react";
+import type { MessageKey } from "../../src/i18n/catalogues";
 import { describe, expect, it } from "vitest";
 import { createTranslator } from "../../src/i18n/translate";
 
@@ -34,5 +35,12 @@ describe("createTranslator", () => {
   it("renders a message descriptor", () => {
     const t = createTranslator("en");
     expect(t.text({ key: "load.panesNewer", values: { version: 2 } })).toContain("(format 2)");
+  });
+
+  it("shows a key the catalogue lacks instead of failing the render", () => {
+    // Types keep this out of the app; a stale build or a half-merged catalogue
+    // could still reach it, and a window must not go down over one string.
+    const missing = "gone.missing" as unknown as MessageKey;
+    expect(createTranslator("ja").t(missing)).toBe("gone.missing");
   });
 });
