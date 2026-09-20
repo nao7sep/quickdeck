@@ -32,6 +32,12 @@ const HUE_LIGHTNESS: Array<{ centerDeg: number; lightness: number }> = [
 const CANDIDATE_COUNT = 24;
 const MIN_HUE_DISTANCE_FOR_DISTINCT = 25; // degrees
 
+// How much darker the bottom of a pane header sits than its stored color. The
+// gradient only ever deepens, so the lightest pixel under the white title text
+// remains the stored header color the rules above already keep dark enough —
+// the contrast guarantee holds by construction rather than by a second rule.
+const HEADER_DEEP_LIGHTNESS_FACTOR = 0.72;
+
 export type PaneColor = {
   header: string;
   background: string;
@@ -50,6 +56,17 @@ export function randomPaneColor(existingHeaders: ReadonlyArray<string> = []): Pa
   };
 }
 
+// The bottom stop of a pane header's gradient: the stored color at the same hue
+// and saturation, carried down to a lower lightness. Derived at render time so
+// no second color is persisted per pane.
+export function paneHeaderDeep(headerColor: string): string {
+  const hsl = hslFromHex(headerColor);
+  if (!hsl) {
+    return hslToHex(0, 0, DARK_PANE_LIGHTNESS);
+  }
+  return hslToHex(hsl.hue, hsl.saturation, hsl.lightness * HEADER_DEEP_LIGHTNESS_FACTOR);
+}
+
 const DARK_PANE_LIGHTNESS = 0.16;
 
 // Dark-theme pane body. A non-active pane should read as weakly colored as it
@@ -60,23 +77,18 @@ const DARK_PANE_LIGHTNESS = 0.16;
 // at a dark lightness — same hue, same colorfulness, just dark. Derived at
 // render time from the stored light background, so no extra color is persisted.
 export function darkPaneBackground(lightBackground: string): string {
-  const match = /^#?([0-9a-f]{6})$/i.exec(lightBackground.trim());
-  const hue = hueFromHex(lightBackground) ?? 0;
-  if (!match) {
-    return hslToHex(hue, 0, DARK_PANE_LIGHTNESS);
+  const hsl = hslFromHex(lightBackground);
+  if (!hsl) {
+    return hslToHex(0, 0, DARK_PANE_LIGHTNESS);
   }
 
-  const int = parseInt(match[1], 16);
-  const r = ((int >> 16) & 0xff) / 255;
-  const g = ((int >> 8) & 0xff) / 255;
-  const b = (int & 0xff) / 255;
-  const chroma = Math.max(r, g, b) - Math.min(r, g, b);
-
-  // Invert chroma = (1 − |2L − 1|) · S to find the saturation that yields the
-  // same chroma at the target dark lightness.
+  // Measure the light tint's chroma through the identity chroma = (1 − |2L − 1|) · S,
+  // then invert it to find the saturation that yields the same chroma at the
+  // target dark lightness.
+  const chroma = (1 - Math.abs(2 * hsl.lightness - 1)) * hsl.saturation;
   const denominator = 1 - Math.abs(2 * DARK_PANE_LIGHTNESS - 1);
   const saturation = denominator === 0 ? 0 : chroma / denominator;
-  return hslToHex(hue, saturation, DARK_PANE_LIGHTNESS);
+  return hslToHex(hsl.hue, saturation, DARK_PANE_LIGHTNESS);
 }
 
 function pickHue(usedHues: number[]): number {
@@ -177,6 +189,14 @@ function clamp01(value: number): number {
 }
 
 export function hueFromHex(hex: string): number | null {
+  return hslFromHex(hex)?.hue ?? null;
+}
+
+type Hsl = { hue: number; saturation: number; lightness: number };
+
+// The one place a #rrggbb string is taken apart. A grey reads as hue 0 with no
+// saturation, which is what the callers above want from one.
+function hslFromHex(hex: string): Hsl | null {
   const match = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
   if (!match) {
     return null;
@@ -188,8 +208,9 @@ export function hueFromHex(hex: string): number | null {
   const max = Math.max(r, g, b);
   const min = Math.min(r, g, b);
   const delta = max - min;
+  const lightness = (max + min) / 2;
   if (delta === 0) {
-    return 0;
+    return { hue: 0, saturation: 0, lightness };
   }
   let hue: number;
   if (max === r) {
@@ -199,5 +220,9 @@ export function hueFromHex(hex: string): number | null {
   } else {
     hue = (r - g) / delta + 4;
   }
-  return ((hue * 60) + 360) % 360;
+  return {
+    hue: ((hue * 60) + 360) % 360,
+    saturation: delta / (1 - Math.abs(2 * lightness - 1)),
+    lightness,
+  };
 }

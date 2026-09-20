@@ -3,7 +3,7 @@ import { Trash2 } from "lucide-react";
 import type { Pane } from "../types";
 import { useAppState } from "../state/AppStateContext";
 import { getTextCounts } from "../utils/counts";
-import { darkPaneBackground } from "../utils/paneColors";
+import { darkPaneBackground, paneHeaderDeep } from "../utils/paneColors";
 import { shouldPullEditorFocus } from "../utils/paneFocus";
 import { panePanelDomId } from "../utils/paneDomIds";
 import { useI18n } from "../i18n/I18nContext";
@@ -56,6 +56,7 @@ export function PaneView({ pane }: PaneViewProps) {
       style={
         {
           "--pane-color": pane.headerColor,
+          "--pane-color-deep": paneHeaderDeep(pane.headerColor),
           "--pane-bg": pane.backgroundColor,
           "--pane-bg-dark": darkPaneBackground(pane.backgroundColor),
         } as CSSProperties

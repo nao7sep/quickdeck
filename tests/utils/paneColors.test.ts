@@ -4,6 +4,7 @@ import {
   hslToHex,
   hueFromHex,
   minHueDistance,
+  paneHeaderDeep,
   randomPaneColor,
 } from "../../src/utils/paneColors";
 
@@ -89,6 +90,39 @@ describe("randomPaneColor", () => {
 
   it("ignores unparseable existing headers without throwing", () => {
     expect(() => randomPaneColor(["not-a-color", "#zzzzzz"])).not.toThrow();
+  });
+});
+
+describe("paneHeaderDeep", () => {
+  it("keeps the hue but renders it darker than the stored header", () => {
+    for (let i = 0; i < 200; i += 1) {
+      const header = randomPaneColor().header;
+      const deep = paneHeaderDeep(header);
+      expect(deep).toMatch(HEX);
+      expect(minHueDistance(hueFromHex(deep) as number, [hueFromHex(header) as number]))
+        .toBeLessThan(3);
+      expect(relativeLuminance(deep)).toBeLessThan(relativeLuminance(header));
+    }
+  });
+
+  // The gradient only ever deepens, so the stored header stays the lightest
+  // pixel and the white title text is safe wherever it lands on the band.
+  it("never produces a stop lighter than the header it came from", () => {
+    for (let i = 0; i < 200; i += 1) {
+      expect(relativeLuminance(paneHeaderDeep(randomPaneColor().header))).toBeLessThan(0.5);
+    }
+  });
+
+  it("keeps white legible on the darkest stop", () => {
+    for (let i = 0; i < 200; i += 1) {
+      const deep = relativeLuminance(paneHeaderDeep(randomPaneColor().header));
+      expect((1.05) / (deep + 0.05)).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+
+  it("returns a valid hex for unparseable input without throwing", () => {
+    expect(() => paneHeaderDeep("not-a-color")).not.toThrow();
+    expect(paneHeaderDeep("not-a-color")).toMatch(HEX);
   });
 });
 

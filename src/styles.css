@@ -705,7 +705,16 @@ button:disabled {
   gap: 10px;
   min-width: 0;
   padding: 10px 10px 10px 14px;
-  background: var(--pane-color, #7c3aed);
+  /* The stored pane color at the top, a derived darker stop at the bottom
+     (paneHeaderDeep). Top to bottom rather than diagonal: panes are equal-width
+     flex children, so a diagonal would read as a different effect in a two-pane
+     deck than in a five-pane one. The stored color stays the lightest pixel, so
+     the white title text keeps the contrast randomPaneColor guarantees. */
+  background: linear-gradient(
+    to bottom,
+    var(--pane-color, #7c3aed),
+    var(--pane-color-deep, #5312c3)
+  );
   overflow: hidden;
 }
 
