@@ -80,6 +80,13 @@
   --z-menu: 30;
   --z-modal: 50;
 
+  /* How far a filled button's surface steps under the finger. One value, outside
+     the light and dark blocks: it is a proportion of whatever the button already
+     is, and the two filled buttons are gradients that are the same in both
+     themes. It deepens rather than lifts, against the direction their hover
+     moves, because the white label on those gradients has no headroom above. */
+  --pressed-brightness: 0.92;
+
   /* One height for every one-line field and every action button, so a row that
      mixes them lines up — a search box beside its Search button — and a select
      never sizes itself from the platform's rules while its neighbours size from
@@ -942,7 +949,7 @@ button:disabled {
   background: linear-gradient(135deg, #6366f1, #8b5cf6);
   color: #ffffff;
   box-shadow: 0 2px 10px rgba(99, 102, 241, 0.38);
-  transition: filter 120ms, transform 80ms, box-shadow 120ms;
+  transition: filter 120ms, box-shadow 120ms;
 }
 
 .primaryButton:hover {
@@ -950,15 +957,17 @@ button:disabled {
   box-shadow: 0 4px 16px rgba(99, 102, 241, 0.5);
 }
 
+/* A press steps the button's own surface; it does not resize the button. The
+   step deepens although the hover lifts, because the white label already sits
+   at 4.2 to 4.5:1 on this gradient and a further lift takes it lower still. */
 .primaryButton:active {
-  transform: scale(0.97);
+  filter: brightness(var(--pressed-brightness));
 }
 
 .primaryButton:disabled {
   cursor: default;
   opacity: 0.55;
   filter: none;
-  transform: none;
   box-shadow: none;
 }
 
@@ -976,6 +985,13 @@ button:disabled {
   border-color: var(--border-strong);
 }
 
+/* The primary's partner in every dialog footer, so it answers the press too, on
+   the next rung of the surface ladder it already hovers on. */
+.secondaryButton:active {
+  background: var(--surface-hover);
+  border-color: var(--border-strong);
+}
+
 /* The button that OPENS a destructive path wears the colour as letters and an outline;
    only the one that commits it, in the dialog that asks, is filled (interface-styling). */
 .dangerTrigger {
@@ -983,6 +999,11 @@ button:disabled {
   border-color: var(--danger);
 }
 
+/* No pressed step, and not an oversight: the only rung left is a deeper tint, and
+   the red letters already measure 4.23:1 on the hover tint in the light theme.
+   Deepening it takes them to 3.71, and a brightness step over the whole control
+   takes them to 4.08. The tint wants raising past the floor before this role can
+   answer a press. */
 .dangerTrigger:hover {
   background: var(--danger-surface);
   border-color: var(--danger);
@@ -995,7 +1016,7 @@ button:disabled {
   background: linear-gradient(135deg, #ef4444, #dc2626);
   color: #ffffff;
   box-shadow: 0 2px 10px rgba(239, 68, 68, 0.32);
-  transition: filter 120ms, transform 80ms;
+  transition: filter 120ms;
 }
 
 .dangerButton:hover {
@@ -1003,7 +1024,7 @@ button:disabled {
 }
 
 .dangerButton:active {
-  transform: scale(0.97);
+  filter: brightness(var(--pressed-brightness));
 }
 
 .iconTextButton {
