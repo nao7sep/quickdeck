@@ -5,11 +5,18 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   list: vi.fn(),
+  deleteOne: vi.fn(),
+  deleteAll: vi.fn(),
+  refreshCount: vi.fn(),
   copyText: vi.fn(),
   logWarn: vi.fn(),
 }));
 
-vi.mock("../../src/services/persistence", () => ({ listSnapshots: mocks.list }));
+vi.mock("../../src/services/persistence", () => ({
+  listSnapshots: mocks.list,
+  deleteSnapshot: mocks.deleteOne,
+  deleteAllSnapshots: mocks.deleteAll,
+}));
 vi.mock("../../src/services/clipboard", () => ({ copyText: mocks.copyText }));
 vi.mock("../../src/services/logger", () => ({
   logWarn: mocks.logWarn,
@@ -19,6 +26,7 @@ vi.mock("../../src/state/AppStateContext", () => ({
   useAppState: () => ({
     settings: { snapshotSearchPageSize: 20 },
     panes: [{ id: "pane-1", title: "Notes", headerColor: "#c72323" }],
+    refreshSnapshotCount: mocks.refreshCount,
   }),
 }));
 
@@ -32,6 +40,9 @@ afterEach(async () => {
   root = null;
   document.body.innerHTML = "";
   mocks.list.mockReset();
+  mocks.deleteOne.mockReset();
+  mocks.deleteAll.mockReset();
+  mocks.refreshCount.mockReset();
   mocks.copyText.mockReset();
   mocks.logWarn.mockReset();
 });
@@ -168,6 +179,68 @@ describe("SnapshotsModal list as one composite control", () => {
 
     const names = Array.from(document.querySelectorAll<HTMLElement>(".snapshotRow .snapshotRowPane"));
     expect(names.map((name) => name.textContent)).toEqual(["Notes", "Shopping"]);
+  });
+});
+
+describe("SnapshotsModal deleting", () => {
+  // The trigger and the button that commits it share their word, by design: the trigger is
+  // outlined and the one in the question is filled. The question is the later layer, so
+  // answering it means the last match.
+  function click(label: string, which: "first" | "last" = "first") {
+    const found = Array.from(document.querySelectorAll<HTMLButtonElement>("button")).filter(
+      (candidate) => candidate.textContent?.trim() === label,
+    );
+    const button = which === "first" ? found[0] : found[found.length - 1];
+    if (button === undefined) throw new Error(`no button labelled ${label}`);
+    return act(async () => button.click());
+  }
+
+  it("asks before deleting the open snapshot, and a refusal touches nothing", async () => {
+    mocks.list.mockResolvedValue({ rows: [row("a", "first"), row("b", "second")], hasMore: false });
+    await open();
+
+    await click("Delete");
+    // The question is its own layer; nothing has been deleted yet.
+    expect(document.body.textContent).toContain("This copy is removed for good.");
+    expect(mocks.deleteOne).not.toHaveBeenCalled();
+
+    await click("Cancel");
+    expect(mocks.deleteOne).not.toHaveBeenCalled();
+    expect(document.body.textContent).not.toContain("This copy is removed for good.");
+  });
+
+  it("deletes the open snapshot once the question is answered, then reads the store again", async () => {
+    mocks.list.mockResolvedValue({ rows: [row("a", "first"), row("b", "second")], hasMore: false });
+    mocks.deleteOne.mockResolvedValue(true);
+    await open();
+    mocks.list.mockResolvedValue({ rows: [row("b", "second")], hasMore: false });
+
+    await click("Delete");
+    await click("Delete", "last");
+
+    expect(mocks.deleteOne).toHaveBeenCalledWith("a");
+    expect(mocks.refreshCount).toHaveBeenCalled();
+    expect(rows()).toHaveLength(1);
+  });
+
+  it("empties the store on the same terms, and offers that only while it holds something", async () => {
+    mocks.list.mockResolvedValue({ rows: [row("a", "first")], hasMore: false });
+    mocks.deleteAll.mockResolvedValue(1);
+    await open();
+
+    await click("Delete all");
+    expect(document.body.textContent).toContain("Every copy is removed for good.");
+    mocks.list.mockResolvedValue({ rows: [], hasMore: false });
+    await click("Delete", "last");
+
+    expect(mocks.deleteAll).toHaveBeenCalledTimes(1);
+    expect(rows()).toHaveLength(0);
+    // Nothing left to empty, so the trigger goes.
+    expect(
+      Array.from(document.querySelectorAll("button")).some(
+        (button) => button.textContent?.trim() === "Delete all",
+      ),
+    ).toBe(false);
   });
 });
 

@@ -50,6 +50,7 @@
   --accent: #6d28d9;
   --accent-strong: #4c1d95;
   --danger: #dc2626;
+  --danger-surface: #fdecec;
   --warning: #f59e0b;
   --divider-subtle: rgba(0, 0, 0, 0.07);
   --overlay-hover: rgba(0, 0, 0, 0.08);
@@ -112,6 +113,7 @@
     --input-border: #72728a;
     --accent: #c4b5fd;
     --danger: #f87171;
+    --danger-surface: #3a2020;
     --accent-strong: #ddd0ff;
     --divider-subtle: rgba(255, 255, 255, 0.08);
     --overlay-hover: rgba(255, 255, 255, 0.10);
@@ -972,6 +974,18 @@ button:disabled {
   border-color: var(--border-strong);
 }
 
+/* The button that OPENS a destructive path wears the colour as letters and an outline;
+   only the one that commits it, in the dialog that asks, is filled (interface-styling). */
+.dangerTrigger {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+.dangerTrigger:hover {
+  background: var(--danger-surface);
+  border-color: var(--danger);
+}
+
 .dangerButton {
   min-width: 104px;
   padding: 0 16px;
@@ -1396,6 +1410,13 @@ kbd {
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.2px;
+}
+
+/* Copy and Delete sit together on the detail bar, one step apart. */
+.snapshotDetailActions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
 }
 
 /* The pane a snapshot came from. It gives way before the time does, since the time is

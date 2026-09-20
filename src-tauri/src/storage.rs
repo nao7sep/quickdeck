@@ -389,6 +389,36 @@ pub fn count_snapshots(app: &AppHandle) -> Result<u64, String> {
     Ok(count.max(0) as u64)
 }
 
+/// Removes one snapshot. Returns whether a row was there to remove, so a copy deleted from
+/// two windows at once reports honestly rather than twice.
+pub fn delete_snapshot(app: &AppHandle, id: String) -> Result<bool, String> {
+    let data_dir = app_data_dir(app)?;
+    let conn = open_snapshot_db(&data_dir)?;
+    delete_snapshot_with_connection(&conn, &id)
+}
+
+fn delete_snapshot_with_connection(conn: &Connection, id: &str) -> Result<bool, String> {
+    let removed = conn
+        .execute("delete from snapshots where id = ?1", params![id])
+        .map_err(to_string_error)?;
+    Ok(removed > 0)
+}
+
+/// Empties the store and returns how many copies went. The file itself stays: it is the
+/// app's own recovery store, and an empty one is the normal state on a first run.
+pub fn delete_all_snapshots(app: &AppHandle) -> Result<u64, String> {
+    let data_dir = app_data_dir(app)?;
+    let conn = open_snapshot_db(&data_dir)?;
+    delete_all_snapshots_with_connection(&conn)
+}
+
+fn delete_all_snapshots_with_connection(conn: &Connection) -> Result<u64, String> {
+    let removed = conn
+        .execute("delete from snapshots", [])
+        .map_err(to_string_error)?;
+    Ok(removed as u64)
+}
+
 fn read_json_optional(path: &Path) -> Result<Option<JsonValue>, String> {
     if !path.exists() {
         return Ok(None);
@@ -667,6 +697,33 @@ mod tests {
         let row = listed.rows.first().expect("the old row survives");
         assert_eq!(row.content, "kept text");
         assert_eq!(row.pane_title, "");
+    }
+
+    #[test]
+    fn deleting_takes_one_copy_or_the_whole_store() {
+        let conn = mem_db();
+        for content in ["first", "second", "third"] {
+            create_snapshot_with_connection(&conn, input("pane-1", content)).expect("insert");
+        }
+
+        let listed = list_snapshots_with_connection(&conn, "", 10, 0).expect("list");
+        let target = listed.rows.first().expect("a row").id.clone();
+
+        assert!(delete_snapshot_with_connection(&conn, &target).expect("delete"));
+        // Gone means gone: asking again says there was nothing to take.
+        assert!(!delete_snapshot_with_connection(&conn, &target).expect("delete again"));
+        let after = list_snapshots_with_connection(&conn, "", 10, 0).expect("list");
+        assert_eq!(after.rows.len(), 2);
+        assert!(after.rows.iter().all(|row| row.id != target));
+
+        assert_eq!(delete_all_snapshots_with_connection(&conn).expect("delete all"), 2);
+        let empty = list_snapshots_with_connection(&conn, "", 10, 0).expect("list");
+        assert!(empty.rows.is_empty());
+
+        // The store still works afterwards: emptying is not closing.
+        create_snapshot_with_connection(&conn, input("pane-1", "after")).expect("insert");
+        let reused = list_snapshots_with_connection(&conn, "", 10, 0).expect("list");
+        assert_eq!(reused.rows.len(), 1);
     }
 
     // --- config serialization ----------------------------------------------

@@ -75,6 +75,7 @@ type AppStateContextValue = {
   loadErrorIsCorruptPanes: boolean;
   snapshotCount: number;
   snapshotJustSavedAt: number | null;
+  refreshSnapshotCount: () => void;
   setActivePaneId: (paneId: string) => void;
   updatePaneTitle: (paneId: string, title: string) => void;
   commitPaneTitle: (paneId: string) => void;
@@ -453,6 +454,18 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     [markUnsaved, panes],
   );
 
+  // The count is kept by adding to it as copies are written, so after a deletion the store
+  // is asked again rather than guessed at.
+  const refreshSnapshotCount = useCallback(() => {
+    void countSnapshots()
+      .then((count) => {
+        if (!canceledRef.current) {
+          setSnapshotCount(count);
+        }
+      })
+      .catch((error) => logWarn("snapshot count not read", { error: serializeError(error) }));
+  }, []);
+
   const recordSnapshot = useCallback(
     (paneId: string, trigger: SnapshotTrigger, content: string) => {
       const paneTitle = panesRef.current.find((pane) => pane.id === paneId)?.title ?? "";
@@ -584,6 +597,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       loadErrorIsCorruptPanes,
       snapshotCount,
       snapshotJustSavedAt,
+      refreshSnapshotCount,
       setActivePaneId,
       updatePaneTitle,
       commitPaneTitle,
@@ -625,6 +639,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       setZoomLevel,
       settings,
       showBlockingError,
+      refreshSnapshotCount,
       showToast,
       snapshotAllPanes,
       snapshotCount,

@@ -217,6 +217,26 @@ fn count_snapshots(app: AppHandle) -> Result<u64, String> {
     )
 }
 
+#[tauri::command]
+fn delete_snapshot(app: AppHandle, id: String) -> Result<bool, String> {
+    logging::boundary(
+        "delete_snapshot",
+        json!({ "id": id.clone() }),
+        move || storage::delete_snapshot(&app, id),
+        |removed| json!({ "removed": removed }),
+    )
+}
+
+#[tauri::command]
+fn delete_all_snapshots(app: AppHandle) -> Result<u64, String> {
+    logging::boundary(
+        "delete_all_snapshots",
+        json!({}),
+        || storage::delete_all_snapshots(&app),
+        |count| json!({ "count": count }),
+    )
+}
+
 // Receives a structured log object from the sandboxed webview and writes it to
 // the session file. The frontend stamps `time`; the Rust core owns the file.
 #[tauri::command]
@@ -321,6 +341,8 @@ pub fn run() {
             create_snapshots,
             list_snapshots,
             count_snapshots,
+            delete_snapshot,
+            delete_all_snapshots,
             copy_text,
             log_event,
         ])

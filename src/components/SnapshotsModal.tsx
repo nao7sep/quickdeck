@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Copy, Search } from "lucide-react";
-import { listSnapshots, type SnapshotRow } from "../services/persistence";
+import { Copy, Search, Trash2 } from "lucide-react";
+import {
+  deleteAllSnapshots,
+  deleteSnapshot,
+  listSnapshots,
+  type SnapshotRow,
+} from "../services/persistence";
 import { copyText } from "../services/clipboard";
 import { logWarn, serializeError } from "../services/logger";
 import { useAppState } from "../state/AppStateContext";
@@ -40,7 +45,7 @@ const LOAD_MORE_THRESHOLD_PX = 120;
 // split rather than a column of scrollable previews, so the list stays a single
 // tab stop with no second scroll region nested inside a row.
 export function SnapshotsModal({ onClose }: SnapshotsModalProps) {
-  const { panes, settings } = useAppState();
+  const { panes, settings, refreshSnapshotCount } = useAppState();
   const i18n = useI18n();
   const { t } = i18n;
   const [query, setQuery] = useState("");
@@ -118,6 +123,9 @@ export function SnapshotsModal({ onClose }: SnapshotsModalProps) {
   const selectedOrigin =
     selected === null ? undefined : panes.find((pane) => pane.id === selected.paneId);
 
+  // Which deletion is being asked about: one copy, the whole store, or nothing.
+  const [pendingDelete, setPendingDelete] = useState<"one" | "all" | null>(null);
+
   const copiedTimerRef = useRef<number | null>(null);
 
   function clearCopiedTimer() {
@@ -176,6 +184,33 @@ export function SnapshotsModal({ onClose }: SnapshotsModalProps) {
     }
   }
 
+  // A deletion is permanent, so both paths run only after the question is answered. The
+  // list is read again afterwards rather than patched, so what the window shows is what
+  // the store holds.
+  async function confirmDelete() {
+    const scope = pendingDelete;
+    setPendingDelete(null);
+    if (scope === null) {
+      return;
+    }
+
+    try {
+      if (scope === "all") {
+        await deleteAllSnapshots();
+      } else if (selected !== null) {
+        await deleteSnapshot(selected.id);
+      }
+    } catch (err) {
+      logWarn("snapshot delete failed", { scope, error: serializeError(err) });
+      setFailed(true);
+      return;
+    }
+
+    setSelectedId(null);
+    await load(0, query);
+    void refreshSnapshotCount();
+  }
+
   // The next page arrives by scrolling rather than by a control, which also
   // keeps the list a single tab stop. `load` ignores a call while one is in
   // flight, so a fast scroll cannot start the same page twice.
@@ -198,7 +233,27 @@ export function SnapshotsModal({ onClose }: SnapshotsModalProps) {
 
   const message = emptyMessage();
 
+  const confirmation = pendingDelete === null ? null : (
+    <ModalBase
+      title={pendingDelete === "all" ? t("snapshots.deleteAllTitle") : t("snapshots.deleteTitle")}
+      onRequestClose={() => setPendingDelete(null)}
+      footer={
+        <>
+          <button className="secondaryButton" type="button" onClick={() => setPendingDelete(null)}>
+            {t("common.cancel")}
+          </button>
+          <button className="dangerButton" type="button" onClick={() => void confirmDelete()}>
+            {t("snapshots.delete")}
+          </button>
+        </>
+      }
+    >
+      <p>{pendingDelete === "all" ? t("snapshots.deleteAllBody") : t("snapshots.deleteBody")}</p>
+    </ModalBase>
+  );
+
   return (
+    <>
     <ModalBase
       wide
       scrollableBody={false}
@@ -234,9 +289,20 @@ export function SnapshotsModal({ onClose }: SnapshotsModalProps) {
         </div>
       }
       footer={
-        <button className="secondaryButton" type="button" onClick={onClose}>
-          {t("common.close")}
-        </button>
+        <>
+          {rows.length > 0 ? (
+            <button
+              className="secondaryButton dangerTrigger"
+              type="button"
+              onClick={() => setPendingDelete("all")}
+            >
+              {t("snapshots.deleteAll")}
+            </button>
+          ) : null}
+          <button className="secondaryButton" type="button" onClick={onClose}>
+            {t("common.close")}
+          </button>
+        </>
       }
     >
       <div className="snapshotBrowser">
@@ -341,14 +407,24 @@ export function SnapshotsModal({ onClose }: SnapshotsModalProps) {
                     </span>
                   ) : null}
                 </span>
-                <button
-                  className="iconTextButton"
-                  type="button"
-                  onClick={() => void copySelected()}
-                >
-                  <Copy size={15} />
-                  {copied ? t("snapshots.copied") : t("snapshots.copy")}
-                </button>
+                <span className="snapshotDetailActions">
+                  <button
+                    className="iconTextButton"
+                    type="button"
+                    onClick={() => void copySelected()}
+                  >
+                    <Copy size={15} />
+                    {copied ? t("snapshots.copied") : t("snapshots.copy")}
+                  </button>
+                  <button
+                    className="iconTextButton dangerTrigger"
+                    type="button"
+                    onClick={() => setPendingDelete("one")}
+                  >
+                    <Trash2 size={15} />
+                    {t("snapshots.delete")}
+                  </button>
+                </span>
               </div>
               <pre
                 ref={detailRef}
@@ -365,5 +441,7 @@ export function SnapshotsModal({ onClose }: SnapshotsModalProps) {
         </div>
       </div>
     </ModalBase>
+    {confirmation}
+    </>
   );
 }

@@ -190,6 +190,22 @@ export async function listSnapshots(
   });
 }
 
+export async function deleteSnapshot(id: string): Promise<boolean> {
+  if (!isTauri()) {
+    return false;
+  }
+
+  return invoke<boolean>("delete_snapshot", { id });
+}
+
+export async function deleteAllSnapshots(): Promise<number> {
+  if (!isTauri()) {
+    return 0;
+  }
+
+  return invoke<number>("delete_all_snapshots");
+}
+
 export async function countSnapshots(): Promise<number> {
   if (!isTauri()) {
     return 0;
