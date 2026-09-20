@@ -1412,6 +1412,18 @@ kbd {
   letter-spacing: 0.2px;
 }
 
+/* The detail bar carries one snapshot rather than a list of them, so its dot and time
+   take the room a row cannot spare. */
+.snapshotDetailBar .snapshotRowDot {
+  width: 10px;
+  height: 10px;
+}
+
+.snapshotDetailBar .snapshotRowTime,
+.snapshotDetailBar .snapshotRowPane {
+  font-size: 12px;
+}
+
 /* Copy and Delete sit together on the detail bar, one step apart. */
 .snapshotDetailActions {
   display: inline-flex;
@@ -1458,21 +1470,28 @@ kbd {
   justify-content: space-between;
   gap: 8px;
   flex: 0 0 auto;
-  padding: 8px 12px;
+  padding: 8px 14px;
   border-bottom: 1px solid var(--border);
   background: var(--surface-accent);
 }
 
+/* The list's own message takes a row's place, so it starts where a row's text starts
+   rather than against the list's edge. */
+.snapshotList > .mutedText {
+  margin: 0;
+  padding: 8px 10px;
+}
+
 .snapshotDetail > .mutedText {
   margin: 0;
-  padding: 12px;
+  padding: 14px;
 }
 
 .snapshotDetail pre {
   flex: 1 1 auto;
   min-height: 0;
   margin: 0;
-  padding: 12px;
+  padding: 14px;
   overflow: auto;
   overscroll-behavior: contain;
   background: var(--surface);
