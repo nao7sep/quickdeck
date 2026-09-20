@@ -338,6 +338,14 @@ button:disabled {
   100% { opacity: 0; }
 }
 
+/* A reader who asks for no motion still needs this badge to arrive and to leave,
+   and the animation is what removes it, so the still version keeps the same three
+   seconds and drops the slide. */
+@keyframes snapshotFlashStill {
+  0%, 90% { opacity: 1; }
+  100%    { opacity: 0; }
+}
+
 .statusBadge-snapshot {
   background: rgba(34, 197, 94, 0.34);
   color: #bbf7d0;
@@ -509,6 +517,20 @@ button:disabled {
 
 .saveState-saving {
   animation: savePulse 1s ease-in-out infinite;
+}
+
+/* Nothing here moves for a reader who asks for none. The saving badge simply
+   stops pulsing — it says it is saving in its own words and colour, so the pulse
+   was never what carried the meaning — and it is the one animation in the app
+   that runs forever, which is the one a reader cannot wait out. */
+@media (prefers-reduced-motion: reduce) {
+  .saveState-saving {
+    animation: none;
+  }
+
+  .statusBadge-snapshot {
+    animation-name: snapshotFlashStill;
+  }
 }
 
 /* ── Icon Button (used in header and modal header — dark context) */

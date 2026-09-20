@@ -29,3 +29,18 @@ describe("button pressed states", () => {
     },
   );
 });
+
+// Every animation the app runs stops, or loses its movement, for a reader who
+// asks for no motion. The saving badge's pulse is the one that runs forever.
+describe("reduced motion", () => {
+  it("answers the preference", () => {
+    expect(compact).toContain("@media(prefers-reduced-motion:reduce)");
+  });
+
+  it.each(["savePulse", "snapshotFlash"])("stops or stills %s", (animation) => {
+    const declared = compact.indexOf(`animation:${animation}`);
+    expect(declared, `${animation} must be used`).toBeGreaterThanOrEqual(0);
+    const reduced = compact.slice(compact.indexOf("@media(prefers-reduced-motion:reduce)"));
+    expect(reduced).toMatch(new RegExp(`animation(-name)?:(none|${animation}Still)`));
+  });
+});
