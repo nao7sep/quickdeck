@@ -77,6 +77,12 @@
   --z-toast: 30;
   --z-modal: 50;
 
+  /* One height for every one-line field and every action button, so a row that
+     mixes them lines up — a search box beside its Search button — and a select
+     never sizes itself from the platform's rules while its neighbours size from
+     ours. Square icon buttons are their own anatomy and keep their own size. */
+  --control-height: 36px;
+
   /* Per-pane CSS custom properties (set inline per pane) */
   --pane-color: #7c3aed;
   --pane-bg: #f5f3ff;
@@ -151,8 +157,12 @@ body {
   font-size: 13px;
 }
 
+/* `select` belongs here with the rest: left out, it keeps the UA's own font —
+   Arial at regular weight beside the app's system-ui at semibold — and the UI
+   font setting never reaches it. */
 button,
 input,
+select,
 textarea {
   font: inherit;
 }
@@ -426,7 +436,7 @@ button:disabled {
   display: inline-flex;
   align-items: center;
   gap: 10px;
-  min-height: 36px;
+  min-height: var(--control-height);
   padding: 6px 10px;
   border: 0;
   border-radius: 8px;
@@ -884,7 +894,7 @@ button:disabled {
   align-items: center;
   justify-content: center;
   gap: 8px;
-  min-height: 34px;
+  min-height: var(--control-height);
   border-radius: 9px;
   font-weight: 600;
 }
@@ -977,9 +987,10 @@ button:disabled {
 
 .formGrid input[type="text"],
 .formGrid input[type="number"],
+.formGrid select,
 .searchBox input {
   width: 100%;
-  min-height: 36px;
+  height: var(--control-height);
   border: 1.5px solid var(--input-border);
   border-radius: 8px;
   background: var(--surface);
@@ -989,10 +1000,29 @@ button:disabled {
 }
 
 .formGrid input[type="text"]:focus,
-.formGrid input[type="number"]:focus {
+.formGrid input[type="number"]:focus,
+.formGrid select:focus {
   outline: none;
   border-color: #8b5cf6;
   box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.15);
+}
+
+/* A stock select keeps the platform's height and chrome, so it is drawn here
+   instead. The chevron is two gradients in currentColor rather than an image:
+   the content-security policy allows no data: images, and currentColor needs no
+   per-theme copy. Only the closed control is ours; the list it opens stays the
+   platform's. */
+.formGrid select {
+  appearance: none;
+  padding-right: 30px;
+  background-image:
+    linear-gradient(45deg, transparent 50%, currentColor 50%),
+    linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-position:
+    calc(100% - 16px) calc(50% - 1px),
+    calc(100% - 11px) calc(50% - 1px);
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
 }
 
 /* Allowed-range hint shown in numeric field labels (e.g. "10–32"). */
