@@ -239,9 +239,32 @@ button:disabled {
   scrollbar-gutter: stable;
 }
 
-[data-passive-scroll-region]:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: -2px;
+/* The ring belongs to what the key acts on (composite-control-conventions). A
+   container that holds focus on its items' behalf draws none of its own: a list's
+   active row shows the cursor, and a scroll region's cue is its brightened thumb.
+   `:focus-visible` is no guard here — any key pressed after a click turns it on,
+   and since Safari 27 so does focus a script moves after keyboard use — so the
+   container's own outline is off for every one of them, the browser's default
+   included. */
+:is(
+  [role="listbox"],
+  [role="tree"],
+  [role="grid"],
+  [role="treegrid"],
+  [role="region"],
+  [role="tabpanel"],
+  [role="dialog"],
+  [role="alertdialog"],
+  [role="document"],
+  [role="log"],
+  [role="radiogroup"],
+  [role="tablist"],
+  [role="menu"],
+  [role="menubar"],
+  [role="toolbar"],
+  [data-passive-scroll-region]
+):focus-visible {
+  outline: none;
 }
 
 /* ── App Shell ───────────────────────────────────────────────── */
@@ -1409,9 +1432,10 @@ kbd {
   background: var(--surface-muted);
 }
 
+/* The list has a frame of its own, so keyboard focus recolours that frame rather
+   than drawing a second ring outside it. */
 .snapshotList:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
+  border-color: var(--accent);
 }
 
 /* Flat rows, so hover and selection read as fills rather than as rings — a
