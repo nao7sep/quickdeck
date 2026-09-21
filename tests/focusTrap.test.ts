@@ -68,6 +68,23 @@ describe("resolveInitialFocus", () => {
     expect(resolveInitialFocus(surface)).toBe(surface.querySelector("#first"));
   });
 
+  it("never opens on the scrolling body, which reaches the modal's own edges", () => {
+    // About, Shortcuts and Error bodies are passive scroll regions and the first
+    // focusable after the close button. Opening on them, after the key that opened
+    // the modal, lit their ring as a second border inside the modal.
+    const surface = buildSurface(`
+      <button data-modal-close>x</button>
+      <div data-passive-scroll-region tabindex="0"><a href="#" id="link">GitHub</a></div>
+    `);
+    expect(resolveInitialFocus(surface)).toBe(surface.querySelector("#link"));
+
+    const readOnly = buildSurface(`
+      <button data-modal-close>x</button>
+      <div data-passive-scroll-region tabindex="0"><p>read only</p></div>
+    `);
+    expect(resolveInitialFocus(readOnly)).toBe(readOnly);
+  });
+
   it("falls back to the surface when only the close button is focusable", () => {
     const surface = buildSurface(`<button data-modal-close>x</button>`);
     expect(resolveInitialFocus(surface)).toBe(surface);

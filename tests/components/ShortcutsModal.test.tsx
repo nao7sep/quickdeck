@@ -15,7 +15,7 @@ afterEach(async () => {
 });
 
 describe("ShortcutsModal", () => {
-  it("focuses one passive scroll owner for the catalogue", async () => {
+  it("keeps one passive scroll owner for the catalogue, without opening on it", async () => {
     const container = document.createElement("div");
     document.body.append(container);
     root = createRoot(container);
@@ -29,6 +29,12 @@ describe("ShortcutsModal", () => {
     );
     expect(owner).not.toBeNull();
     expect(owner?.tabIndex).toBe(0);
-    expect(document.activeElement).toBe(owner);
+    // Reachable, not pre-focused. The owner reaches the modal's own edges, and the
+    // key that opened the modal would light its ring as a second border inside it;
+    // focus goes to the first real control instead. (This used to require the
+    // opposite.)
+    expect(document.activeElement).not.toBe(owner);
+    expect(document.activeElement?.tagName).toBe("BUTTON");
+    expect(document.activeElement?.hasAttribute("data-modal-close")).toBe(false);
   });
 });

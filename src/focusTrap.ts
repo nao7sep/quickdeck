@@ -36,10 +36,19 @@ function isNamedRadio(element: HTMLElement): element is HTMLInputElement {
 
 // Where focus should land when the modal opens: the first useful control,
 // skipping the header close button so forms and search boxes get focus first.
-// Falls back to the surface itself when there is nothing else to focus.
+// Never the scrolling body: it reaches the modal's own edges, and opening on it
+// makes its focus the one a keyboard user would have to leave before doing
+// anything (composite-control-conventions). It stays reachable by Tab. Falls
+// back to the surface itself when there is nothing else to focus.
 export function resolveInitialFocus(surface: HTMLElement): HTMLElement {
   const focusables = getFocusableElements(surface);
-  return focusables.find((el) => !el.hasAttribute("data-modal-close")) ?? surface;
+  return (
+    focusables.find(
+      (el) =>
+        !el.hasAttribute("data-modal-close") &&
+        !el.hasAttribute("data-passive-scroll-region"),
+    ) ?? surface
+  );
 }
 
 // Given the current focus and Tab direction, return the element focus must move
