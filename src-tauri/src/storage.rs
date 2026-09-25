@@ -608,7 +608,15 @@ fn atomic_write_json(data_dir: &Path, path: &Path, value: &JsonValue) -> Result<
 
 fn open_snapshot_db(data_dir: &Path) -> Result<Connection, String> {
     ensure_snapshot_db(data_dir)?;
-    Connection::open(data_dir.join(SNAPSHOTS_DB_FILE_NAME)).map_err(to_string_error)
+    let conn =
+        Connection::open(data_dir.join(SNAPSHOTS_DB_FILE_NAME)).map_err(to_string_error)?;
+    // WAL alone only orders writers; without this a second writer contending for
+    // the write lock (e.g. two panes' copy/paste snapshots, or a close-time batch
+    // racing an in-flight single snapshot) fails immediately with SQLITE_BUSY
+    // instead of waiting, exactly as backup_store::open_store's comment explains.
+    conn.pragma_update(None, "busy_timeout", 5000)
+        .map_err(to_string_error)?;
+    Ok(conn)
 }
 
 fn ensure_snapshot_db(data_dir: &Path) -> Result<(), String> {
@@ -618,6 +626,8 @@ fn ensure_snapshot_db(data_dir: &Path) -> Result<(), String> {
     // conventions).
     fs::create_dir_all(data_dir).map_err(to_string_error)?;
     let conn = Connection::open(data_dir.join(SNAPSHOTS_DB_FILE_NAME)).map_err(to_string_error)?;
+    conn.pragma_update(None, "busy_timeout", 5000)
+        .map_err(to_string_error)?;
     init_schema(&conn)
 }
 
