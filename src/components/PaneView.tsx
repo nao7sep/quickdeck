@@ -1,4 +1,4 @@
-import { useEffect, useRef, type CSSProperties } from "react";
+import { useEffect, useMemo, useRef, type CSSProperties } from "react";
 import { Trash2 } from "lucide-react";
 import type { Pane } from "../types";
 import { useAppState } from "../state/AppStateContext";
@@ -29,7 +29,12 @@ export function PaneView({ pane }: PaneViewProps) {
   const titleRef = useRef<HTMLInputElement | null>(null);
   const pendingPasteSnapshotRef = useRef(false);
   const active = pane.id === activePaneId;
-  const counts = getTextCounts(pane.content);
+  // Word/char/X-weighted counts are O(this pane's content length) — a full word
+  // split, a full-string Array.from, and a full twitter-text parse. Every pane
+  // shares the AppStateContext value, whose identity changes on any keystroke in
+  // any pane, so without this memo every open pane redid that work on every
+  // keystroke, not just the one being edited.
+  const counts = useMemo(() => getTextCounts(pane.content), [pane.content]);
 
   // When this pane becomes active, pull focus into the textarea so Cmd/Ctrl+Arrow
   // and click-to-edit land ready to type — but never steal focus from a control
