@@ -116,24 +116,37 @@ export async function applyLanguage(language: string): Promise<void> {
   await invoke("apply_language", { language });
 }
 
+// Each store's writes are serialized through its own queue so a close-triggered
+// save always waits for an in-flight autosave of the same file to finish before
+// its own write starts — the file's final content then always reflects the more
+// recent call, whichever caller issued it (config/state/panes conventions).
+function makeWriteQueue<T>(command: string): (payload: T) => Promise<void> {
+  let queue: Promise<void> = Promise.resolve();
+  return (payload: T) => {
+    const write = queue.catch(() => {}).then(() => invoke<void>(command, payload as Record<string, unknown>));
+    queue = write;
+    return write;
+  };
+}
+
+const enqueueConfigWrite = makeWriteQueue<{ config: AppSettings }>("save_config");
+const enqueueStateWrite = makeWriteQueue<{ state: StateFile }>("save_state");
+const enqueuePanesWrite = makeWriteQueue<{ panes: PanesFile }>("save_panes");
+
 export async function saveConfig(config: AppSettings): Promise<void> {
   if (!isTauri()) {
     return;
   }
 
-  await invoke("save_config", { config });
+  await enqueueConfigWrite({ config });
 }
-
-let stateWriteQueue: Promise<void> = Promise.resolve();
 
 export async function saveState(state: StateFile): Promise<void> {
   if (!isTauri()) {
     return;
   }
 
-  const write = stateWriteQueue.catch(() => {}).then(() => invoke<void>("save_state", { state }));
-  stateWriteQueue = write;
-  await write;
+  await enqueueStateWrite({ state });
 }
 
 export async function savePanes(panes: PanesFile): Promise<void> {
@@ -141,7 +154,7 @@ export async function savePanes(panes: PanesFile): Promise<void> {
     return;
   }
 
-  await invoke("save_panes", { panes });
+  await enqueuePanesWrite({ panes });
 }
 
 // The user-commanded reset behind the corrupt-panes halt: the Rust core sets
