@@ -538,6 +538,47 @@ fn temp_path_for_discriminator_differs_across_calls() {
 }
 
 #[test]
+fn sweep_removes_orphaned_temp_files_for_every_managed_stem() {
+    // QD-3: a crash between a temp file's creation and its rename/removal in
+    // `atomic_write_json` leaves it behind forever; the launch-time sweep is the
+    // only thing that ever revisits it.
+    let dir = tempfile::tempdir().unwrap();
+    for stem in ["config", "state", "window", "panes"] {
+        fs::write(dir.path().join(format!("{stem}-abc123.tmp")), b"stale").unwrap();
+    }
+    // A real, current file must survive the sweep untouched.
+    fs::write(dir.path().join("config.json"), b"{}").unwrap();
+
+    sweep_orphaned_temp_files(dir.path());
+
+    let remaining: Vec<_> = fs::read_dir(dir.path())
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    assert_eq!(remaining, vec!["config.json".to_string()]);
+}
+
+#[test]
+fn sweep_leaves_unrelated_tmp_files_and_missing_directories_alone() {
+    let dir = tempfile::tempdir().unwrap();
+    // Not one of the four managed stems' names — left alone.
+    fs::write(dir.path().join("something-else.tmp"), b"stale").unwrap();
+    // Not a .tmp file at all — left alone even though the stem matches.
+    fs::write(dir.path().join("config-abc123.txt"), b"stale").unwrap();
+
+    sweep_orphaned_temp_files(dir.path());
+
+    let remaining: Vec<_> = fs::read_dir(dir.path())
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    assert_eq!(remaining.len(), 2, "unrelated files must not be swept: {remaining:?}");
+
+    // A data directory that doesn't exist yet (fresh install) must not panic or error.
+    sweep_orphaned_temp_files(&dir.path().join("does-not-exist"));
+}
+
+#[test]
 fn rebuildable_store_quarantines_corrupt_and_continues() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("config.json");

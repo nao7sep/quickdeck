@@ -97,6 +97,7 @@ pub struct SnapshotListResult {
 
 pub fn load_app_data(app: &AppHandle) -> Result<LoadedAppData, String> {
     let data_dir = app_data_dir(app)?;
+    sweep_orphaned_temp_files(&data_dir);
     // Per-store failure isolation (persisted-store-separation, Independent
     // recovery): each store takes its own branch, so a corrupt settings file
     // can never make the panes' text unreachable. Config and state are
@@ -478,6 +479,51 @@ fn read_rebuildable_store(path: &Path) -> Result<(Option<JsonValue>, Option<Stri
                 }),
             );
             Ok((None, Some(quarantined.to_string_lossy().into_owned())))
+        }
+    }
+}
+
+// A crash (force-quit, power loss) between a `.tmp` file being created and its
+// removal/rename in `atomic_write_json` leaves it behind permanently — nothing
+// else ever revisits it, since each write picks a fresh nanoid name. Swept once
+// per launch, before any store is read, so litter never survives past the next
+// start. Best-effort: a stray temp file is harmless to correctness (the real
+// file it was headed for is untouched), so a sweep failure only warns and never
+// blocks the load it runs ahead of.
+fn sweep_orphaned_temp_files(data_dir: &Path) {
+    let stems = [
+        CONFIG_FILE_NAME,
+        STATE_FILE_NAME,
+        WINDOW_FILE_NAME,
+        PANES_FILE_NAME,
+    ]
+    .map(|name| Path::new(name).file_stem().and_then(|s| s.to_str()).unwrap_or(name).to_string());
+
+    let entries = match fs::read_dir(data_dir) {
+        Ok(entries) => entries,
+        // No data directory yet on a fresh install — nothing to sweep.
+        Err(_) => return,
+    };
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let is_managed_tmp = path.extension().and_then(|ext| ext.to_str()) == Some("tmp")
+            && path
+                .file_stem()
+                .and_then(|stem| stem.to_str())
+                .map(|stem| stems.iter().any(|managed| stem.starts_with(&format!("{}-", managed))))
+                .unwrap_or(false);
+        if !is_managed_tmp {
+            continue;
+        }
+        if let Err(error) = fs::remove_file(&path) {
+            crate::logging::warn(
+                "orphaned temp file could not be removed",
+                serde_json::json!({
+                    "file": path.to_string_lossy(),
+                    "error": error.to_string(),
+                }),
+            );
         }
     }
 }
