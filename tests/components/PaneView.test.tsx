@@ -90,3 +90,33 @@ describe("PaneView counts memoization", () => {
     expect(mocks.getTextCounts).toHaveBeenCalledTimes(2);
   });
 });
+
+describe("PaneView editor font resolution", () => {
+  it("falls back to the --font-mono variable when editorFontFamily is blank", async () => {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    const original = settings.editorFontFamily;
+    settings.editorFontFamily = "";
+
+    await act(async () => root?.render(<PaneView pane={pane("hello")} />));
+    const textarea = container.querySelector("textarea.paneEditor") as HTMLTextAreaElement;
+    expect(textarea.style.fontFamily).toBe("var(--font-mono)");
+
+    settings.editorFontFamily = original;
+  });
+
+  it("uses the stored family when editorFontFamily is set", async () => {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    const original = settings.editorFontFamily;
+    settings.editorFontFamily = "Iosevka";
+
+    await act(async () => root?.render(<PaneView pane={pane("hello")} />));
+    const textarea = container.querySelector("textarea.paneEditor") as HTMLTextAreaElement;
+    expect(textarea.style.fontFamily).toBe("Iosevka");
+
+    settings.editorFontFamily = original;
+  });
+});

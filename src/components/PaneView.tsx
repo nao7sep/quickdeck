@@ -125,7 +125,7 @@ export function PaneView({ pane }: PaneViewProps) {
         onFocus={() => setActivePaneId(pane.id)}
         spellCheck
         style={{
-          fontFamily: settings.editorFontFamily,
+          fontFamily: settings.editorFontFamily || "var(--font-mono)",
           fontSize: `${settings.editorFontSize}px`,
           lineHeight: settings.editorLineHeight,
           padding: `${settings.editorPadding}px`,

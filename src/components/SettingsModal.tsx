@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { useAppState } from "../state/AppStateContext";
 import type { AppSettings } from "../types";
 import { SETTINGS_BOUNDS, isSettingsDraftValid, normalizeSettings } from "../state/normalize";
-import { defaultSettings } from "../state/defaults";
+import { DEFAULT_EDITOR_FONT_FAMILY_STACK } from "../state/defaults";
 import { THEME_PREFERENCES } from "../utils/theme";
 import { CATALOGUES } from "../i18n/catalogues";
 import { useI18n } from "../i18n/I18nContext";
@@ -140,7 +140,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
               type="text"
               value={draft.editorFontFamily}
               onChange={(event) => setField("editorFontFamily", event.target.value)}
-              placeholder={defaultSettings.editorFontFamily}
+              placeholder={DEFAULT_EDITOR_FONT_FAMILY_STACK}
             />
           </label>
           <label>

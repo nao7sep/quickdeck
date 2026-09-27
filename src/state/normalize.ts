@@ -6,7 +6,7 @@
 // correctness can be tested without rendering anything.
 
 import type { AppSettings, Pane } from "../types";
-import { defaultSettings } from "./defaults";
+import { DEFAULT_EDITOR_FONT_FAMILY_STACK, defaultSettings } from "./defaults";
 import { randomPaneColor } from "../utils/paneColors";
 import { singleLine } from "../utils/textCleanup";
 import { normalizeLanguagePreference } from "../i18n/languages";
@@ -84,12 +84,14 @@ export function normalizeSettings(settings: AppSettings | null): AppSettings {
       typeof settings.uiFontFamily === "string"
         ? singleLine(settings.uiFontFamily)
         : defaultSettings.uiFontFamily,
-    // A bare "monospace" was the old default and is Courier in the macOS webview, so it reads
-    // as the current default rather than a choice.
+    // Blank stores nothing and falls back to DEFAULT_EDITOR_FONT_FAMILY_STACK at render time (the
+    // field shows that stack as its placeholder). A bare "monospace" (Courier in the macOS webview)
+    // or a stored copy of the former default stack itself both read as no choice and migrate to blank.
     editorFontFamily:
       typeof settings.editorFontFamily === "string"
         && singleLine(settings.editorFontFamily).length > 0
         && singleLine(settings.editorFontFamily) !== "monospace"
+        && singleLine(settings.editorFontFamily) !== DEFAULT_EDITOR_FONT_FAMILY_STACK
         ? singleLine(settings.editorFontFamily)
         : defaultSettings.editorFontFamily,
     editorFontSize: clampSetting(settings.editorFontSize, "editorFontSize"),

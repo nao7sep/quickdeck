@@ -9,7 +9,7 @@ import {
   panesShapeIssues,
   settingsShapeIssues,
 } from "../../src/state/normalize";
-import { defaultSettings } from "../../src/state/defaults";
+import { DEFAULT_EDITOR_FONT_FAMILY_STACK, defaultSettings } from "../../src/state/defaults";
 import { ZOOM_DEFAULT, ZOOM_MAX, ZOOM_MIN } from "../../src/utils/zoom";
 import type { AppSettings, Pane } from "../../src/types";
 
@@ -125,6 +125,14 @@ describe("normalizeSettings", () => {
       defaultSettings.editorFontFamily,
     );
     expect(normalizeSettings({ ...defaultSettings, editorFontFamily: "Courier New" }).editorFontFamily).toBe("Courier New");
+  });
+
+  it("migrates a stored value equal to the former default stack to blank", () => {
+    expect(defaultSettings.editorFontFamily).toBe("");
+    expect(
+      normalizeSettings({ ...defaultSettings, editorFontFamily: DEFAULT_EDITOR_FONT_FAMILY_STACK })
+        .editorFontFamily,
+    ).toBe("");
   });
 
   it("falls back for an empty or non-string font family", () => {

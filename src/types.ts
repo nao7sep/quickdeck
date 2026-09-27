@@ -29,9 +29,10 @@ export type AppSettings = {
   // UI (chrome) font family. Family only; blank = the built-in default stack (the styles.css
   // --font-ui variable). Distinct from editorFontFamily, which is the pane editor's content font.
   uiFontFamily: string;
-  // The pane editor's content font — the surface the user writes in, so it carries the full
+  // The pane editor's content font family — the surface the user writes in, so it carries the full
   // per-app-chrome-conventions content-font set: family, size, line-height, padding, and the
-  // weight/slant/underline decorations.
+  // weight/slant/underline decorations. Family only; blank = the built-in fixed-width stack
+  // (DEFAULT_EDITOR_FONT_FAMILY_STACK, the styles.css --font-mono variable).
   editorFontFamily: string;
   editorFontSize: number;
   editorLineHeight: number;

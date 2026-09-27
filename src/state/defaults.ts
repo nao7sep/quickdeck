@@ -1,13 +1,18 @@
 import type { AppSettings, Pane } from "../types";
 import { randomPaneColor } from "../utils/paneColors";
 
+// The fixed-width stack the pane editor falls back to when editorFontFamily is blank (styles.css's
+// --font-mono variable carries the same value). Exported so the Settings field can show it as a
+// placeholder without the setting itself storing it.
+export const DEFAULT_EDITOR_FONT_FAMILY_STACK = 'ui-monospace, "Menlo", "Consolas", monospace';
+
 export const defaultSettings: AppSettings = {
   language: "system",
   theme: "system",
   zen: false,
   topmost: false,
   uiFontFamily: "",
-  editorFontFamily: 'ui-monospace, "Menlo", "Consolas", monospace',
+  editorFontFamily: "",
   editorFontSize: 14,
   editorLineHeight: 1.6,
   editorPadding: 14,
