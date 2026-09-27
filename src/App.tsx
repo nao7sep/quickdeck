@@ -388,6 +388,18 @@ export function App() {
         setActivePaneId(next.id);
       }
 
+      if (matchesShortcut(event, "focusPaneByNumber")) {
+        event.preventDefault();
+        const digit = Number(event.key);
+        // 9 always means the last pane (browser tab-switching habit), never
+        // literally "the 9th pane" — matches every browser's own Cmd/Ctrl+9.
+        const targetIndex = digit === 9 ? panes.length - 1 : clampPaneIndex(digit - 1, panes.length);
+        const target = panes[targetIndex];
+        if (target) {
+          setActivePaneId(target.id);
+        }
+      }
+
       if (matchesShortcut(event, "movePaneLeft")) {
         event.preventDefault();
         movePane(activePaneId, -1);

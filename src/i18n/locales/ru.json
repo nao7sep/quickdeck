@@ -72,6 +72,7 @@
   "shortcuts.addPane": "Добавить панель",
   "shortcuts.focusPreviousPane": "Перейти к предыдущей панели",
   "shortcuts.focusNextPane": "Перейти к следующей панели",
+  "shortcuts.focusPaneByNumber": "Перейти к панели по номеру (9 = последняя панель)",
   "shortcuts.movePaneLeft": "Переместить панель влево",
   "shortcuts.movePaneRight": "Переместить панель вправо",
   "shortcuts.toggleZen": "Включить или выключить режим «Дзен»",

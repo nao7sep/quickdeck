@@ -1,5 +1,5 @@
 import type { MessageKey } from "./i18n/catalogues";
-import { hasMod, isApplePlatform, primaryModWord } from "./utils/shortcuts";
+import { hasMod, primaryModWord } from "./utils/shortcuts";
 
 export type ShortcutId =
   | "toggleZen"
@@ -7,6 +7,7 @@ export type ShortcutId =
   | "addPane"
   | "focusPreviousPane"
   | "focusNextPane"
+  | "focusPaneByNumber"
   | "movePaneLeft"
   | "movePaneRight"
   | "openSettings"
@@ -31,8 +32,11 @@ export type ShortcutDefinition = {
 // conventions). Both the word and the matching predicate come from the one
 // leaf module, so the label and the binding cannot disagree.
 const mod = primaryModWord;
-const pageUp = isApplePlatform ? "Fn+Up" : "PageUp";
-const pageDown = isApplePlatform ? "Fn+Down" : "PageDown";
+// Named keys are spelled with the key's own name, never the keystrokes a
+// particular keyboard needs to produce it (keyboard-shortcut-conventions):
+// `Cmd+PageUp` on every platform, never `Cmd+Fn+Up` for the Mac laptop route.
+const pageUp = "PageUp";
+const pageDown = "PageDown";
 
 // Built once at module load from the resolved modifier. Chord grammar:
 // "+" joins with no spaces, modifier order is Cmd/Ctrl → Alt → Shift → key,
@@ -45,22 +49,39 @@ export const shortcutDefinitions: ShortcutDefinition[] = [
   },
   {
     id: "focusPreviousPane",
-    keys: `${mod}+${pageUp}`,
+    // Ctrl+Shift+Tab is a literal-Ctrl chord, bound as Ctrl on every platform
+    // (not the command modifier) because it is a universal pane/tab-cycling
+    // habit and the macOS text system gives it no meaning to shadow
+    // (keyboard-shortcut-conventions, "The command modifier"). It is an
+    // independent chord with a different modifier from the mod+PageUp form,
+    // so the two are spaced, each written in full.
+    keys: `${mod}+${pageUp} / Ctrl+Shift+Tab`,
     description: "shortcuts.focusPreviousPane",
   },
   {
     id: "focusNextPane",
-    keys: `${mod}+${pageDown}`,
+    keys: `${mod}+${pageDown} / Ctrl+Tab`,
     description: "shortcuts.focusNextPane",
   },
   {
+    id: "focusPaneByNumber",
+    // Digits are keys every keyboard has without a layer, so the tight `/`
+    // alternates the shared-modifier final keys in one row (browser tab
+    // switching habit); 9 always focuses the last pane, matching every
+    // browser's own Cmd/Ctrl+9 behavior.
+    keys: `${mod}+1/2/3/4/5/6/7/8/9`,
+    description: "shortcuts.focusPaneByNumber",
+  },
+  {
     id: "movePaneLeft",
-    keys: `${mod}+Shift+${pageUp}`,
+    // Cmd+LessThan is an independent extra chord (Shift tolerated when typing
+    // "<"), spaced from the mod+Shift+PageUp form because the modifiers differ.
+    keys: `${mod}+Shift+${pageUp} / ${mod}+LessThan`,
     description: "shortcuts.movePaneLeft",
   },
   {
     id: "movePaneRight",
-    keys: `${mod}+Shift+${pageDown}`,
+    keys: `${mod}+Shift+${pageDown} / ${mod}+GreaterThan`,
     description: "shortcuts.movePaneRight",
   },
   {
@@ -102,6 +123,13 @@ export const shortcutDefinitions: ShortcutDefinition[] = [
   },
 ];
 
+// The literal-Ctrl pane-cycling chord: Ctrl+Tab / Ctrl+Shift+Tab, bound as
+// Ctrl on every platform, never through the Cmd/Ctrl command predicate (see
+// the callers below and keyboard-shortcut-conventions, "The command modifier").
+function isCycleTabChord(event: KeyboardEvent): boolean {
+  return event.ctrlKey && !event.metaKey && !event.altKey && event.key === "Tab";
+}
+
 export function matchesShortcut(event: KeyboardEvent, id: ShortcutId): boolean {
   const commandOrControl = hasMod(event);
 
@@ -120,20 +148,37 @@ export function matchesShortcut(event: KeyboardEvent, id: ShortcutId): boolean {
   // PageUp/PageDown are layout-independent named keys. Printable punctuation is
   // unsuitable here: brackets require Option or AltGr on common layouts, while
   // command matching must reject AltGr so typing cannot fire an accelerator.
+  //
+  // Ctrl+Tab / Ctrl+Shift+Tab are a separate, literal-Ctrl branch, not a
+  // dual-bound Cmd/Ctrl chord: bound as Ctrl on every platform because macOS
+  // owns Cmd+Tab and every browser already fixes Ctrl+Tab for cycling, so it
+  // never passes through the commandOrControl predicate and stays live in an
+  // editable pane (keyboard-shortcut-conventions, "The command modifier").
   if (id === "focusPreviousPane") {
-    return commandOrControl && !event.shiftKey && event.key === "PageUp";
+    if (commandOrControl && !event.shiftKey && event.key === "PageUp") return true;
+    return isCycleTabChord(event) && event.shiftKey;
   }
 
   if (id === "focusNextPane") {
-    return commandOrControl && !event.shiftKey && event.key === "PageDown";
+    if (commandOrControl && !event.shiftKey && event.key === "PageDown") return true;
+    return isCycleTabChord(event) && !event.shiftKey;
+  }
+
+  // Cmd+1..9 focus a pane by number, borrowed from the browser tab-switching
+  // habit; 9 always means the last pane (see the App.tsx dispatch site).
+  if (id === "focusPaneByNumber") {
+    return commandOrControl && !event.shiftKey && /^[1-9]$/.test(event.key);
   }
 
   if (id === "movePaneLeft") {
-    return commandOrControl && event.shiftKey && event.key === "PageUp";
+    if (commandOrControl && event.shiftKey && event.key === "PageUp") return true;
+    // Shift is tolerated: some layouts type "<" without it.
+    return commandOrControl && event.key === "<";
   }
 
   if (id === "movePaneRight") {
-    return commandOrControl && event.shiftKey && event.key === "PageDown";
+    if (commandOrControl && event.shiftKey && event.key === "PageDown") return true;
+    return commandOrControl && event.key === ">";
   }
 
   if (id === "openSettings") {

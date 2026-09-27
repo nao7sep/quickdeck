@@ -5,7 +5,7 @@ type ShortcutsModule = typeof import("../../src/utils/shortcuts");
 
 function key(
   k: string,
-  mods: { ctrlKey?: boolean; metaKey?: boolean; altKey?: boolean } = {},
+  mods: { ctrlKey?: boolean; metaKey?: boolean; altKey?: boolean; shiftKey?: boolean } = {},
 ): KeyboardEvent {
   return new KeyboardEvent("keydown", { key: k, ...mods });
 }
@@ -93,5 +93,11 @@ describe("shadowsMacTextEditing (platform-dependent)", () => {
   it("never fires off macOS — there is no Cocoa keymap to shadow", async () => {
     const { shadowsMacTextEditing } = await importWithPlatform("windows");
     expect(shadowsMacTextEditing(key("k", { ctrlKey: true }))).toBe(false);
+  });
+
+  it("never shadows Ctrl+Tab on macOS — the literal pane-cycling chord has no text-system meaning", async () => {
+    const { shadowsMacTextEditing } = await importWithPlatform("mac");
+    expect(shadowsMacTextEditing(key("Tab", { ctrlKey: true }))).toBe(false);
+    expect(shadowsMacTextEditing(key("Tab", { ctrlKey: true, shiftKey: true }))).toBe(false);
   });
 });

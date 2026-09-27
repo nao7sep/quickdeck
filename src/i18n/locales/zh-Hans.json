@@ -72,6 +72,7 @@
   "shortcuts.addPane": "添加窗格",
   "shortcuts.focusPreviousPane": "聚焦上一个窗格",
   "shortcuts.focusNextPane": "聚焦下一个窗格",
+  "shortcuts.focusPaneByNumber": "按编号聚焦窗格 (9 为最后一个窗格)",
   "shortcuts.movePaneLeft": "向左移动窗格",
   "shortcuts.movePaneRight": "向右移动窗格",
   "shortcuts.toggleZen": "切换禅模式",

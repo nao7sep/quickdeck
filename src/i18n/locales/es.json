@@ -72,6 +72,7 @@
   "shortcuts.addPane": "Agregar panel",
   "shortcuts.focusPreviousPane": "Ir al panel anterior",
   "shortcuts.focusNextPane": "Ir al panel siguiente",
+  "shortcuts.focusPaneByNumber": "Ir al panel por número (9 = último panel)",
   "shortcuts.movePaneLeft": "Mover el panel a la izquierda",
   "shortcuts.movePaneRight": "Mover el panel a la derecha",
   "shortcuts.toggleZen": "Activar o desactivar el modo zen",

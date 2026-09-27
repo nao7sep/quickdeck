@@ -72,6 +72,7 @@
   "shortcuts.addPane": "Aggiungi riquadro",
   "shortcuts.focusPreviousPane": "Passa al riquadro precedente",
   "shortcuts.focusNextPane": "Passa al riquadro successivo",
+  "shortcuts.focusPaneByNumber": "Passa al riquadro per numero (9 = ultimo riquadro)",
   "shortcuts.movePaneLeft": "Sposta il riquadro a sinistra",
   "shortcuts.movePaneRight": "Sposta il riquadro a destra",
   "shortcuts.toggleZen": "Attiva o disattiva la modalità zen",

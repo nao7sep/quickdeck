@@ -72,6 +72,7 @@
   "shortcuts.addPane": "Add pane",
   "shortcuts.focusPreviousPane": "Focus previous pane",
   "shortcuts.focusNextPane": "Focus next pane",
+  "shortcuts.focusPaneByNumber": "Focus pane by number (9 = last pane)",
   "shortcuts.movePaneLeft": "Move pane left",
   "shortcuts.movePaneRight": "Move pane right",
   "shortcuts.toggleZen": "Toggle zen mode",

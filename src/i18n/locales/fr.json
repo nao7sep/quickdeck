@@ -72,6 +72,7 @@
   "shortcuts.addPane": "Ajouter un volet",
   "shortcuts.focusPreviousPane": "Activer le volet précédent",
   "shortcuts.focusNextPane": "Activer le volet suivant",
+  "shortcuts.focusPaneByNumber": "Activer le volet par numéro (9 = dernier volet)",
   "shortcuts.movePaneLeft": "Déplacer le volet vers la gauche",
   "shortcuts.movePaneRight": "Déplacer le volet vers la droite",
   "shortcuts.toggleZen": "Activer ou désactiver le mode zen",

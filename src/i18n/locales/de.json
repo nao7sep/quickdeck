@@ -72,6 +72,7 @@
   "shortcuts.addPane": "Bereich hinzufügen",
   "shortcuts.focusPreviousPane": "Zum vorherigen Bereich wechseln",
   "shortcuts.focusNextPane": "Zum nächsten Bereich wechseln",
+  "shortcuts.focusPaneByNumber": "Bereich per Nummer fokussieren (9 = letzter Bereich)",
   "shortcuts.movePaneLeft": "Bereich nach links verschieben",
   "shortcuts.movePaneRight": "Bereich nach rechts verschieben",
   "shortcuts.toggleZen": "Zen-Modus ein- oder ausschalten",

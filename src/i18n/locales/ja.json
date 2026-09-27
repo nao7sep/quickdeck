@@ -72,6 +72,7 @@
   "shortcuts.addPane": "ペインを追加",
   "shortcuts.focusPreviousPane": "前のペインにフォーカス",
   "shortcuts.focusNextPane": "次のペインにフォーカス",
+  "shortcuts.focusPaneByNumber": "番号でペインにフォーカス (9は最後のペイン)",
   "shortcuts.movePaneLeft": "ペインを左へ移動",
   "shortcuts.movePaneRight": "ペインを右へ移動",
   "shortcuts.toggleZen": "Zen モードを切り替え",

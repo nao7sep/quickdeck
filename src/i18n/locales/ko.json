@@ -72,6 +72,7 @@
   "shortcuts.addPane": "패널 추가",
   "shortcuts.focusPreviousPane": "이전 패널로 이동",
   "shortcuts.focusNextPane": "다음 패널로 이동",
+  "shortcuts.focusPaneByNumber": "번호로 패널 이동 (9는 마지막 패널)",
   "shortcuts.movePaneLeft": "패널을 왼쪽으로 옮기기",
   "shortcuts.movePaneRight": "패널을 오른쪽으로 옮기기",
   "shortcuts.toggleZen": "Zen 모드 켜기/끄기",

@@ -17,9 +17,16 @@ export function hasMod(event: KeyboardEvent): boolean {
  * key is, so the Ctrl half of a dual-bound chord stands down there — one
  * blanket test, no per-chord key list (keyboard-shortcut-conventions). The
  * Cmd half is the binding and always fires.
+ *
+ * Ctrl+Tab is the one named exception, not a hand-maintained key list: it is
+ * a literal-Ctrl chord (bound as Ctrl on every platform, never as the command
+ * modifier) because macOS owns Cmd+Tab and every browser already fixes
+ * Ctrl+Tab for cycling, so the text system gives it no meaning to shadow —
+ * it must stay live while typing in a pane (keyboard-shortcut-conventions,
+ * "The command modifier").
  */
 export function shadowsMacTextEditing(event: KeyboardEvent): boolean {
-  return isApplePlatform && event.ctrlKey && !event.metaKey;
+  return isApplePlatform && event.ctrlKey && !event.metaKey && event.key !== "Tab";
 }
 
 // Structural shape of an editable-target check, DOM-free for unit tests.

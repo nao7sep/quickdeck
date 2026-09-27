@@ -72,6 +72,7 @@
   "shortcuts.addPane": "Adicionar painel",
   "shortcuts.focusPreviousPane": "Ir para o painel anterior",
   "shortcuts.focusNextPane": "Ir para o próximo painel",
+  "shortcuts.focusPaneByNumber": "Ir para o painel por número (9 = último painel)",
   "shortcuts.movePaneLeft": "Mover o painel para a esquerda",
   "shortcuts.movePaneRight": "Mover o painel para a direita",
   "shortcuts.toggleZen": "Ativar ou desativar o modo zen",

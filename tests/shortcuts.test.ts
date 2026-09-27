@@ -59,6 +59,41 @@ describe("matchesShortcut", () => {
     expect(matchesShortcut(key("?", { ctrlKey: true, altKey: true }), "openShortcuts")).toBe(false);
   });
 
+  it("cycles panes with the literal Ctrl+Tab / Ctrl+Shift+Tab chord, bound as Ctrl on every platform", () => {
+    expect(matchesShortcut(key("Tab", { ctrlKey: true }), "focusNextPane")).toBe(true);
+    expect(matchesShortcut(key("Tab", { ctrlKey: true, shiftKey: true }), "focusPreviousPane")).toBe(true);
+    // Wrong shift state for the branch, and the command-modifier form, don't match.
+    expect(matchesShortcut(key("Tab", { ctrlKey: true }), "focusPreviousPane")).toBe(false);
+    expect(matchesShortcut(key("Tab", { ctrlKey: true, shiftKey: true }), "focusNextPane")).toBe(false);
+    expect(matchesShortcut(key("Tab", { metaKey: true }), "focusNextPane")).toBe(false);
+  });
+
+  it("rejects Ctrl+Tab when Alt or Cmd also rides along", () => {
+    // AltGr safety, and the literal-Ctrl branch never doubles as the dual-bound form.
+    expect(matchesShortcut(key("Tab", { ctrlKey: true, altKey: true }), "focusNextPane")).toBe(false);
+    expect(matchesShortcut(key("Tab", { ctrlKey: true, metaKey: true }), "focusNextPane")).toBe(false);
+  });
+
+  it("focuses a pane by number with Cmd/Ctrl+1..9", () => {
+    for (const digit of "123456789") {
+      expect(matchesShortcut(key(digit, { metaKey: true }), "focusPaneByNumber")).toBe(true);
+      expect(matchesShortcut(key(digit, { ctrlKey: true }), "focusPaneByNumber")).toBe(true);
+    }
+    expect(matchesShortcut(key("0", { metaKey: true }), "focusPaneByNumber")).toBe(false);
+    expect(matchesShortcut(key("1", {}), "focusPaneByNumber")).toBe(false);
+    expect(matchesShortcut(key("1", { metaKey: true, shiftKey: true }), "focusPaneByNumber")).toBe(false);
+    expect(matchesShortcut(key("1", { metaKey: true, altKey: true }), "focusPaneByNumber")).toBe(false);
+  });
+
+  it("moves panes with Cmd/Ctrl+LessThan / GreaterThan, tolerating Shift", () => {
+    expect(matchesShortcut(key("<", { metaKey: true }), "movePaneLeft")).toBe(true);
+    expect(matchesShortcut(key("<", { ctrlKey: true, shiftKey: true }), "movePaneLeft")).toBe(true);
+    expect(matchesShortcut(key(">", { metaKey: true }), "movePaneRight")).toBe(true);
+    expect(matchesShortcut(key(">", { ctrlKey: true, shiftKey: true }), "movePaneRight")).toBe(true);
+    expect(matchesShortcut(key("<", { metaKey: true, altKey: true }), "movePaneLeft")).toBe(false);
+    expect(matchesShortcut(key("<", {}), "movePaneLeft")).toBe(false);
+  });
+
   it("matches Escape for closeModal regardless of modifier", () => {
     expect(matchesShortcut(key("Escape", {}), "closeModal")).toBe(true);
     expect(matchesShortcut(key("Escape", { metaKey: true }), "closeModal")).toBe(true);
@@ -105,18 +140,38 @@ describe("shortcutDefinitions", () => {
       );
     }
 
-    it("shows the physical Fn+Arrow form on macOS", async () => {
+    it("shows the named PageUp/PageDown form on macOS, never the Fn+Arrow keystrokes", async () => {
+      // keyboard-shortcut-conventions: a chord is written with the key's own
+      // name, never the keystrokes a particular keyboard needs to produce it.
       const keys = await paneKeys("MacIntel");
-      expect(keys.focusPreviousPane).toBe("Cmd+Fn+Up");
-      expect(keys.focusNextPane).toBe("Cmd+Fn+Down");
-      expect(keys.movePaneLeft).toBe("Cmd+Shift+Fn+Up");
-      expect(keys.movePaneRight).toBe("Cmd+Shift+Fn+Down");
+      expect(keys.focusPreviousPane).toBe("Cmd+PageUp / Ctrl+Shift+Tab");
+      expect(keys.focusNextPane).toBe("Cmd+PageDown / Ctrl+Tab");
+      expect(keys.movePaneLeft).toBe("Cmd+Shift+PageUp / Cmd+LessThan");
+      expect(keys.movePaneRight).toBe("Cmd+Shift+PageDown / Cmd+GreaterThan");
     });
 
     it("shows PageUp/PageDown where those are the platform keys", async () => {
       const keys = await paneKeys("Win32");
-      expect(keys.focusPreviousPane).toBe("Ctrl+PageUp");
-      expect(keys.focusNextPane).toBe("Ctrl+PageDown");
+      expect(keys.focusPreviousPane).toBe("Ctrl+PageUp / Ctrl+Shift+Tab");
+      expect(keys.focusNextPane).toBe("Ctrl+PageDown / Ctrl+Tab");
+    });
+
+    it("shows the literal Ctrl+Tab cycling chord unchanged on every platform", async () => {
+      // Bound as Ctrl, not the command modifier — it must read "Ctrl" even on
+      // macOS, where every other chord's word resolves to "Cmd".
+      const mac = await paneKeys("MacIntel");
+      const win = await paneKeys("Win32");
+      expect(mac.focusPreviousPane).toContain("Ctrl+Shift+Tab");
+      expect(mac.focusNextPane).toContain("Ctrl+Tab");
+      expect(win.focusPreviousPane).toContain("Ctrl+Shift+Tab");
+      expect(win.focusNextPane).toContain("Ctrl+Tab");
+    });
+
+    it("shows the numbered pane-focus row with the platform's own modifier", async () => {
+      const mac = await paneKeys("MacIntel");
+      const win = await paneKeys("Win32");
+      expect(mac.focusPaneByNumber).toBe("Cmd+1/2/3/4/5/6/7/8/9");
+      expect(win.focusPaneByNumber).toBe("Ctrl+1/2/3/4/5/6/7/8/9");
     });
   });
 });
