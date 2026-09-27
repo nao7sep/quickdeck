@@ -708,6 +708,8 @@ input[type="range"]:focus-visible {
   font-weight: 500;
   text-align: left;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   transition: background var(--motion);
 }
 
