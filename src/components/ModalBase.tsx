@@ -26,6 +26,10 @@ type ModalBaseProps = {
   // whose halves each scroll. The body must not scroll too, or a wheel over one
   // half chains into the body and drags the whole surface with it.
   scrollableBody?: boolean;
+  // A surface that names itself in its own content (About) keeps its title as
+  // the dialog's spoken name only; its band then holds just the close control
+  // and drops its line (modal-dialog conventions).
+  titleVisuallyHidden?: boolean;
 };
 
 export function ModalBase({
@@ -38,6 +42,7 @@ export function ModalBase({
   toolbar,
   wide = false,
   scrollableBody = true,
+  titleVisuallyHidden = false,
 }: ModalBaseProps) {
   const { t } = useI18n();
   const surfaceRef = useRef<HTMLDivElement | null>(null);
@@ -124,10 +129,12 @@ export function ModalBase({
         tabIndex={-1}
         ref={surfaceRef}
       >
-        <header className="modalHeader">
-          <h2 id={titleId}>{title}</h2>
+        <header className={`modalHeader ${titleVisuallyHidden ? "modalHeader-bare" : ""}`}>
+          <h2 id={titleId} className={titleVisuallyHidden ? "visuallyHidden" : undefined}>
+            {title}
+          </h2>
           <button
-            className="iconButton"
+            className="modalClose"
             type="button"
             aria-label={t("common.closeModal")}
             data-modal-close

@@ -5,6 +5,7 @@ import type { Pane } from "../types";
 import { nextIndex, verticalTablistDirection } from "../utils/compositeNav";
 import { panePanelDomId, paneTabDomId } from "../utils/paneDomIds";
 import { useI18n } from "../i18n/I18nContext";
+import { PaneSwatch } from "./PaneSwatch";
 
 type PaneSwitcherProps = {
   panes: Pane[];
@@ -126,7 +127,7 @@ export function PaneSwitcher({ panes, activePaneId, onSelect }: PaneSwitcherProp
         aria-expanded={open}
         onClick={() => setOpen((value) => !value)}
       >
-        <span className="paneSwitcherSwatch" style={{ background: activePane.headerColor }} />
+        <PaneSwatch color={activePane.headerColor} />
         <span className="paneSwitcherTitle">{activePane.title}</span>
         <ChevronUp size={14} className="paneSwitcherChevron" />
       </button>
@@ -157,7 +158,7 @@ export function PaneSwitcher({ panes, activePaneId, onSelect }: PaneSwitcherProp
                   close();
                 }}
               >
-                <span className="paneSwitcherSwatch" style={{ background: pane.headerColor }} />
+                <PaneSwatch color={pane.headerColor} />
                 <span className="paneSwitcherOptionTitle">{pane.title}</span>
               </button>
             );

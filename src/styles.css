@@ -55,6 +55,16 @@
   --warning: #f59e0b;
   --divider-subtle: rgba(0, 0, 0, 0.07);
   --overlay-hover: rgba(0, 0, 0, 0.08);
+  --overlay-pressed: rgba(0, 0, 0, 0.14);
+  /* The edge of an outlined button. The dividers above are too faint to be a
+     control's only boundary, most of all on the dark surface. */
+  --control-edge: #cfd1e0;
+  --control-edge-hover: #b3b7cc;
+  /* The one focus treatment: a ring just clear of the control's edge, in the
+     app's violet, and the same hue as a soft glow around a focused field. The
+     window-inactive block below quiets both. */
+  --focus-ring: #7c3aed;
+  --focus-glow: rgba(124, 58, 237, 0.16);
   --scrollbar-thumb: rgba(30, 27, 75, 0.55);
   --scrollbar-thumb-hover: rgba(30, 27, 75, 0.72);
   --kbd-bg: #ffffff;
@@ -67,6 +77,18 @@
   /* Shared by the reserved appShell track and app-level result anchoring. Kept
      in sync with STATUS_BAR_HEIGHT, which derives the native window minimum. */
   --status-bar-height: 44px;
+
+  /* Corners grow with the surface: list rows and menu items, then buttons and
+     fields, then cards, popovers, and the dialog itself. */
+  --radius-swatch: 3px;
+  --radius-item: 8px;
+  --radius-control: 9px;
+  --radius-card: 12px;
+  --radius-popover: 14px;
+  --radius-dialog: 16px;
+  --motion: 120ms;
+  /* How every control recedes when it is off: the resting control, faded. */
+  --disabled-opacity: 0.55;
 
   /* Window chrome (title-bar strip + status bar) — constant across themes. */
   --chrome-gradient: linear-gradient(135deg, #1e1b4b 0%, #312e81 50%, #4c1d95 100%);
@@ -128,6 +150,11 @@
     --accent-strong: #ddd0ff;
     --divider-subtle: rgba(255, 255, 255, 0.08);
     --overlay-hover: rgba(255, 255, 255, 0.10);
+    --overlay-pressed: rgba(255, 255, 255, 0.16);
+    --control-edge: #4e4e5c;
+    --control-edge-hover: #636374;
+    --focus-ring: #a78bfa;
+    --focus-glow: rgba(167, 139, 250, 0.22);
     --scrollbar-thumb: rgba(230, 230, 238, 0.55);
     --scrollbar-thumb-hover: rgba(230, 230, 238, 0.72);
     --kbd-bg: #2a2438;
@@ -151,6 +178,13 @@
   :root .pane-active {
     background: #20202a;
   }
+}
+
+/* An inactive window keeps its focus visible but quiet. The native window's
+   focus decides (services/windowActivity.ts), not the page's. */
+:root[data-window-inactive] {
+  --focus-ring: var(--input-border);
+  --focus-glow: transparent;
 }
 
 * {
@@ -188,6 +222,30 @@ button {
    not invite a click. Overrides the global button pointer above. */
 button:disabled {
   cursor: default;
+}
+
+/* One focus treatment for every control: 1px clear of the edge, so a focused
+   button keeps the footprint of the one beside it, and following its corners.
+   Flat items in a scrolling panel (menu items, pane tabs, snapshot rows) take an
+   inset ring instead, which the panel cannot clip. */
+button:focus-visible,
+input[type="checkbox"]:focus-visible,
+input[type="radio"]:focus-visible,
+input[type="range"]:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+
+.visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
 }
 
 /* ── Scroll Bars ─────────────────────────────────────────────── */
@@ -289,6 +347,12 @@ button:disabled {
   overflow-y: hidden;
   padding: 0 16px;
   background: var(--chrome-gradient);
+  /* On the dark chrome the violet ring would vanish; it turns light here. */
+  --focus-ring: rgba(255, 255, 255, 0.9);
+}
+
+:root[data-window-inactive] :is(.appStatusBar, .paneHeader) {
+  --focus-ring: rgba(255, 255, 255, 0.45);
 }
 
 .statusBarRight {
@@ -356,6 +420,14 @@ button:disabled {
   background: rgba(168, 85, 247, 0.62);
 }
 
+.statusBadge-topmost.statusBadgeButton:active {
+  background: rgba(34, 211, 238, 0.7);
+}
+
+.statusBadge-zen.statusBadgeButton:active {
+  background: rgba(168, 85, 247, 0.78);
+}
+
 @keyframes snapshotFlash {
   0%   { opacity: 0; transform: translateY(-2px); }
   10%  { opacity: 1; transform: translateY(0); }
@@ -393,6 +465,10 @@ button:disabled {
 
 .statusMenuButton:hover {
   background: rgba(16, 185, 129, 0.55);
+}
+
+.statusMenuButton:active {
+  background: rgba(16, 185, 129, 0.7);
 }
 
 .menuPanelUp {
@@ -435,11 +511,19 @@ button:disabled {
   background: rgba(255, 255, 255, 0.22);
 }
 
-.paneSwitcherSwatch {
+.paneSwitcherButton:active {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+/* One swatch for a pane's colour wherever it appears (PaneSwatch): a small
+   rounded square, the smallest corner on the scale, with an inner rim so a pale
+   or dark colour still shows its edge on any surface. */
+.paneSwatch {
   flex-shrink: 0;
   width: 10px;
   height: 10px;
-  border-radius: 3px;
+  border-radius: var(--radius-swatch);
+  background: var(--border-strong);
   box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.18);
 }
 
@@ -469,7 +553,7 @@ button:disabled {
   overflow: auto;
   padding: 6px;
   border: 1px solid var(--border);
-  border-radius: 14px;
+  border-radius: var(--radius-popover);
   background: var(--surface);
   box-shadow:
     0 20px 40px rgba(30, 27, 75, 0.18),
@@ -483,11 +567,12 @@ button:disabled {
   min-height: var(--control-height);
   padding: 6px 10px;
   border: 0;
-  border-radius: 8px;
+  border-radius: var(--radius-item);
   background: transparent;
   color: var(--text);
   font-weight: 500;
   text-align: left;
+  transition: background var(--motion);
 }
 
 .paneSwitcherOption:hover {
@@ -502,10 +587,11 @@ button:disabled {
   outline: none;
   background: var(--surface-hover);
   color: var(--text-onhover);
-  box-shadow: inset 0 0 0 2px var(--accent);
+  box-shadow: inset 0 0 0 2px var(--focus-ring);
 }
 
-.paneSwitcherOption-selected {
+.paneSwitcherOption-selected,
+.paneSwitcherOption:active {
   background: var(--surface-selected);
   color: var(--text-onhover);
 }
@@ -579,7 +665,7 @@ button:disabled {
 
 .iconButton:disabled {
   cursor: default;
-  opacity: 0.4;
+  opacity: var(--disabled-opacity);
 }
 
 /* ── Menu ────────────────────────────────────────────────────── */
@@ -602,7 +688,7 @@ button:disabled {
   overflow-y: auto;
   padding: 6px;
   border: 1px solid var(--border);
-  border-radius: 14px;
+  border-radius: var(--radius-popover);
   background: var(--surface);
   box-shadow:
     0 20px 40px rgba(30, 27, 75, 0.18),
@@ -616,16 +702,22 @@ button:disabled {
   min-height: 38px;
   padding: 8px 12px;
   border: 0;
-  border-radius: 8px;
+  border-radius: var(--radius-item);
   background: transparent;
   color: var(--text);
   font-weight: 500;
   text-align: left;
   white-space: nowrap;
+  transition: background var(--motion);
 }
 
 .menuPanel button:hover:not(:disabled) {
   background: var(--surface-hover);
+  color: var(--text-onhover);
+}
+
+.menuPanel button:active:not(:disabled) {
+  background: var(--surface-selected);
   color: var(--text-onhover);
 }
 
@@ -637,7 +729,7 @@ button:disabled {
   outline: none;
   background: var(--surface-hover);
   color: var(--text-onhover);
-  box-shadow: inset 0 0 0 2px var(--accent);
+  box-shadow: inset 0 0 0 2px var(--focus-ring);
 }
 
 .menuDivider {
@@ -686,7 +778,7 @@ button:disabled {
 
 .menuPanel .menuZoomButton:disabled {
   cursor: default;
-  opacity: 0.3;
+  opacity: var(--disabled-opacity);
 }
 
 .menuZoomLabel {
@@ -784,6 +876,7 @@ button:disabled {
     var(--pane-color-deep, #5312c3)
   );
   overflow: hidden;
+  --focus-ring: #ffffff;
 }
 
 .paneTitleInput {
@@ -819,6 +912,10 @@ button:disabled {
 
 .paneHeader .iconButton:hover {
   background: rgba(255, 255, 255, 0.3);
+}
+
+.paneHeader .iconButton:active {
+  background: rgba(255, 255, 255, 0.4);
 }
 
 /* ── Pane Editor ─────────────────────────────────────────────── */
@@ -885,10 +982,11 @@ button:disabled {
 .modalSurface {
   display: flex;
   flex-direction: column;
+  position: relative;
   width: min(680px, 100%);
   max-height: 84vh;
   border: 1px solid var(--border);
-  border-radius: 16px;
+  border-radius: var(--radius-dialog);
   background: var(--surface);
   box-shadow: 0 32px 80px rgba(30, 27, 75, 0.32);
   overflow: hidden;
@@ -920,28 +1018,64 @@ button:disabled {
   padding: 14px 16px;
 }
 
+/* The title bar is a band on the dialog's own surface, lightly tinted with the
+   app's violet, and closed by the same hairline that opens the action row. */
 .modalHeader {
   justify-content: space-between;
-  background: linear-gradient(135deg, #1e1b4b 0%, #4c1d95 100%);
+  gap: 12px;
+  padding-block: 10px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-accent);
 }
 
 .modalHeader h2 {
   margin: 0;
   font-size: 15px;
   font-weight: 700;
-  color: #ffffff;
+  color: var(--text-heading);
 }
 
-.modalHeader .iconButton {
-  width: 30px;
-  height: 30px;
-  border-color: rgba(255, 255, 255, 0.28);
-  background: rgba(255, 255, 255, 0.14);
-  color: #ffffff;
+/* A surface that names itself in its content (About): the band holds only the
+   close control, so it drops its tint and its line and the body gives the
+   content its room. */
+.modalHeader-bare {
+  padding-bottom: 0;
+  border-bottom: 0;
+  background: transparent;
 }
 
-.modalHeader .iconButton:hover {
-  background: rgba(255, 255, 255, 0.24);
+/* The quiet close: a drawn X with no chrome at rest; hover and press reveal its
+   hit area. It keeps the band's trailing corner even when it is the band's only
+   visible child. */
+.modalClose {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  margin-left: auto;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-item);
+  background: transparent;
+  color: var(--text-muted);
+  transition: background var(--motion), color var(--motion);
+}
+
+.modalClose:hover {
+  background: var(--overlay-hover);
+  color: var(--text);
+}
+
+.modalClose:active {
+  background: var(--overlay-pressed);
+  color: var(--text);
+}
+
+.modalClose:disabled {
+  opacity: var(--disabled-opacity);
+  background: transparent;
 }
 
 /* Chrome, not content: fixed like the header above it, closed by its own line,
@@ -985,8 +1119,17 @@ button:disabled {
   justify-content: center;
   gap: 8px;
   min-height: var(--control-height);
-  border-radius: 9px;
+  border-radius: var(--radius-control);
   font-weight: 600;
+  white-space: nowrap;
+}
+
+.iconTextButton:disabled,
+.secondaryButton:disabled,
+.dangerButton:disabled {
+  opacity: var(--disabled-opacity);
+  filter: none;
+  box-shadow: none;
 }
 
 .primaryButton {
@@ -1013,7 +1156,7 @@ button:disabled {
 
 .primaryButton:disabled {
   cursor: default;
-  opacity: 0.55;
+  opacity: var(--disabled-opacity);
   filter: none;
   box-shadow: none;
 }
@@ -1021,39 +1164,22 @@ button:disabled {
 .secondaryButton {
   min-width: 104px;
   padding: 0 16px;
-  border: 1.5px solid var(--border);
+  border: 1.5px solid var(--control-edge);
   background: var(--surface);
   color: var(--text-strong);
-  transition: background 120ms, border-color 120ms;
+  transition: background var(--motion), border-color var(--motion);
 }
 
 .secondaryButton:hover {
   background: var(--surface-muted);
-  border-color: var(--border-strong);
+  border-color: var(--control-edge-hover);
 }
 
 /* The primary's partner in every dialog footer, so it answers the press too, on
    the next rung of the surface ladder it already hovers on. */
 .secondaryButton:active {
   background: var(--surface-hover);
-  border-color: var(--border-strong);
-}
-
-/* The button that OPENS a destructive path wears the colour as letters and an outline;
-   only the one that commits it, in the dialog that asks, is filled (interface-styling). */
-.dangerTrigger {
-  color: var(--danger);
-  border-color: var(--danger);
-}
-
-.dangerTrigger:hover {
-  background: var(--danger-surface);
-  border-color: var(--danger);
-}
-
-.dangerTrigger:active {
-  background: var(--danger-surface-pressed);
-  border-color: var(--danger);
+  border-color: var(--control-edge-hover);
 }
 
 .dangerButton {
@@ -1076,14 +1202,38 @@ button:disabled {
 
 .iconTextButton {
   padding: 0 12px;
-  border: 1.5px solid var(--border);
+  border: 1.5px solid var(--control-edge);
   background: var(--surface);
   color: var(--text-strong);
-  transition: background 120ms;
+  transition: background var(--motion), border-color var(--motion);
 }
 
 .iconTextButton:hover {
   background: var(--surface-muted);
+  border-color: var(--control-edge-hover);
+}
+
+.iconTextButton:active {
+  background: var(--surface-hover);
+  border-color: var(--control-edge-hover);
+}
+
+/* The button that OPENS a destructive path wears the colour as letters and an outline;
+   only the one that commits it, in the dialog that asks, is filled (interface-styling).
+   It follows the outlined roles it sits on, so its red wins every state. */
+.dangerTrigger {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+.dangerTrigger:hover {
+  background: var(--danger-surface);
+  border-color: var(--danger);
+}
+
+.dangerTrigger:active {
+  background: var(--danger-surface-pressed);
+  border-color: var(--danger);
 }
 
 /* ── Forms ───────────────────────────────────────────────────── */
@@ -1101,26 +1251,38 @@ button:disabled {
   color: var(--text-strong);
 }
 
+/* Every one-line field: one height, one edge, one corner. The search box is the
+   field there, its input a borderless part of it, so the box takes the height. */
 .formGrid input[type="text"],
 .formGrid input[type="number"],
 .formGrid select,
-.searchBox input {
+.searchBox {
   width: 100%;
   height: var(--control-height);
   border: 1.5px solid var(--input-border);
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   background: var(--surface);
   color: var(--text);
   padding: 0 10px;
-  transition: border-color 120ms, box-shadow 120ms;
+  transition: border-color var(--motion), box-shadow var(--motion);
 }
 
+.formGrid input[type="text"]:hover,
+.formGrid input[type="number"]:hover,
+.formGrid select:hover,
+.searchBox:hover {
+  border-color: var(--text-muted);
+}
+
+/* A field shows focus by recolouring its own frame, with a soft glow of the
+   ring's colour, rather than a second ring outside it. */
 .formGrid input[type="text"]:focus,
 .formGrid input[type="number"]:focus,
-.formGrid select:focus {
+.formGrid select:focus,
+.searchBox:focus-within {
   outline: none;
-  border-color: #8b5cf6;
-  box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.15);
+  border-color: var(--focus-ring);
+  box-shadow: 0 0 0 3px var(--focus-glow);
 }
 
 /* A stock select keeps the platform's height and chrome, so it is drawn here
@@ -1155,7 +1317,7 @@ button:disabled {
 
 .formGrid input[type="number"]:invalid:focus {
   border-color: var(--danger);
-  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.15);
+  box-shadow: 0 0 0 3px var(--danger-surface-pressed);
 }
 
 .formGrid input[type="range"] {
@@ -1214,9 +1376,11 @@ button:disabled {
 
 /* ── Shortcuts ───────────────────────────────────────────────── */
 
+/* A reference list: no box on every row. The space between rows separates
+   them, and the key is the one mark on the surface. */
 .shortcutList {
   display: grid;
-  gap: 6px;
+  gap: 4px;
 }
 
 .shortcutRow {
@@ -1224,9 +1388,7 @@ button:disabled {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 9px 12px;
-  border-radius: 8px;
-  background: var(--surface-accent);
+  padding: 6px 0;
 }
 
 .shortcutRow > span {
@@ -1241,7 +1403,7 @@ button:disabled {
 }
 
 .shortcutNote {
-  margin: 10px 2px 0;
+  margin: 14px 0 0;
   font-size: 12px;
   color: var(--text-muted);
 }
@@ -1310,13 +1472,18 @@ kbd {
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
-  padding: 4px 6px;
-  border-radius: 6px;
-  transition: background 120ms;
+  padding: 4px 8px;
+  border-radius: var(--radius-item);
+  transition: background var(--motion);
 }
 
 .aboutLinkButton:hover {
   background: var(--surface-accent);
+  text-decoration: underline;
+}
+
+.aboutLinkButton:active {
+  background: var(--surface-selected);
   text-decoration: underline;
 }
 
@@ -1359,21 +1526,18 @@ kbd {
   display: flex;
   align-items: center;
   gap: 8px;
-  border: 1.5px solid var(--border);
-  border-radius: 10px;
-  background: var(--surface);
   padding: 0 12px;
-  transition: border-color 120ms, box-shadow 120ms;
-}
-
-.searchBox:focus-within {
-  border-color: #8b5cf6;
-  box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.15);
+  color: var(--text-muted);
 }
 
 .searchBox input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
   border: 0;
-  padding-left: 0;
+  background: transparent;
+  color: var(--text);
   outline: none;
   font-size: 14px;
 }
@@ -1428,7 +1592,7 @@ kbd {
   overscroll-behavior: contain;
   padding: 4px;
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: var(--radius-card);
   background: var(--surface-muted);
 }
 
@@ -1444,9 +1608,9 @@ kbd {
   display: grid;
   gap: 2px;
   padding: 8px 10px;
-  border-radius: 8px;
+  border-radius: var(--radius-item);
   cursor: pointer;
-  transition: background 120ms;
+  transition: background var(--motion);
 }
 
 .snapshotRow + .snapshotRow {
@@ -1461,19 +1625,16 @@ kbd {
   background: var(--surface-selected);
 }
 
+.snapshotRow:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 2px var(--focus-ring);
+}
+
 .snapshotRowHead {
   display: flex;
   align-items: center;
   gap: 8px;
   min-width: 0;
-}
-
-.snapshotRowDot {
-  width: 8px;
-  height: 8px;
-  flex-shrink: 0;
-  border-radius: 999px;
-  background: var(--border-strong);
 }
 
 .snapshotRowTime {
@@ -1483,13 +1644,8 @@ kbd {
   letter-spacing: 0.2px;
 }
 
-/* The detail bar carries one snapshot rather than a list of them, so its dot and time
-   take the room a row cannot spare. */
-.snapshotDetailBar .snapshotRowDot {
-  width: 10px;
-  height: 10px;
-}
-
+/* The detail bar carries one snapshot rather than a list of them, so its time takes
+   the room a row cannot spare. */
 .snapshotDetailBar .snapshotRowTime,
 .snapshotDetailBar .snapshotRowPane {
   font-size: 12px;
@@ -1531,7 +1687,7 @@ kbd {
   min-height: 0;
   overflow: hidden;
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: var(--radius-card);
   background: var(--surface);
 }
 
@@ -1669,6 +1825,10 @@ kbd {
   background: var(--overlay-hover);
 }
 
+.toastClose:active {
+  background: var(--overlay-pressed);
+}
+
 /* ── Load Error Screen ───────────────────────────────────────── */
 
 .loadErrorShell {
@@ -1686,7 +1846,7 @@ kbd {
   width: min(520px, 100%);
   padding: 28px 32px 24px;
   border: 1px solid var(--border);
-  border-radius: 16px;
+  border-radius: var(--radius-dialog);
   background: var(--surface);
   box-shadow: 0 24px 60px rgba(30, 27, 75, 0.18);
 }
@@ -1726,5 +1886,6 @@ kbd {
 .loadErrorActions {
   display: flex;
   justify-content: flex-end;
+  gap: 8px;
   margin-top: 4px;
 }

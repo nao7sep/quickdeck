@@ -158,7 +158,7 @@ describe("SnapshotsModal list as one composite control", () => {
     });
     await open();
 
-    const dots = Array.from(document.querySelectorAll<HTMLElement>(".snapshotRowDot"));
+    const dots = Array.from(document.querySelectorAll<HTMLElement>(".snapshotRow .paneSwatch"));
     expect(dots[0].style.background).not.toBe("");
     expect(dots[1].style.background).toBe("");
   });

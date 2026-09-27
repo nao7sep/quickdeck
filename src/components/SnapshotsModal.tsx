@@ -11,6 +11,7 @@ import { logWarn, serializeError } from "../services/logger";
 import { useAppState } from "../state/AppStateContext";
 import { useComposing, isComposingKeyboardEvent } from "../hooks/useComposing";
 import { ModalBase } from "./ModalBase";
+import { PaneSwatch } from "./PaneSwatch";
 import { formatSnapshotTimestamp } from "../utils/snapshotTimestamp";
 import { truncate } from "../utils/textCleanup";
 import {
@@ -358,10 +359,7 @@ export function SnapshotsModal({ onClose }: SnapshotsModalProps) {
                     {/* A snapshot from a deleted pane carries no colour, because the colour
                         belongs to a pane that is gone — but it still says the pane's name,
                         which it recorded for itself when it was taken. */}
-                    <span
-                      className="snapshotRowDot"
-                      style={origin ? { background: origin.headerColor } : undefined}
-                    />
+                    <PaneSwatch color={origin?.headerColor} />
                     <span className="snapshotRowTime">{timestamp}</span>
                     {paneName(origin?.title, row.paneTitle) !== "" ? (
                       <span className="snapshotRowPane">{paneName(origin?.title, row.paneTitle)}</span>
@@ -394,10 +392,7 @@ export function SnapshotsModal({ onClose }: SnapshotsModalProps) {
                   the same dot and time, not a bare repeat of the timestamp. */}
               <div className="snapshotDetailBar">
                 <span className="snapshotRowHead">
-                  <span
-                    className="snapshotRowDot"
-                    style={selectedOrigin ? { background: selectedOrigin.headerColor } : undefined}
-                  />
+                  <PaneSwatch color={selectedOrigin?.headerColor} />
                   <span className="snapshotRowTime">
                     {formatSnapshotTimestamp(selected.createdAtUtc, i18n.dateTime)}
                   </span>

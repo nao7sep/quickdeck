@@ -41,6 +41,7 @@ export function AboutModal({ onClose }: AboutModalProps) {
   return (
     <ModalBase
       title={t("about.title")}
+      titleVisuallyHidden
       onRequestClose={onClose}
       passiveContentLabel={t("about.title")}
       footer={

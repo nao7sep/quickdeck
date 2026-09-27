@@ -5,7 +5,10 @@ import { AppStateProvider } from "./state/AppStateContext";
 import { logError, logInfo, serializeError } from "./services/logger";
 import { denyUnhandledExternalDrop } from "./utils/externalDropBoundary";
 import { RootErrorBoundary } from "./components/RootErrorBoundary";
+import { installWindowActivity } from "./services/windowActivity";
 import "./styles.css";
+
+installWindowActivity();
 
 window.addEventListener("dragover", denyUnhandledExternalDrop);
 window.addEventListener("drop", denyUnhandledExternalDrop);

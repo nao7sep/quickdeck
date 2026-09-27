@@ -37,6 +37,22 @@ function button(label: string): HTMLButtonElement {
   return match;
 }
 
+describe("AboutModal header", () => {
+  it("leads with the app's name and keeps its title only as the dialog's spoken name", async () => {
+    const container = document.createElement("div");
+    document.body.append(container);
+    root = createRoot(container);
+    await act(async () => root?.render(<AboutModal onClose={vi.fn()} />));
+
+    const dialog = document.querySelector('[role="dialog"]')!;
+    const title = document.getElementById(dialog.getAttribute("aria-labelledby")!)!;
+    expect(title.textContent).toBe("About QuickDeck");
+    expect(title.classList.contains("visuallyHidden")).toBe(true);
+    expect(document.querySelector(".modalHeader")?.classList.contains("modalHeader-bare")).toBe(true);
+    expect(document.querySelector(".aboutText > p")?.textContent).toBe("QuickDeck");
+  });
+});
+
 describe("AboutModal link results", () => {
   it("keeps each failed link local until that same link opens successfully", async () => {
     mocks.openUrl

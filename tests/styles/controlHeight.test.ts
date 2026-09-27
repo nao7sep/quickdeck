@@ -39,7 +39,7 @@ describe("one control height", () => {
       '.formGridinput[type="text"]',
       '.formGridinput[type="number"]',
       ".formGridselect",
-      ".searchBoxinput",
+      ".searchBox",
     ]) {
       expect(sized, `${field} must take the shared height`).toContain(field);
     }
