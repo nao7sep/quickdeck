@@ -21,10 +21,30 @@ const HOME_ENV_VAR: &str = "QUICKDECK_HOME";
 pub fn app_data_dir(app: &AppHandle) -> Result<PathBuf, String> {
     let home = app.path().home_dir().map_err(|e| e.to_string())?;
     let dir = resolve_root(&home, std::env::var(HOME_ENV_VAR).ok())?;
-    fs::create_dir_all(&dir)
+    create_data_dir(&dir)
         .map_err(|e| format!("could not create data dir {}: {e}", dir.display()))?;
     secure_root(&dir)?;
     Ok(dir)
+}
+
+// Creates the data dir (and any missing parents) owner-only from the start on
+// POSIX, rather than creating it under the default umask and relying solely
+// on `secure_root` to tighten it afterward — that sequence leaves a window
+// where a freshly created dir is briefly world-readable. `secure_root` still
+// runs after this to tighten a dir an earlier build left broader than 0700;
+// this only narrows the mode a *new* dir is born with.
+#[cfg(unix)]
+fn create_data_dir(dir: &Path) -> std::io::Result<()> {
+    use std::os::unix::fs::DirBuilderExt;
+    fs::DirBuilder::new()
+        .recursive(true)
+        .mode(0o700)
+        .create(dir)
+}
+
+#[cfg(not(unix))]
+fn create_data_dir(dir: &Path) -> std::io::Result<()> {
+    fs::create_dir_all(dir)
 }
 
 // Enforces the owner-only (0700) permission on the storage root, per the

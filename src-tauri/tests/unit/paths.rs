@@ -84,6 +84,26 @@ fn new_root_is_created_owner_only() {
     assert_eq!(mode, 0o700);
 }
 
+// A freshly created root must be born owner-only, not merely tightened
+// afterward — otherwise a broad umask (e.g. 022) leaves it briefly
+// world-readable between creation and the `secure_root` tightening step.
+#[cfg(unix)]
+#[test]
+fn create_data_dir_creates_a_fresh_dir_owner_only() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let base = tempfile::tempdir().unwrap();
+    let dir = base.path().join("quickdeck-home").join(".quickdeck");
+
+    create_data_dir(&dir).unwrap();
+
+    let mode = fs::metadata(&dir).unwrap().permissions().mode() & 0o777;
+    assert_eq!(
+        mode, 0o700,
+        "the data dir must be created owner-only, not just tightened after the fact"
+    );
+}
+
 #[cfg(unix)]
 #[test]
 fn existing_broader_root_is_tightened_on_launch() {
