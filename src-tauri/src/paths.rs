@@ -23,7 +23,32 @@ pub fn app_data_dir(app: &AppHandle) -> Result<PathBuf, String> {
     let dir = resolve_root(&home, std::env::var(HOME_ENV_VAR).ok())?;
     fs::create_dir_all(&dir)
         .map_err(|e| format!("could not create data dir {}: {e}", dir.display()))?;
+    secure_root(&dir)?;
     Ok(dir)
+}
+
+// Enforces the owner-only (0700) permission on the storage root, per the
+// storage-path-conventions: created that way, and tightened at each launch
+// when an existing root is broader, because derived data and logs must never
+// be readable by accounts that cannot read their sources. Windows uses its
+// own permission model and is unaffected.
+#[cfg(unix)]
+fn secure_root(dir: &Path) -> Result<(), String> {
+    use std::os::unix::fs::PermissionsExt;
+
+    let metadata = fs::metadata(dir)
+        .map_err(|e| format!("could not stat data dir {}: {e}", dir.display()))?;
+    let mode = metadata.permissions().mode() & 0o777;
+    if mode != 0o700 {
+        fs::set_permissions(dir, fs::Permissions::from_mode(0o700))
+            .map_err(|e| format!("could not set permissions on data dir {}: {e}", dir.display()))?;
+    }
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn secure_root(_dir: &Path) -> Result<(), String> {
+    Ok(())
 }
 
 // The data directory as the app will resolve it, found before Tauri builds the
