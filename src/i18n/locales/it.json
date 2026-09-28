@@ -106,7 +106,7 @@
 
   "about.title": "Informazioni su QuickDeck",
   "about.version": "Versione {version}",
-  "about.tagline": "Uno spazio di lavoro per testo semplice a più riquadri, che funziona prima di tutto in locale.",
+  "about.tagline": "Scrivi in più riquadri di testo semplice affiancati, e recupera testo precedente dalle istantanee automatiche.",
   "about.reportIssue": "Segnala un problema",
   "about.linkFailed": "Impossibile aprire {link}. Riprova.",
   "about.license": "GNU GPL v3 o successiva",

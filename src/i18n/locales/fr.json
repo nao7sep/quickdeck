@@ -106,7 +106,7 @@
 
   "about.title": "À propos de QuickDeck",
   "about.version": "Version {version}",
-  "about.tagline": "Un espace de travail en texte brut à plusieurs volets, qui privilégie le stockage local.",
+  "about.tagline": "Écrivez dans plusieurs volets de texte brut côte à côte, et récupérez du texte antérieur à partir des instantanés automatiques.",
   "about.reportIssue": "Signaler un problème",
   "about.linkFailed": "Impossible d’ouvrir {link}. Réessayez.",
   "about.license": "GNU GPL v3 ou ultérieure",

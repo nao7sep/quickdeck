@@ -106,7 +106,7 @@
 
   "about.title": "QuickDeck について",
   "about.version": "バージョン {version}",
-  "about.tagline": "ローカルファーストで使える、複数ペインのプレーンテキスト作業スペース。",
+  "about.tagline": "複数のプレーンテキストのペインを横に並べて書き、自動スナップショットから以前のテキストを呼び戻しましょう。",
   "about.reportIssue": "問題を報告",
   "about.linkFailed": "{link} を開けませんでした。もう一度お試しください。",
   "about.license": "GNU GPL v3 以降",

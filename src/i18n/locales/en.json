@@ -106,7 +106,7 @@
 
   "about.title": "About QuickDeck",
   "about.version": "Version {version}",
-  "about.tagline": "A local-first multi-pane plain text workspace.",
+  "about.tagline": "Write in several plain-text panes side by side, and bring back earlier text from automatic snapshots.",
   "about.reportIssue": "Report Issue",
   "about.linkFailed": "Could not open {link}. Try again.",
   "about.license": "GNU GPL v3 or later",

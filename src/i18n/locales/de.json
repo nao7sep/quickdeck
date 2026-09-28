@@ -106,7 +106,7 @@
 
   "about.title": "Über QuickDeck",
   "about.version": "Version {version}",
-  "about.tagline": "Eine Local-first-Arbeitsumgebung für reinen Text mit mehreren Bereichen.",
+  "about.tagline": "Schreiben Sie in mehreren Bereichen für reinen Text nebeneinander, und holen Sie früheren Text aus automatischen Snapshots zurück.",
   "about.reportIssue": "Problem melden",
   "about.linkFailed": "{link} konnte nicht geöffnet werden. Bitte erneut versuchen.",
   "about.license": "GNU GPL v3 oder neuer",

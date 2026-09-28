@@ -106,7 +106,7 @@
 
   "about.title": "Acerca de QuickDeck",
   "about.version": "Versión {version}",
-  "about.tagline": "Un espacio de trabajo local de texto sin formato con varios paneles.",
+  "about.tagline": "Escribe en varios paneles de texto sin formato uno junto al otro, y recupera texto anterior desde instantáneas automáticas.",
   "about.reportIssue": "Informar de un problema",
   "about.linkFailed": "No se pudo abrir {link}. Inténtalo de nuevo.",
   "about.license": "GNU GPL v3 o posterior",

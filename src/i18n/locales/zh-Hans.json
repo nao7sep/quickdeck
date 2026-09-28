@@ -106,7 +106,7 @@
 
   "about.title": "关于 QuickDeck",
   "about.version": "版本 {version}",
-  "about.tagline": "本地优先的多窗格纯文本工作区。",
+  "about.tagline": "在多个纯文本窗格中并排书写，并从自动快照中找回之前的文本。",
   "about.reportIssue": "报告问题",
   "about.linkFailed": "无法打开 {link}。请重试。",
   "about.license": "GNU GPL v3 或更高版本",
