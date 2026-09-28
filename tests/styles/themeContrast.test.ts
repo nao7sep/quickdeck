@@ -59,6 +59,21 @@ describe("theme token contrast", () => {
   }
 });
 
+// The line a dialog's header and footer bands draw (checked in
+// modalBands.test.ts) must stay as visible as the app's own control borders
+// in both themes (modal-dialog-conventions). Recorded here as a contrast
+// comparison so a future retint of either token can't quietly make the line
+// fainter than a button's or field's own border again.
+describe("dialog band separator contrast", () => {
+  it("keeps the control-border token at least as visible as the divider token in both themes", () => {
+    for (const theme of themes) {
+      const dividerContrast = pairContrast(theme, "--border", "--surface");
+      const controlEdgeContrast = pairContrast(theme, "--control-edge", "--surface");
+      expect(controlEdgeContrast, theme).toBeGreaterThanOrEqual(dividerContrast);
+    }
+  });
+});
+
 describe("native window background", () => {
   function rustBackground(arm: string): string {
     const match = themeRs.match(

@@ -1026,8 +1026,14 @@ input[type="range"]:focus-visible {
   justify-content: space-between;
   gap: 12px;
   padding-block: 10px;
-  border-bottom: 1px solid var(--border);
-  background: var(--surface-accent);
+  /* Never fainter than the app's own control borders in either theme
+     (modal-dialog-conventions): the divider token (--border) reads fainter
+     than the buttons' and fields' own border, so the line uses that token
+     instead. */
+  border-bottom: 1px solid var(--control-edge);
+  /* Every band shares the surface's one background; only the lines separate
+     them (modal-dialog-conventions: "Each band is drawn as a band"). */
+  background: var(--surface);
 }
 
 .modalHeader h2 {
@@ -1106,8 +1112,14 @@ input[type="range"]:focus-visible {
 .modalFooter {
   justify-content: flex-end;
   gap: 8px;
-  border-top: 1px solid var(--border);
-  background: var(--surface-muted);
+  /* Never fainter than the app's own control borders in either theme
+     (modal-dialog-conventions): the divider token (--border) reads fainter
+     than the buttons' and fields' own border, so the line uses that token
+     instead. */
+  border-top: 1px solid var(--control-edge);
+  /* Every band shares the surface's one background; only the lines separate
+     them (modal-dialog-conventions: "Each band is drawn as a band"). */
+  background: var(--surface);
 }
 
 /* ── Action Buttons ──────────────────────────────────────────── */
