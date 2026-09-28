@@ -53,12 +53,12 @@
   --danger-surface: #fdecec;
   --danger-surface-pressed: #fbdada;
   --warning: #f59e0b;
-  --divider-subtle: rgba(0, 0, 0, 0.07);
+  --divider-subtle: rgba(0, 0, 0, 0.1);
   --overlay-hover: rgba(0, 0, 0, 0.08);
   --overlay-pressed: rgba(0, 0, 0, 0.14);
   /* The edge of an outlined button. The dividers above are too faint to be a
      control's only boundary, most of all on the dark surface. */
-  --control-edge: #cfd1e0;
+  --control-edge: #c1c3d2;
   --control-edge-hover: #b3b7cc;
   /* The one focus treatment: a ring just clear of the control's edge, in the
      app's violet, and the same hue as a soft glow around a focused field. The
@@ -151,7 +151,7 @@
     --divider-subtle: rgba(255, 255, 255, 0.08);
     --overlay-hover: rgba(255, 255, 255, 0.10);
     --overlay-pressed: rgba(255, 255, 255, 0.16);
-    --control-edge: #4e4e5c;
+    --control-edge: #5c5c6a;
     --control-edge-hover: #636374;
     --focus-ring: #a78bfa;
     --focus-glow: rgba(167, 139, 250, 0.22);
