@@ -44,6 +44,12 @@ export function AboutModal({ onClose }: AboutModalProps) {
       titleVisuallyHidden
       onRequestClose={onClose}
       passiveContentLabel={t("about.title")}
+      // The width at which the Japanese introduction line lands at about 2.5
+      // lines (2, the second nearly full) reads as a comfortable card in
+      // every language, with no line stranding a single short fragment, and
+      // is wide enough that the longest copyright line never wraps
+      // (about-size rule).
+      width={392}
       footer={
         <button className="secondaryButton" type="button" onClick={onClose}>
           {t("common.close")}

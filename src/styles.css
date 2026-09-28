@@ -1432,7 +1432,7 @@ kbd {
   font-size: 14px;
   color: var(--text-strong);
   line-height: 1.6;
-  text-align: center;
+  text-align: left;
 }
 
 .aboutText p {
@@ -1453,7 +1453,7 @@ kbd {
 
 .aboutLinks {
   display: flex;
-  justify-content: center;
+  justify-content: flex-start;
   gap: 18px;
   margin-top: 6px;
 }

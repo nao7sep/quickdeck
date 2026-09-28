@@ -22,6 +22,11 @@ type ModalBaseProps = {
   // Surfaces that benefit directly from more visible content take most of the
   // window instead of a readable content width.
   wide?: boolean;
+  // A surface sized to its own content rather than the shared default, in CSS
+  // px — About's own width, found by the about-size rule (smallest width that
+  // keeps the introduction line to the target number of lines in every
+  // language). Takes precedence over `wide`.
+  width?: number;
   // Off when the body's own content fills it and owns its scrolling — a split
   // whose halves each scroll. The body must not scroll too, or a wheel over one
   // half chains into the body and drags the whole surface with it.
@@ -41,6 +46,7 @@ export function ModalBase({
   passiveContentLabel,
   toolbar,
   wide = false,
+  width,
   scrollableBody = true,
   titleVisuallyHidden = false,
 }: ModalBaseProps) {
@@ -123,6 +129,7 @@ export function ModalBase({
     >
       <div
         className={`modalSurface ${wide ? "modalSurface-wide" : ""}`}
+        style={width ? { width: `min(${width}px, 100%)` } : undefined}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
