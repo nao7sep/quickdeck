@@ -29,7 +29,7 @@
   "menu.zoomReset": "Revenir à {percent}",
   "menu.shortcuts": "Raccourcis",
   "menu.snapshots": "Instantanés",
-  "menu.about": "À propos",
+  "menu.about": "À propos de QuickDeck",
 
   "pane.defaultTitle": "Nouveau tampon",
   "pane.titleLabel": "Titre du volet",

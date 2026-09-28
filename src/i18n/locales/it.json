@@ -29,7 +29,7 @@
   "menu.zoomReset": "Ripristina al {percent}",
   "menu.shortcuts": "Scorciatoie",
   "menu.snapshots": "Istantanee",
-  "menu.about": "Informazioni",
+  "menu.about": "Informazioni su QuickDeck",
 
   "pane.defaultTitle": "Nuovo buffer",
   "pane.titleLabel": "Titolo del riquadro",

@@ -29,7 +29,7 @@
   "menu.zoomReset": "Reset to {percent}",
   "menu.shortcuts": "Shortcuts",
   "menu.snapshots": "Snapshots",
-  "menu.about": "About",
+  "menu.about": "About QuickDeck",
 
   "pane.defaultTitle": "New Buffer",
   "pane.titleLabel": "Pane title",

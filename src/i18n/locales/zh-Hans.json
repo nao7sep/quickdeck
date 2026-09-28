@@ -29,7 +29,7 @@
   "menu.zoomReset": "重置为 {percent}",
   "menu.shortcuts": "快捷键",
   "menu.snapshots": "快照",
-  "menu.about": "关于",
+  "menu.about": "关于 QuickDeck",
 
   "pane.defaultTitle": "新缓冲区",
   "pane.titleLabel": "窗格标题",

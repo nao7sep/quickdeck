@@ -119,4 +119,12 @@ describe("catalogues", () => {
     const names = LANGUAGES.map((language) => catalogues[language]["language.name"]);
     expect(new Set(names).size).toBe(LANGUAGES.length);
   });
+
+  // Every control that opens About reads exactly "About <App>" in the interface
+  // language, matching the macOS app-menu wording, so a label can't drift into
+  // a bare "About" or its own phrasing (app-chrome-conventions, App identity).
+  it.each(LANGUAGES)("%s: the in-window About menu item matches the macOS About wording", (language) => {
+    const nativeAbout = (catalogues[language]["nativeMenu.about"] as string).replace("{app}", "QuickDeck");
+    expect(catalogues[language]["menu.about"]).toBe(nativeAbout);
+  });
 });

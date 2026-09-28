@@ -29,7 +29,7 @@
   "menu.zoomReset": "Сбросить до {percent}",
   "menu.shortcuts": "Сочетания клавиш",
   "menu.snapshots": "Снимки",
-  "menu.about": "О приложении",
+  "menu.about": "О программе QuickDeck",
 
   "pane.defaultTitle": "Новый буфер",
   "pane.titleLabel": "Название панели",
@@ -104,7 +104,7 @@
   "snapshots.failed": "Не удалось выполнить поиск по снимкам. Попробуйте ещё раз.",
   "snapshots.entryLabel": "Снимок от {timestamp}",
 
-  "about.title": "О приложении QuickDeck",
+  "about.title": "О программе QuickDeck",
   "about.version": "Версия {version}",
   "about.tagline": "Пишите в нескольких панелях обычного текста рядом друг с другом и возвращайте более ранний текст из автоматических снимков.",
   "about.reportIssue": "Сообщить о проблеме",
@@ -144,7 +144,7 @@
   "crash.body": "Перезагрузите окно, чтобы продолжить работу. Сохранённые панели и снимки не изменились.",
   "crash.reload": "Перезагрузить",
 
-  "nativeMenu.about": "О приложении {app}",
+  "nativeMenu.about": "О программе {app}",
   "nativeMenu.services": "Службы",
   "nativeMenu.hide": "Скрыть {app}",
   "nativeMenu.hideOthers": "Скрыть остальные",

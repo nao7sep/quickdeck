@@ -29,7 +29,7 @@
   "menu.zoomReset": "Redefinir para {percent}",
   "menu.shortcuts": "Atalhos",
   "menu.snapshots": "Instantâneos",
-  "menu.about": "Sobre",
+  "menu.about": "Sobre o QuickDeck",
 
   "pane.defaultTitle": "Novo buffer",
   "pane.titleLabel": "Título do painel",
