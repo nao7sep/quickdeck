@@ -6,7 +6,7 @@
 // correctness can be tested without rendering anything.
 
 import type { AppSettings, Pane } from "../types";
-import { DEFAULT_EDITOR_FONT_FAMILY_STACK, defaultSettings } from "./defaults";
+import { defaultSettings } from "./defaults";
 import { randomPaneColor } from "../utils/paneColors";
 import { singleLine } from "../utils/textCleanup";
 import { normalizeLanguagePreference } from "../i18n/languages";
@@ -84,14 +84,8 @@ export function normalizeSettings(settings: AppSettings | null): AppSettings {
       typeof settings.uiFontFamily === "string"
         ? singleLine(settings.uiFontFamily)
         : defaultSettings.uiFontFamily,
-    // Blank stores nothing and falls back to DEFAULT_EDITOR_FONT_FAMILY_STACK at render time (the
-    // field shows that stack as its placeholder). A bare "monospace" (Courier in the macOS webview)
-    // or a stored copy of the former default stack itself both read as no choice and migrate to blank.
     editorFontFamily:
       typeof settings.editorFontFamily === "string"
-        && singleLine(settings.editorFontFamily).length > 0
-        && singleLine(settings.editorFontFamily) !== "monospace"
-        && singleLine(settings.editorFontFamily) !== DEFAULT_EDITOR_FONT_FAMILY_STACK
         ? singleLine(settings.editorFontFamily)
         : defaultSettings.editorFontFamily,
     editorFontSize: clampSetting(settings.editorFontSize, "editorFontSize"),
@@ -105,46 +99,65 @@ export function normalizeSettings(settings: AppSettings | null): AppSettings {
   };
 }
 
-// The session zoom level — a view adjustment persisted in state.json, not a
-// setting in config.json (persisted-store-separation conventions), so it is
-// normalized apart from settings. Anything loaded (absent, hand-edited, out of
-// range) lands back on a sane level.
-// Wrong-typed PRESENT fields in a loaded config — the shape failures that make
-// the file corrupt (storage-path conventions: a file that parses but does not
-// fit its shape takes the corrupt branch, because flushing a coerced reading
-// back would destroy the user's bytes on a file that never looked corrupt).
-// An ABSENT field takes its default and is not an issue; an unknown key is
-// dropped by the known-keys rebuild and reported by the caller's log, not
-// treated as corruption (pre-release update-in-place tolerates retired keys).
+// Settings are persisted as whole sets; the editor's flat view model stays local
+// to the form and renderer.
+export function settingsBySet(settings: AppSettings) {
+  const { editorFontFamily: family, editorFontSize: size, editorLineHeight: lineHeight,
+    editorPadding: padding, editorBold: bold, editorItalic: italic,
+    editorUnderline: underline, ...scalars } = settings;
+  return { ...scalars, editorFont: { family, size, lineHeight, padding, bold, italic, underline } };
+}
+
+export type ConfigSets = ReturnType<typeof settingsBySet>;
+
+export function changedSettingsSets(previous: AppSettings, next: AppSettings): Partial<ConfigSets> {
+  const before = settingsBySet(previous);
+  const after = settingsBySet(next);
+  return Object.fromEntries(
+    (Object.keys(after) as (keyof ConfigSets)[])
+      .filter((key) => JSON.stringify(before[key]) !== JSON.stringify(after[key]))
+      .map((key) => [key, after[key]]),
+  );
+}
+
+function validSet(key: keyof ConfigSets, value: unknown): boolean {
+  const builtIn = settingsBySet(defaultSettings)[key];
+  if (key === "language") return typeof value === "string" && normalizeLanguagePreference(value) === value;
+  if (key === "theme") return typeof value === "string" && normalizeThemePreference(value) === value;
+  if (key === "editorFont") {
+    if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
+    const source = value as Record<string, unknown>;
+    return Object.entries(builtIn as ConfigSets["editorFont"]).every(([member, defaultValue]) =>
+      typeof source[member] === typeof defaultValue &&
+      (typeof defaultValue !== "number" || Number.isFinite(source[member])));
+  }
+  return typeof value === typeof builtIn && (typeof builtIn !== "number" || Number.isFinite(value));
+}
+
 export function settingsShapeIssues(loaded: unknown): string[] {
   if (loaded === null || typeof loaded !== "object" || Array.isArray(loaded)) {
     return ["config is not a JSON object"];
   }
   const source = loaded as Record<string, unknown>;
-  const issues: string[] = [];
-  const expect = (key: string, check: (v: unknown) => boolean, type: string) => {
-    if (key in source && !check(source[key])) {
-      issues.push(`${key} is not a ${type}`);
+  return (Object.keys(settingsBySet(defaultSettings)) as (keyof ConfigSets)[])
+    .filter((key) => key in source && !validSet(key, source[key]))
+    .map((key) => `${key} has an invalid shape`);
+}
+
+export function readSettingsSets(loaded: unknown): AppSettings {
+  const source = loaded !== null && typeof loaded === "object" && !Array.isArray(loaded)
+    ? loaded as Record<string, unknown> : {};
+  const sets = settingsBySet(defaultSettings);
+  for (const key of Object.keys(sets) as (keyof ConfigSets)[]) {
+    if (key in source && validSet(key, source[key])) {
+      Object.assign(sets, { [key]: source[key] });
     }
-  };
-  const isBool = (v: unknown) => typeof v === "boolean";
-  const isNum = (v: unknown) => typeof v === "number" && Number.isFinite(v);
-  const isStr = (v: unknown) => typeof v === "string";
-  expect("language", isStr, "string");
-  expect("theme", isStr, "string");
-  expect("zen", isBool, "boolean");
-  expect("topmost", isBool, "boolean");
-  expect("uiFontFamily", isStr, "string");
-  expect("editorFontFamily", isStr, "string");
-  expect("editorFontSize", isNum, "finite number");
-  expect("editorLineHeight", isNum, "finite number");
-  expect("editorPadding", isNum, "finite number");
-  expect("editorBold", isBool, "boolean");
-  expect("editorItalic", isBool, "boolean");
-  expect("editorUnderline", isBool, "boolean");
-  expect("autosaveDelaySeconds", isNum, "finite number");
-  expect("snapshotSearchPageSize", isNum, "finite number");
-  return issues;
+  }
+  const { editorFont, ...scalars } = sets;
+  return normalizeSettings({ ...scalars, editorFontFamily: editorFont.family,
+    editorFontSize: editorFont.size, editorLineHeight: editorFont.lineHeight,
+    editorPadding: editorFont.padding, editorBold: editorFont.bold,
+    editorItalic: editorFont.italic, editorUnderline: editorFont.underline });
 }
 
 // Shape failures in a loaded panes.json — the store that carries the user's TEXT, so a

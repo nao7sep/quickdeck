@@ -8,6 +8,9 @@ import {
   normalizeZoomLevel,
   panesShapeIssues,
   settingsShapeIssues,
+  settingsBySet,
+  readSettingsSets,
+  changedSettingsSets,
 } from "../../src/state/normalize";
 import { DEFAULT_EDITOR_FONT_FAMILY_STACK, defaultSettings } from "../../src/state/defaults";
 import { ZOOM_DEFAULT, ZOOM_MAX, ZOOM_MIN } from "../../src/utils/zoom";
@@ -120,19 +123,19 @@ describe("normalizeSettings", () => {
     expect(normalizeSettings(absent as AppSettings).theme).toBe("system");
   });
 
-  it("reads the old bare monospace default as the current default", () => {
+  it("preserves a chosen monospace font", () => {
     expect(normalizeSettings({ ...defaultSettings, editorFontFamily: "monospace" }).editorFontFamily).toBe(
-      defaultSettings.editorFontFamily,
+      "monospace",
     );
     expect(normalizeSettings({ ...defaultSettings, editorFontFamily: "Courier New" }).editorFontFamily).toBe("Courier New");
   });
 
-  it("migrates a stored value equal to the former default stack to blank", () => {
+  it("preserves a chosen built-in stack", () => {
     expect(defaultSettings.editorFontFamily).toBe("");
     expect(
       normalizeSettings({ ...defaultSettings, editorFontFamily: DEFAULT_EDITOR_FONT_FAMILY_STACK })
         .editorFontFamily,
-    ).toBe("");
+    ).toBe(DEFAULT_EDITOR_FONT_FAMILY_STACK);
   });
 
   it("falls back for an empty or non-string font family", () => {
@@ -323,11 +326,11 @@ describe("settingsShapeIssues", () => {
   });
 
   it("flags wrong-typed present fields — the corrupt branch, never a coerce-and-flush", () => {
-    expect(settingsShapeIssues({ ...defaultSettings, theme: true })).toEqual(["theme is not a string"]);
+    expect(settingsShapeIssues({ ...defaultSettings, theme: true })).toEqual(["theme has an invalid shape"]);
     // The retired "dark" key is an unknown key, dropped rather than treated as corruption.
     expect(settingsShapeIssues({ ...defaultSettings, dark: true })).toEqual([]);
-    expect(settingsShapeIssues({ ...defaultSettings, editorFontSize: "14" })).toContain(
-      "editorFontSize is not a finite number",
+    expect(settingsShapeIssues({ ...defaultSettings, editorFont: { size: "14" } })).toContain(
+      "editorFont has an invalid shape",
     );
     expect(settingsShapeIssues("not an object")).toEqual(["config is not a JSON object"]);
     expect(settingsShapeIssues(null)).toEqual(["config is not a JSON object"]);
@@ -377,5 +380,18 @@ describe("panesShapeIssues", () => {
     expect(panesShapeIssues({ version: "2", panes: [pane] })).toEqual([
       "version is not a finite number",
     ]);
+  });
+});
+
+
+describe("config sets", () => {
+  it("uses built-ins for every absent set and rejects an incomplete cluster whole", () => {
+    expect(readSettingsSets({ zen: true })).toEqual({ ...defaultSettings, zen: true });
+    expect(readSettingsSets({ editorFont: { size: 20 }, theme: "sepia" })).toEqual(defaultSettings);
+  });
+  it("writes the complete editor cluster only when a member changes", () => {
+    const next = { ...defaultSettings, editorBold: true };
+    expect(changedSettingsSets(defaultSettings, next)).toEqual({ editorFont: settingsBySet(next).editorFont });
+    expect(changedSettingsSets(defaultSettings, { ...defaultSettings, zen: true })).toEqual({ zen: true });
   });
 });

@@ -9,6 +9,8 @@ const persistence = vi.hoisted(() => ({
   loadAppData: vi.fn(),
   quarantineCorruptConfig: vi.fn(),
   saveConfig: vi.fn(),
+  saveState: vi.fn(),
+  savePanes: vi.fn(),
 }));
 
 vi.mock("../../src/services/persistence", async (importOriginal) => {
@@ -20,6 +22,8 @@ vi.mock("../../src/services/persistence", async (importOriginal) => {
     loadAppData: persistence.loadAppData,
     quarantineCorruptConfig: persistence.quarantineCorruptConfig,
     saveConfig: persistence.saveConfig,
+    saveState: persistence.saveState,
+    savePanes: persistence.savePanes,
     countSnapshots: vi.fn(async () => 0),
   };
 });
@@ -84,27 +88,11 @@ async function renderStartupState(): Promise<HTMLElement> {
   return host;
 }
 
-describe("first-run settings materialization", () => {
-  it("halts with authored copy instead of settling a rejected write as saved", async () => {
-    persistence.saveConfig.mockRejectedValueOnce(
-      new TypeError("EACCES /private/tmp/HOSTILE-SENTINEL IPC"),
-    );
-
+describe("first-run settings", () => {
+  it("loads without writing defaults", async () => {
     const host = await renderStartupState();
-
-    expect(host.querySelector('[data-testid="load-status"]')?.textContent).toBe(
-      "failed",
-    );
-    expect(host.querySelector('[data-testid="save-state"]')?.textContent).toBe(
-      "error",
-    );
-    const message =
-      host.querySelector('[data-testid="load-error"]')?.textContent ?? "";
-    expect(message).toContain("could not create its settings file");
-    expect(message).not.toContain("EACCES");
-    expect(message).not.toContain("/private/tmp");
-    expect(message).not.toContain("HOSTILE-SENTINEL");
-    expect(message).not.toContain("IPC");
+    expect(host.querySelector('[data-testid="load-status"]')?.textContent).toBe("ready");
+    expect(persistence.saveConfig).not.toHaveBeenCalled();
   });
 });
 
@@ -237,4 +225,21 @@ describe("interface language", () => {
 
     expect(panes.map((pane) => pane.title)).toEqual(["Neuer Puffer"]);
   });
+});
+
+
+it("writes one changed set and leaves config untouched for pane saves", async () => {
+  let state: ReturnType<typeof useAppState>;
+  function Probe() { state = useAppState(); return null; }
+  const host = document.createElement("div");
+  root = createRoot(host);
+  await act(async () => { root?.render(<AppStateProvider><Probe /></AppStateProvider>); });
+  await act(async () => { await state!.saveNow(); });
+  expect(persistence.saveConfig).not.toHaveBeenCalled();
+  await act(async () => { state!.updateSettings({ ...state!.settings, zen: true }); });
+  await act(async () => { await state!.saveNow(); });
+  expect(persistence.saveConfig).toHaveBeenCalledExactlyOnceWith({ zen: true });
+  await act(async () => { state!.updatePaneContent(state!.activePaneId, "new text"); });
+  await act(async () => { await state!.saveNow(); });
+  expect(persistence.saveConfig).toHaveBeenCalledTimes(1);
 });

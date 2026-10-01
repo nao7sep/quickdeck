@@ -133,7 +133,21 @@ pub fn save_config(app: &AppHandle, config: JsonValue) -> Result<(), String> {
     // records: config.json is durable user settings — managed text, recorded on
     // every save (data-backup conventions).
     let data_dir = app_data_dir(app)?;
-    atomic_write_json(&data_dir, &data_dir.join(CONFIG_FILE_NAME), &config)
+    save_config_sets(&data_dir, config)
+}
+
+pub fn save_config_sets(data_dir: &Path, changes: JsonValue) -> Result<(), String> {
+    const KEYS: &[&str] = &["language", "theme", "zen", "topmost", "uiFontFamily",
+        "autosaveDelaySeconds", "snapshotSearchPageSize", "editorFont"];
+    let path = data_dir.join(CONFIG_FILE_NAME);
+    let (loaded, _) = read_rebuildable_store(&path)?;
+    let mut current = loaded.and_then(|value| value.as_object().cloned()).unwrap_or_default();
+    current.retain(|key, _| KEYS.contains(&key.as_str()));
+    let changes = changes.as_object().ok_or("config changes are not an object")?;
+    for (key, value) in changes {
+        if KEYS.contains(&key.as_str()) { current.insert(key.clone(), value.clone()); }
+    }
+    atomic_write_json(data_dir, &path, &JsonValue::Object(current))
 }
 
 pub fn save_state(app: &AppHandle, state: JsonValue) -> Result<(), String> {

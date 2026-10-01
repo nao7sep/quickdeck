@@ -1,5 +1,6 @@
+import type { ConfigSets } from "../state/normalize";
 import { invoke, isTauri } from "@tauri-apps/api/core";
-import type { AppSettings, Pane, SnapshotTrigger } from "../types";
+import type { Pane, SnapshotTrigger } from "../types";
 
 // Pure view/session state — its own store (state.json), quarantined-then-reset
 // on corruption because every field is rebuildable by use.
@@ -21,7 +22,7 @@ export type PanesFile = {
 };
 
 export type LoadedAppData = {
-  config: AppSettings | null;
+  config: Record<string, unknown> | null;
   // Where a corrupt config.json was set aside; retained for diagnostics while
   // the app presents authored recovery copy.
   configQuarantinedTo: string | null;
@@ -129,11 +130,11 @@ function makeWriteQueue<T>(command: string): (payload: T) => Promise<void> {
   };
 }
 
-const enqueueConfigWrite = makeWriteQueue<{ config: AppSettings }>("save_config");
+const enqueueConfigWrite = makeWriteQueue<{ config: Partial<ConfigSets> }>("save_config");
 const enqueueStateWrite = makeWriteQueue<{ state: StateFile }>("save_state");
 const enqueuePanesWrite = makeWriteQueue<{ panes: PanesFile }>("save_panes");
 
-export async function saveConfig(config: AppSettings): Promise<void> {
+export async function saveConfig(config: Partial<ConfigSets>): Promise<void> {
   if (!isTauri()) {
     return;
   }

@@ -12,7 +12,8 @@ import { nanoid } from "nanoid";
 import { createDefaultPane, defaultSettings } from "./defaults";
 import {
   normalizePanes,
-  normalizeSettings,
+  readSettingsSets,
+  changedSettingsSets,
   normalizeZoomLevel,
   panesShapeIssues,
   settingsShapeIssues,
@@ -29,7 +30,6 @@ import {
   createSnapshot,
   createSnapshots,
   loadAppData,
-  quarantineCorruptConfig,
   quarantineCorruptPanes,
   saveConfig,
   savePanes,
@@ -130,6 +130,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   // start of a save and only flips back to "saved" when the counter has not
   // moved during the save — keeps an edit from being lost in a save race.
   const dirtyCounterRef = useRef(0);
+  const savedSettingsRef = useRef(defaultSettings);
+  const savingRef = useRef<Promise<void> | null>(null);
 
   useEffect(() => {
     panesRef.current = panes;
@@ -188,10 +190,11 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       // The language is settled before anything renders, including a halt
       // screen: the saved choice if config.json could be read, else System.
       const loadedSystemLanguage = isLanguage(data.systemLanguage) ? data.systemLanguage : "en";
-      const loadedSettings = normalizeSettings(data.config);
+      const loadedSettings = readSettingsSets(data.config);
       setSystemLanguage(loadedSystemLanguage);
       setSystemLocale(data.systemLocale);
       setSettings(loadedSettings);
+      savedSettingsRef.current = loadedSettings;
       const loadTranslator = createTranslator(
         effectiveLanguage(loadedSettings.language, loadedSystemLanguage),
       );
@@ -230,22 +233,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         }
       }
 
-      // Valid JSON whose fields fail the shape check is corrupt too: set the
-      // file aside BEFORE the first write-back, reseed from the normalized
-      // reading, and report — flushing a coerced reading over the original
-      // would destroy the user's bytes on a file that never looked corrupt
-      // (storage-path conventions' shape-failure clause). Unknown keys are not
-      // shape failures: they are dropped by the known-keys rebuild and logged.
-      let configShapeQuarantinedTo: string | null = null;
-      if (data.config !== null) {
-        const issues = settingsShapeIssues(data.config);
-        if (issues.length > 0) {
-          configShapeQuarantinedTo = await quarantineCorruptConfig();
-          logWarn("shape-failed config.json quarantined; reseeding normalized values", {
-            issues,
-            quarantinedTo: configShapeQuarantinedTo,
-          });
-        }
+      for (const issue of data.config === null ? [] : settingsShapeIssues(data.config)) {
+        logWarn("config set ignored", { issue });
       }
 
       const effectiveSettings = loadedSettings;
@@ -257,33 +246,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         dataDir: data.dataDir,
       });
 
-      if (data.configQuarantinedTo !== null || configShapeQuarantinedTo !== null) {
+      if (data.configQuarantinedTo !== null) {
         showBlockingError(message("settingsReset.title"), message("settingsReset.body"));
-      }
-
-      // Materialize config.json on first run so the settings file exists on disk immediately,
-      // not only after the first change (storage-path conventions, "Materializing settings on
-      // first run"). data.config is null when the file is absent — either never created, or just
-      // quarantined aside (which renames it away) — so this is create-if-absent (an existing
-      // config is never overwritten), persisting the real normalized defaults through the normal
-      // save_config path rather than a hand-built literal. Without this required
-      // baseline, the app cannot truthfully call its current state saved or know
-      // that later writes are safe, so a failure retains a halting authored result.
-      if (!canceledRef.current && (data.config === null || configShapeQuarantinedTo !== null)) {
-        try {
-          await saveConfig(effectiveSettings);
-        } catch (error) {
-          logError("failed to create config.json on first run", {
-            error: serializeError(error),
-          });
-          if (!canceledRef.current) {
-            setSaveState("error");
-            setLoadErrorIsCorruptPanes(false);
-            setLoadError(message("load.configCreateFailed"));
-            setLoadStatus("failed");
-          }
-          return;
-        }
       }
 
       try {
@@ -524,6 +488,10 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   );
 
   const updateSettings = useCallback((nextSettings: AppSettings) => {
+    if (Object.keys(changedSettingsSets(savedSettingsRef.current, nextSettings)).length === 0) {
+      setSettings(nextSettings);
+      return;
+    }
     setSettings(nextSettings);
     dirtyCounterRef.current += 1;
     setSaveState("unsaved");
@@ -550,19 +518,31 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       return;
     }
 
+    // Claim before waiting; a later close waits for this save and then snapshots
+    // its own values, so writes cannot apply an older config over a newer one.
+    const previousWrite = savingRef.current;
     const dirtyAtStart = dirtyCounterRef.current;
     setSaveState("saving");
-    try {
-      await Promise.all([
-        saveConfig(settings),
-        persistState(buildStateFile(activePaneId, zoomLevel)),
-        savePanes(buildPanesFile(panes)),
-      ]);
-      setSaveState(resolveSaveState(dirtyAtStart, dirtyCounterRef.current));
-    } catch (error) {
-      setSaveState("error");
-      throw error;
-    }
+    const write = (async () => {
+      try {
+        await previousWrite?.catch(() => {});
+        const changes = changedSettingsSets(savedSettingsRef.current, settings);
+        await Promise.all([
+          Object.keys(changes).length > 0
+            ? saveConfig(changes).then(() => { savedSettingsRef.current = settings; })
+            : Promise.resolve(),
+          persistState(buildStateFile(activePaneId, zoomLevel)),
+          savePanes(buildPanesFile(panes)),
+        ]);
+        setSaveState(resolveSaveState(dirtyAtStart, dirtyCounterRef.current));
+      } catch (error) {
+        setSaveState("error");
+        throw error;
+      }
+    })();
+    savingRef.current = write;
+    try { await write; } finally { if (savingRef.current === write) savingRef.current = null; }
+
   }, [activePaneId, loadStatus, panes, settings, zoomLevel]);
 
   useEffect(() => {

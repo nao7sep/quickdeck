@@ -658,3 +658,17 @@ fn count_rows(conn: &Connection) -> i64 {
     conn.query_row("select count(*) from snapshots", [], |row| row.get(0))
         .unwrap()
 }
+
+
+#[test]
+#[serial(backup_store)]
+fn config_updates_keep_only_touched_known_sets() {
+    let root = tempfile::tempdir().unwrap();
+    save_config_sets(root.path(), serde_json::json!({"zen": true})).unwrap();
+    let path = root.path().join(CONFIG_FILE_NAME);
+    assert_eq!(read_json_optional(&path).unwrap().unwrap(), serde_json::json!({"zen": true}));
+    fs::write(&path, r#"{"zen":true,"version":1,"dark":true}"#).unwrap();
+    save_config_sets(root.path(), serde_json::json!({"topmost": true})).unwrap();
+    assert_eq!(read_json_optional(&path).unwrap().unwrap(), serde_json::json!({"zen":true,"topmost":true}));
+    crate::backup_store::close_backup_store();
+}
