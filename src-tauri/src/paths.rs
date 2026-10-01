@@ -6,7 +6,7 @@ use std::{
 use tauri::{AppHandle, Manager};
 
 const DATA_DIR_NAME: &str = ".quickdeck";
-const HOME_ENV_VAR: &str = "QUICKDECK_DATA_DIR";
+const DATA_DIR_ENV_VAR: &str = "QUICKDECK_DATA_DIR";
 
 // Resolves (creating if missing) the app's data directory.
 //
@@ -20,7 +20,7 @@ const HOME_ENV_VAR: &str = "QUICKDECK_DATA_DIR";
 // location independently.
 pub fn app_data_dir(app: &AppHandle) -> Result<PathBuf, String> {
     let home = app.path().home_dir().map_err(|e| e.to_string())?;
-    let dir = resolve_root(&home, std::env::var(HOME_ENV_VAR).ok())?;
+    let dir = resolve_root(&home, std::env::var(DATA_DIR_ENV_VAR).ok())?;
     create_data_dir(&dir)
         .map_err(|e| format!("could not create data dir {}: {e}", dir.display()))?;
     secure_root(&dir)?;
@@ -77,7 +77,7 @@ fn secure_root(_dir: &Path) -> Result<(), String> {
 // nothing; None if the home or the override cannot be resolved.
 pub fn data_dir_before_launch() -> Option<PathBuf> {
     let home = dirs::home_dir()?;
-    resolve_root(&home, std::env::var(HOME_ENV_VAR).ok()).ok()
+    resolve_root(&home, std::env::var(DATA_DIR_ENV_VAR).ok()).ok()
 }
 
 // Root resolution, factored out so it can be unit-tested with an injected home
@@ -98,7 +98,7 @@ fn resolve_root(home: &Path, override_value: Option<String>) -> Result<PathBuf, 
     let expanded = expanded.trim();
     if expanded.is_empty() {
         return Err(format!(
-            "{HOME_ENV_VAR} is set to \"{raw}\" but expands to an empty path \
+            "{DATA_DIR_ENV_VAR} is set to \"{raw}\" but expands to an empty path \
              (an unset $VAR/%VAR%?). Set it to a usable directory, or unset it to use ~/{DATA_DIR_NAME}."
         ));
     }
