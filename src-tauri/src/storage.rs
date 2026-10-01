@@ -107,8 +107,7 @@ pub fn load_app_data(app: &AppHandle) -> Result<LoadedAppData, String> {
     // rebuildable and quarantine-then-reset; panes.json carries the user's
     // work product and halts — its error rides in the result so the other
     // stores still load and the halt surface can offer a reset.
-    let (config, config_quarantined_to) =
-        read_config_store(&data_dir.join(CONFIG_FILE_NAME))?;
+    let (config, config_quarantined_to) = read_config_store(&data_dir.join(CONFIG_FILE_NAME))?;
     // state.json contains only the active pane and zoom. Preserve and log corrupt
     // bytes, but do not surface a recovery dialog for disposable view state.
     let (state, _) = read_rebuildable_store(&data_dir.join(STATE_FILE_NAME))?;
@@ -139,15 +138,29 @@ pub fn save_config(app: &AppHandle, config: JsonValue) -> Result<(), String> {
 }
 
 pub fn save_config_sets(data_dir: &Path, changes: JsonValue) -> Result<(), String> {
-    const KEYS: &[&str] = &["language", "theme", "zen", "topmost", "uiFontFamily",
-        "autosaveDelaySeconds", "snapshotSearchPageSize", "editorFont"];
+    const KEYS: &[&str] = &[
+        "language",
+        "theme",
+        "zen",
+        "topmost",
+        "uiFontFamily",
+        "autosaveDelaySeconds",
+        "snapshotSearchPageSize",
+        "editorFont",
+    ];
     let path = data_dir.join(CONFIG_FILE_NAME);
     let (loaded, _) = read_config_store(&path)?;
-    let mut current = loaded.and_then(|value| value.as_object().cloned()).unwrap_or_default();
+    let mut current = loaded
+        .and_then(|value| value.as_object().cloned())
+        .unwrap_or_default();
     current.retain(|key, _| KEYS.contains(&key.as_str()));
-    let changes = changes.as_object().ok_or("config changes are not an object")?;
+    let changes = changes
+        .as_object()
+        .ok_or("config changes are not an object")?;
     for (key, value) in changes {
-        if KEYS.contains(&key.as_str()) { current.insert(key.clone(), value.clone()); }
+        if KEYS.contains(&key.as_str()) {
+            current.insert(key.clone(), value.clone());
+        }
     }
     atomic_write_json(data_dir, &path, &JsonValue::Object(current))
 }
@@ -184,24 +197,6 @@ pub fn save_panes(app: &AppHandle, panes: JsonValue) -> Result<(), String> {
 // report can name it. The rename either lands or its failure propagates —
 // never a silent fall-through to defaults over the preserved bytes
 // (storage-path conventions: halting requires exactly this reset offer).
-pub fn quarantine_corrupt_config(app: &AppHandle) -> Result<String, String> {
-    // The frontend detects a shape-failed config (valid JSON, wrong types) and
-    // takes the same corrupt branch the bytes-level reader takes: set the file
-    // aside, reseed, report (storage-path conventions' shape-failure clause).
-    let data_dir = app_data_dir(app)?;
-    let path = data_dir.join(CONFIG_FILE_NAME);
-    let quarantined = quarantine_name(&path);
-    fs::rename(&path, &quarantined).map_err(to_string_error)?;
-    crate::logging::warn(
-        "shape-failed config.json quarantined",
-        serde_json::json!({
-            "file": path.to_string_lossy(),
-            "quarantinedTo": quarantined.to_string_lossy(),
-        }),
-    );
-    Ok(quarantined.to_string_lossy().into_owned())
-}
-
 pub fn quarantine_corrupt_panes(app: &AppHandle) -> Result<String, String> {
     let data_dir = app_data_dir(app)?;
     let path = data_dir.join(PANES_FILE_NAME);

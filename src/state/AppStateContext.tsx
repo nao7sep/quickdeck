@@ -488,11 +488,10 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   );
 
   const updateSettings = useCallback((nextSettings: AppSettings) => {
+    setSettings(nextSettings);
     if (Object.keys(changedSettingsSets(savedSettingsRef.current, nextSettings)).length === 0) {
-      setSettings(nextSettings);
       return;
     }
-    setSettings(nextSettings);
     dirtyCounterRef.current += 1;
     setSaveState("unsaved");
     logInfo("settings updated", { settings: nextSettings });

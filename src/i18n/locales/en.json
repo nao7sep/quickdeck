@@ -137,7 +137,6 @@
   "load.panesUnreadable": "Your pane text file (panes.json) could not be read and has been left exactly where it is. Check that the data folder is available and that QuickDeck has access, then try again. Diagnostic details are in the log.",
   "load.panesDamaged": "Your pane text file (panes.json) is damaged and has been left exactly where it is. Diagnostic details are in the log.",
   "load.panesNewer": "Your pane text file (panes.json) was written by a newer version of QuickDeck (format {version}) and has been left exactly in place. Update QuickDeck to open it.",
-  "load.configCreateFailed": "QuickDeck could not create its settings file. No files were changed. Restore write access to the data folder, then relaunch QuickDeck.",
   "load.setAsideFailed": "The damaged pane file could not be set aside. Your existing files were not changed.",
 
   "crash.title": "QuickDeck could not keep this window open",

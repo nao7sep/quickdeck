@@ -137,7 +137,6 @@
   "load.panesUnreadable": "Die Textdatei Ihrer Bereiche (panes.json) konnte nicht gelesen werden und wurde unverändert an ihrem Ort belassen. Prüfen Sie, ob der Datenordner verfügbar ist und QuickDeck darauf zugreifen kann, und versuchen Sie es dann erneut. Die Diagnosedetails stehen im Protokoll.",
   "load.panesDamaged": "Die Textdatei Ihrer Bereiche (panes.json) ist beschädigt und wurde unverändert an ihrem Ort belassen. Die Diagnosedetails stehen im Protokoll.",
   "load.panesNewer": "Die Textdatei Ihrer Bereiche (panes.json) wurde von einer neueren Version von QuickDeck (Format {version}) geschrieben und unverändert an ihrem Ort belassen. Aktualisieren Sie QuickDeck, um sie zu öffnen.",
-  "load.configCreateFailed": "QuickDeck konnte seine Einstellungsdatei nicht erstellen. Es wurden keine Dateien geändert. Stellen Sie den Schreibzugriff auf den Datenordner wieder her und starten Sie QuickDeck dann neu.",
   "load.setAsideFailed": "Die beschädigte Datei der Bereiche konnte nicht beiseitegelegt werden. Ihre vorhandenen Dateien wurden nicht geändert.",
 
   "crash.title": "QuickDeck konnte dieses Fenster nicht offen halten",

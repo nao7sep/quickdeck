@@ -126,16 +126,6 @@ fn save_panes(app: AppHandle, panes: JsonValue) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn quarantine_corrupt_config(app: AppHandle) -> Result<String, String> {
-    logging::boundary(
-        "quarantine_corrupt_config",
-        json!({}),
-        || storage::quarantine_corrupt_config(&app),
-        |quarantined| json!({ "quarantinedTo": quarantined }),
-    )
-}
-
-#[tauri::command]
 fn quarantine_corrupt_panes(app: AppHandle) -> Result<String, String> {
     logging::boundary(
         "quarantine_corrupt_panes",
@@ -342,7 +332,6 @@ pub fn run() {
             save_config,
             save_state,
             save_panes,
-            quarantine_corrupt_config,
             quarantine_corrupt_panes,
             create_snapshot,
             create_snapshots,

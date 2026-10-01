@@ -137,7 +137,6 @@
   "load.panesUnreadable": "ペインのテキストファイル（panes.json）を読み込めなかったため、元の場所にそのまま残しています。データフォルダが利用でき、QuickDeck がアクセスできることを確認してから、もう一度お試しください。診断情報はログにあります。",
   "load.panesDamaged": "ペインのテキストファイル（panes.json）が壊れているため、元の場所にそのまま残しています。診断情報はログにあります。",
   "load.panesNewer": "ペインのテキストファイル（panes.json）は新しいバージョンの QuickDeck（形式 {version}）で書かれているため、元の場所にそのまま残しています。開くには QuickDeck をアップデートしてください。",
-  "load.configCreateFailed": "QuickDeck は設定ファイルを作成できませんでした。ファイルは変更されていません。データフォルダへの書き込み権限を回復してから、QuickDeck をもう一度起動してください。",
   "load.setAsideFailed": "壊れたペインファイルを退避できませんでした。既存のファイルは変更されていません。",
 
   "crash.title": "QuickDeck はこのウインドウを表示し続けられませんでした",

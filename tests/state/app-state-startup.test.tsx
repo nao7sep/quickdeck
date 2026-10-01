@@ -7,7 +7,6 @@ import type { LoadedAppData } from "../../src/services/persistence";
 
 const persistence = vi.hoisted(() => ({
   loadAppData: vi.fn(),
-  quarantineCorruptConfig: vi.fn(),
   saveConfig: vi.fn(),
   saveState: vi.fn(),
   savePanes: vi.fn(),
@@ -20,7 +19,6 @@ vi.mock("../../src/services/persistence", async (importOriginal) => {
   return {
     ...original,
     loadAppData: persistence.loadAppData,
-    quarantineCorruptConfig: persistence.quarantineCorruptConfig,
     saveConfig: persistence.saveConfig,
     saveState: persistence.saveState,
     savePanes: persistence.savePanes,
@@ -63,7 +61,6 @@ let root: Root | null = null;
 
 beforeEach(() => {
   persistence.loadAppData.mockResolvedValue(loadedAppData());
-  persistence.quarantineCorruptConfig.mockResolvedValue("/.quickdeck/config.invalid");
   persistence.saveConfig.mockResolvedValue(undefined);
 });
 

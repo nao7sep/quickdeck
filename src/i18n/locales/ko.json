@@ -137,7 +137,6 @@
   "load.panesUnreadable": "패널 텍스트 파일(panes.json)을 읽을 수 없어 원래 위치에 그대로 두었습니다. 데이터 폴더를 사용할 수 있고 QuickDeck이 접근할 수 있는지 확인한 다음 다시 시도하십시오. 진단 정보는 로그에 있습니다.",
   "load.panesDamaged": "패널 텍스트 파일(panes.json)이 손상되어 원래 위치에 그대로 두었습니다. 진단 정보는 로그에 있습니다.",
   "load.panesNewer": "패널 텍스트 파일(panes.json)은 더 새로운 버전의 QuickDeck(형식 {version})에서 작성되어 원래 위치에 그대로 두었습니다. 파일을 열려면 QuickDeck을 업데이트하십시오.",
-  "load.configCreateFailed": "QuickDeck이 설정 파일을 만들 수 없습니다. 변경된 파일은 없습니다. 데이터 폴더에 대한 쓰기 권한을 복구한 다음 QuickDeck을 다시 실행하십시오.",
   "load.setAsideFailed": "손상된 패널 파일을 따로 보관할 수 없습니다. 기존 파일은 변경되지 않았습니다.",
 
   "crash.title": "QuickDeck이 이 창을 계속 열어 둘 수 없습니다",

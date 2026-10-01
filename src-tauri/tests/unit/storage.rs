@@ -650,7 +650,10 @@ fn config_keeps_an_object_with_an_invalid_individual_set_in_place() {
     fs::write(&path, bytes).unwrap();
 
     let (value, quarantined_to) = read_config_store(&path).unwrap();
-    assert_eq!(value.unwrap(), serde_json::json!({"zen": "wrong shape", "topmost": true}));
+    assert_eq!(
+        value.unwrap(),
+        serde_json::json!({"zen": "wrong shape", "topmost": true})
+    );
     assert_eq!(quarantined_to, None);
     assert_eq!(fs::read(&path).unwrap(), bytes);
 }
@@ -663,12 +666,19 @@ fn a_config_write_quarantines_a_non_object_before_saving_changed_sets() {
     fs::write(&path, b"[1,2,3]").unwrap();
 
     save_config_sets(dir.path(), serde_json::json!({"zen": true})).unwrap();
-    let quarantined = fs::read_dir(dir.path()).unwrap()
+    let quarantined = fs::read_dir(dir.path())
+        .unwrap()
         .map(|entry| entry.unwrap().path())
-        .find(|path| path.extension().is_some_and(|extension| extension == "invalid"))
+        .find(|path| {
+            path.extension()
+                .is_some_and(|extension| extension == "invalid")
+        })
         .unwrap();
     assert_eq!(fs::read(quarantined).unwrap(), b"[1,2,3]");
-    assert_eq!(read_json_optional(&path).unwrap().unwrap(), serde_json::json!({"zen": true}));
+    assert_eq!(
+        read_json_optional(&path).unwrap().unwrap(),
+        serde_json::json!({"zen": true})
+    );
     crate::backup_store::close_backup_store();
 }
 
@@ -704,16 +714,21 @@ fn count_rows(conn: &Connection) -> i64 {
         .unwrap()
 }
 
-
 #[test]
 #[serial(backup_store)]
 fn config_updates_keep_only_touched_known_sets() {
     let root = tempfile::tempdir().unwrap();
     save_config_sets(root.path(), serde_json::json!({"zen": true})).unwrap();
     let path = root.path().join(CONFIG_FILE_NAME);
-    assert_eq!(read_json_optional(&path).unwrap().unwrap(), serde_json::json!({"zen": true}));
+    assert_eq!(
+        read_json_optional(&path).unwrap().unwrap(),
+        serde_json::json!({"zen": true})
+    );
     fs::write(&path, r#"{"zen":true,"version":1,"dark":true}"#).unwrap();
     save_config_sets(root.path(), serde_json::json!({"topmost": true})).unwrap();
-    assert_eq!(read_json_optional(&path).unwrap().unwrap(), serde_json::json!({"zen":true,"topmost":true}));
+    assert_eq!(
+        read_json_optional(&path).unwrap().unwrap(),
+        serde_json::json!({"zen":true,"topmost":true})
+    );
     crate::backup_store::close_backup_store();
 }

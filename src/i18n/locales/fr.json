@@ -137,7 +137,6 @@
   "load.panesUnreadable": "Le fichier texte de vos volets (panes.json) n’a pas pu être lu et a été laissé exactement à sa place. Vérifiez que le dossier de données est disponible et que QuickDeck y a accès, puis réessayez. Les détails de diagnostic se trouvent dans le journal.",
   "load.panesDamaged": "Le fichier texte de vos volets (panes.json) est endommagé et a été laissé exactement à sa place. Les détails de diagnostic se trouvent dans le journal.",
   "load.panesNewer": "Le fichier texte de vos volets (panes.json) a été écrit par une version plus récente de QuickDeck (format {version}) et a été laissé exactement à sa place. Mettez QuickDeck à jour pour l’ouvrir.",
-  "load.configCreateFailed": "QuickDeck n’a pas pu créer son fichier de réglages. Aucun fichier n’a été modifié. Rétablissez l’accès en écriture au dossier de données, puis relancez QuickDeck.",
   "load.setAsideFailed": "Le fichier de volets endommagé n’a pas pu être mis de côté. Vos fichiers existants n’ont pas été modifiés.",
 
   "crash.title": "QuickDeck n’a pas pu garder cette fenêtre ouverte",

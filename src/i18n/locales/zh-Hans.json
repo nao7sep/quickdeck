@@ -137,7 +137,6 @@
   "load.panesUnreadable": "无法读取你的窗格文本文件（panes.json），该文件已原样留在原处。请确认数据文件夹可用且 QuickDeck 有权访问，然后重试。诊断详情记录在日志中。",
   "load.panesDamaged": "你的窗格文本文件（panes.json）已损坏，该文件已原样留在原处。诊断详情记录在日志中。",
   "load.panesNewer": "你的窗格文本文件（panes.json）由较新版本的 QuickDeck（格式 {version}）写入，已原样留在原处。请更新 QuickDeck 后再打开。",
-  "load.configCreateFailed": "QuickDeck 无法创建其设置文件。没有更改任何文件。请恢复对数据文件夹的写入权限，然后重新启动 QuickDeck。",
   "load.setAsideFailed": "无法将损坏的窗格文件移到一旁。你现有的文件没有被更改。",
 
   "crash.title": "QuickDeck 无法让此窗口保持打开",

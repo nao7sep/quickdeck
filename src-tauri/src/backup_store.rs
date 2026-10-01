@@ -237,9 +237,10 @@ fn insert_if_changed(
     Ok(())
 }
 
-/// Close the store (best-effort). For tests that need to release the file handle
-/// between throwaway roots; the app itself lets the process exit close it. Resets
-/// the singleton so the next `record` re-opens against the current root.
+/// Close the store (best-effort). The exit archive calls it so every store is
+/// closed before archiving; tests call it to release the file handle between
+/// throwaway roots. Resets the singleton so the next `record` re-opens against
+/// the current root.
 pub fn close_backup_store() {
     let mut guard = match STORE.lock() {
         Ok(guard) => guard,

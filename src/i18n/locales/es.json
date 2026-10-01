@@ -137,7 +137,6 @@
   "load.panesUnreadable": "No se pudo leer el archivo de texto de tus paneles (panes.json) y se dejó exactamente donde estaba. Verifica que la carpeta de datos esté disponible y que QuickDeck tenga acceso, y vuelve a intentarlo. Los detalles de diagnóstico están en el registro.",
   "load.panesDamaged": "El archivo de texto de tus paneles (panes.json) está dañado y se dejó exactamente donde estaba. Los detalles de diagnóstico están en el registro.",
   "load.panesNewer": "El archivo de texto de tus paneles (panes.json) lo escribió una versión más reciente de QuickDeck (formato {version}) y se dejó exactamente donde estaba. Actualiza QuickDeck para abrirlo.",
-  "load.configCreateFailed": "QuickDeck no pudo crear su archivo de configuración. No se modificó ningún archivo. Restablece el permiso de escritura en la carpeta de datos y vuelve a abrir QuickDeck.",
   "load.setAsideFailed": "No se pudo apartar el archivo de paneles dañado. Tus archivos no se modificaron.",
 
   "crash.title": "QuickDeck no pudo mantener abierta esta ventana",

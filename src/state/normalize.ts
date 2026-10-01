@@ -48,8 +48,7 @@ function inBounds(value: number, key: BoundedKey): boolean {
 // Whether a Settings form draft may be committed. Gates the Save button: every
 // numeric field must be finite and within SETTINGS_BOUNDS. An emptied number
 // input yields 0, which is below every field's minimum and therefore correctly
-// rejected. The font family may be blank — normalizeSettings supplies a fallback
-// rather than blocking the commit.
+// rejected. The font families may be blank: blank uses the built-in stack.
 export function isSettingsDraftValid(draft: AppSettings): boolean {
   return (
     inBounds(draft.editorFontSize, "editorFontSize") &&
@@ -69,17 +68,15 @@ export function normalizeSettings(settings: AppSettings | null): AppSettings {
     return defaultSettings;
   }
 
-  // Build the result from known keys only, in the canonical field order.
-  // Spreading the loaded object would carry hand-edited or renamed keys (e.g.
-  // the retired "dark" boolean) back into every save; listing fields explicitly
-  // keeps config.json pinned to the current schema.
+  // Build the result from known keys only, in the canonical field order, so a
+  // stray key on the input never reaches the in-memory settings.
   return {
     language: normalizeLanguagePreference(settings.language),
     theme: normalizeThemePreference(settings.theme),
     zen: asBoolean(settings.zen, defaultSettings.zen),
     topmost: asBoolean(settings.topmost, defaultSettings.topmost),
-    // UI font is free text and may be blank (blank = the built-in default stack), so unlike the
-    // editor font it never falls back on empty — only a non-string reverts to the default.
+    // Both font families are free text and may be blank (blank = the built-in stack), so only a
+    // non-string reverts to the default.
     uiFontFamily:
       typeof settings.uiFontFamily === "string"
         ? singleLine(settings.uiFontFamily)
@@ -207,6 +204,10 @@ export function panesShapeIssues(loaded: unknown): string[] {
   return issues;
 }
 
+// The session zoom level — a view adjustment persisted in state.json, not a
+// setting in config.json (persisted-store-separation conventions), so it is
+// normalized apart from settings. Anything loaded (absent, hand-edited, out of
+// range) lands back on a sane level.
 export function normalizeZoomLevel(value: unknown): number {
   return clampNumber(
     typeof value === "number" ? value : Number.NaN,
