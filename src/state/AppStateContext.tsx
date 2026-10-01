@@ -131,7 +131,6 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   // moved during the save — keeps an edit from being lost in a save race.
   const dirtyCounterRef = useRef(0);
   const savedSettingsRef = useRef(defaultSettings);
-  const savingRef = useRef<Promise<void> | null>(null);
 
   useEffect(() => {
     panesRef.current = panes;
@@ -517,31 +516,24 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    // Claim before waiting; a later close waits for this save and then snapshots
-    // its own values, so writes cannot apply an older config over a newer one.
-    const previousWrite = savingRef.current;
     const dirtyAtStart = dirtyCounterRef.current;
     setSaveState("saving");
-    const write = (async () => {
-      try {
-        await previousWrite?.catch(() => {});
-        const changes = changedSettingsSets(savedSettingsRef.current, settings);
-        await Promise.all([
-          Object.keys(changes).length > 0
-            ? saveConfig(changes).then(() => { savedSettingsRef.current = settings; })
-            : Promise.resolve(),
-          persistState(buildStateFile(activePaneId, zoomLevel)),
-          savePanes(buildPanesFile(panes)),
-        ]);
-        setSaveState(resolveSaveState(dirtyAtStart, dirtyCounterRef.current));
-      } catch (error) {
-        setSaveState("error");
-        throw error;
-      }
-    })();
-    savingRef.current = write;
-    try { await write; } finally { if (savingRef.current === write) savingRef.current = null; }
-
+    try {
+      const changes = changedSettingsSets(savedSettingsRef.current, settings);
+      await Promise.all([
+        Object.keys(changes).length > 0
+          ? saveConfig(changes).then(() => {
+              savedSettingsRef.current = settings;
+            })
+          : Promise.resolve(),
+        persistState(buildStateFile(activePaneId, zoomLevel)),
+        savePanes(buildPanesFile(panes)),
+      ]);
+      setSaveState(resolveSaveState(dirtyAtStart, dirtyCounterRef.current));
+    } catch (error) {
+      setSaveState("error");
+      throw error;
+    }
   }, [activePaneId, loadStatus, panes, settings, zoomLevel]);
 
   useEffect(() => {

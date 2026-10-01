@@ -240,3 +240,17 @@ it("writes one changed set and leaves config untouched for pane saves", async ()
   await act(async () => { await state!.saveNow(); });
   expect(persistence.saveConfig).toHaveBeenCalledTimes(1);
 });
+
+it("leaves a set whose write failed to the next save", async () => {
+  let state: ReturnType<typeof useAppState>;
+  function Probe() { state = useAppState(); return null; }
+  const host = document.createElement("div");
+  root = createRoot(host);
+  await act(async () => { root?.render(<AppStateProvider><Probe /></AppStateProvider>); });
+  persistence.saveConfig.mockRejectedValueOnce(new Error("disk full"));
+  await act(async () => { state!.updateSettings({ ...state!.settings, zen: true }); });
+  await act(async () => { await expect(state!.saveNow()).rejects.toThrow("disk full"); });
+  await act(async () => { await state!.saveNow(); });
+  expect(persistence.saveConfig).toHaveBeenCalledTimes(2);
+  expect(persistence.saveConfig).toHaveBeenLastCalledWith({ zen: true });
+});
