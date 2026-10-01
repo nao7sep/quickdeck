@@ -14,7 +14,7 @@ export function ConfirmCloseModal({ onCancel, onDiscard }: ConfirmCloseModalProp
       onRequestClose={onCancel}
       footer={
         <>
-          <button className="secondaryButton" type="button" onClick={onCancel}>
+          <button className="secondaryButton" type="button" onClick={onCancel} data-initial-focus>
             {t("common.cancel")}
           </button>
           <button className="dangerButton" type="button" onClick={onDiscard}>

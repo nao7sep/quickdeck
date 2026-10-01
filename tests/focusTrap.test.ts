@@ -63,6 +63,13 @@ describe("resolveInitialFocus", () => {
     expect(resolveInitialFocus(surface)).toBe(surface.querySelector('[value="dark"]'));
   });
 
+  it("lands on the control marked for initial focus wherever it sits", () => {
+    const surface = buildSurface(
+      `<button data-modal-close>x</button><button id="discard">discard</button><button id="cancel" data-initial-focus>cancel</button>`,
+    );
+    expect(resolveInitialFocus(surface)).toBe(surface.querySelector("#cancel"));
+  });
+
   it("prefers the first focusable that is not the close button", () => {
     const surface = buildSurface(`<button data-modal-close>x</button><input id="first" /><button>save</button>`);
     expect(resolveInitialFocus(surface)).toBe(surface.querySelector("#first"));
