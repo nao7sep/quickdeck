@@ -628,6 +628,51 @@ fn rebuildable_store_passes_valid_and_missing_through() {
 }
 
 #[test]
+fn config_quarantines_non_objects_without_seeding_a_replacement() {
+    for bytes in ["null", "[]", "true", "42", "\"settings\""] {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(CONFIG_FILE_NAME);
+        fs::write(&path, bytes).unwrap();
+
+        let (value, quarantined_to) = read_config_store(&path).unwrap();
+        assert_eq!(value, None);
+        assert_eq!(fs::read(quarantined_to.unwrap()).unwrap(), bytes.as_bytes());
+        assert!(!path.exists(), "recovery must not write built-ins");
+        assert_eq!(read_config_store(&path).unwrap(), (None, None));
+    }
+}
+
+#[test]
+fn config_keeps_an_object_with_an_invalid_individual_set_in_place() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join(CONFIG_FILE_NAME);
+    let bytes = br#"{"zen":"wrong shape","topmost":true}"#;
+    fs::write(&path, bytes).unwrap();
+
+    let (value, quarantined_to) = read_config_store(&path).unwrap();
+    assert_eq!(value.unwrap(), serde_json::json!({"zen": "wrong shape", "topmost": true}));
+    assert_eq!(quarantined_to, None);
+    assert_eq!(fs::read(&path).unwrap(), bytes);
+}
+
+#[test]
+#[serial(backup_store)]
+fn a_config_write_quarantines_a_non_object_before_saving_changed_sets() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join(CONFIG_FILE_NAME);
+    fs::write(&path, b"[1,2,3]").unwrap();
+
+    save_config_sets(dir.path(), serde_json::json!({"zen": true})).unwrap();
+    let quarantined = fs::read_dir(dir.path()).unwrap()
+        .map(|entry| entry.unwrap().path())
+        .find(|path| path.extension().is_some_and(|extension| extension == "invalid"))
+        .unwrap();
+    assert_eq!(fs::read(quarantined).unwrap(), b"[1,2,3]");
+    assert_eq!(read_json_optional(&path).unwrap().unwrap(), serde_json::json!({"zen": true}));
+    crate::backup_store::close_backup_store();
+}
+
+#[test]
 fn corrupt_panes_store_halts_and_is_left_in_place() {
     // panes.json carries the user's text: the halting reader errors and the
     // file is left exactly where it is (storage-path conventions).

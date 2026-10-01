@@ -108,7 +108,7 @@ pub fn load_app_data(app: &AppHandle) -> Result<LoadedAppData, String> {
     // work product and halts — its error rides in the result so the other
     // stores still load and the halt surface can offer a reset.
     let (config, config_quarantined_to) =
-        read_rebuildable_store(&data_dir.join(CONFIG_FILE_NAME))?;
+        read_config_store(&data_dir.join(CONFIG_FILE_NAME))?;
     // state.json contains only the active pane and zoom. Preserve and log corrupt
     // bytes, but do not surface a recovery dialog for disposable view state.
     let (state, _) = read_rebuildable_store(&data_dir.join(STATE_FILE_NAME))?;
@@ -142,7 +142,7 @@ pub fn save_config_sets(data_dir: &Path, changes: JsonValue) -> Result<(), Strin
     const KEYS: &[&str] = &["language", "theme", "zen", "topmost", "uiFontFamily",
         "autosaveDelaySeconds", "snapshotSearchPageSize", "editorFont"];
     let path = data_dir.join(CONFIG_FILE_NAME);
-    let (loaded, _) = read_rebuildable_store(&path)?;
+    let (loaded, _) = read_config_store(&path)?;
     let mut current = loaded.and_then(|value| value.as_object().cloned()).unwrap_or_default();
     current.retain(|key, _| KEYS.contains(&key.as_str()));
     let changes = changes.as_object().ok_or("config changes are not an object")?;
@@ -466,8 +466,8 @@ fn quarantine_name(path: &Path) -> PathBuf {
 // Reads a REBUILDABLE store (config, view state): missing → None; parseable →
 // Some; present-but-corrupt (unreadable bytes or unparseable JSON — a bytes
 // parse, so UTF-8 garbage counts) → quarantine aside and return the `.invalid`
-// path so the caller reports it, then None so launch proceeds and first-run
-// materialization reseeds. The quarantine rename runs OUTSIDE the parse-failure
+// path so the caller reports it, then None so launch proceeds with built-ins.
+// The quarantine rename runs OUTSIDE the parse-failure
 // handling: its own failure propagates as a load error rather than falling
 // through to a default write over the preserved bytes (storage-path
 // conventions). panes.json never takes this path — it holds the user's text
@@ -480,25 +480,40 @@ fn read_rebuildable_store(path: &Path) -> Result<(Option<JsonValue>, Option<Stri
     };
     match serde_json::from_slice::<JsonValue>(&bytes) {
         Ok(value) => Ok((Some(value), None)),
-        Err(parse_err) => {
-            let quarantined = quarantine_name(path);
-            fs::rename(path, &quarantined).map_err(|rename_err| {
-                format!(
-                    "could not quarantine corrupt {}: {rename_err} (parse error: {parse_err})",
-                    path.display()
-                )
-            })?;
-            crate::logging::warn(
-                "corrupt store quarantined; continuing with defaults",
-                serde_json::json!({
-                    "file": path.to_string_lossy(),
-                    "quarantinedTo": quarantined.to_string_lossy(),
-                    "error": { "message": parse_err.to_string() },
-                }),
-            );
-            Ok((None, Some(quarantined.to_string_lossy().into_owned())))
-        }
+        Err(parse_err) => quarantine_rebuildable_store(path, &parse_err.to_string()),
     }
+}
+
+// A settings file is an object of sets. Invalid individual sets are handled by
+// the frontend; a non-object file takes the whole-store recovery branch here.
+fn read_config_store(path: &Path) -> Result<(Option<JsonValue>, Option<String>), String> {
+    let loaded = read_rebuildable_store(path)?;
+    if loaded.0.as_ref().is_some_and(|value| !value.is_object()) {
+        return quarantine_rebuildable_store(path, "config is not a JSON object");
+    }
+    Ok(loaded)
+}
+
+fn quarantine_rebuildable_store(
+    path: &Path,
+    reason: &str,
+) -> Result<(Option<JsonValue>, Option<String>), String> {
+    let quarantined = quarantine_name(path);
+    fs::rename(path, &quarantined).map_err(|rename_err| {
+        format!(
+            "could not quarantine corrupt {}: {rename_err} ({reason})",
+            path.display()
+        )
+    })?;
+    crate::logging::warn(
+        "corrupt store quarantined; continuing with defaults",
+        serde_json::json!({
+            "file": path.to_string_lossy(),
+            "quarantinedTo": quarantined.to_string_lossy(),
+            "error": { "message": reason },
+        }),
+    );
+    Ok((None, Some(quarantined.to_string_lossy().into_owned())))
 }
 
 // The atomic-write temp name for `path`: `<stem>-<discriminator>.tmp`, alongside
