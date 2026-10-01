@@ -119,6 +119,7 @@ pub fn init() -> tauri::plugin::TauriPlugin<tauri::Wry> {
             let root = crate::paths::app_data_dir(app.app_handle())?;
             match claim(&root)? {
                 Claim::Primary { lock, listener } => {
+                    app.manage(crate::archive::SessionArchive::start(root));
                     listen(listener, app.app_handle().clone());
                     app.manage(Owner { _lock: lock });
                     Ok(())

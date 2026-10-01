@@ -35,6 +35,8 @@ pub const CONFIG_FILE_NAME: &str = "config.json";
 pub const STATE_FILE_NAME: &str = "state.json";
 pub const WINDOW_FILE_NAME: &str = "window.json";
 pub const PANES_FILE_NAME: &str = "panes.json";
+// Original relative path and archive-root entry name, beside the store paths.
+pub const ARCHIVED_STORES: &[(&str, &str)] = &[(SNAPSHOTS_DB_FILE_NAME, SNAPSHOTS_DB_FILE_NAME)];
 pub const SNAPSHOTS_DB_FILE_NAME: &str = "snapshots.sqlite3";
 
 #[derive(Debug, Serialize)]

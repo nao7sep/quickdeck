@@ -1,3 +1,4 @@
+pub mod archive;
 pub mod backup_store;
 mod i18n;
 mod instance_owner;
@@ -18,32 +19,38 @@ use menu::SAFE_QUIT_MENU_ID;
 use tauri::{AppHandle, Manager, RunEvent, State};
 
 #[tauri::command]
-fn load_app_data(app: AppHandle, language: State<LanguageState>) -> Result<LoadedAppData, String> {
-    logging::boundary(
-        "load_app_data",
-        json!({}),
-        || {
-            // The frontend gates its debug logging on this resolved flag.
-            storage::load_app_data(&app).map(|mut data| {
-                data.debug_enabled = logging::debug_enabled();
-                data.system_language = language.system_language.to_string();
-                data.system_locale = language.system_locale.clone();
-                data
-            })
-        },
-        |data| {
-            json!({
-                "hasConfig": data.config.is_some(),
-                "hasState": data.state.is_some(),
-                "hasPanes": data.panes.is_some(),
-                "panesError": data.panes_error,
-                "dataDir": data.data_dir,
-                "debugEnabled": data.debug_enabled,
-                "systemLanguage": data.system_language,
-                "systemLocale": data.system_locale,
-            })
-        },
-    )
+async fn load_app_data(app: AppHandle) -> Result<LoadedAppData, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        app.state::<archive::SessionArchive>().wait_ready();
+        let language = app.state::<LanguageState>();
+        logging::boundary(
+            "load_app_data",
+            json!({}),
+            || {
+                // The frontend gates its debug logging on this resolved flag.
+                storage::load_app_data(&app).map(|mut data| {
+                    data.debug_enabled = logging::debug_enabled();
+                    data.system_language = language.system_language.to_string();
+                    data.system_locale = language.system_locale.clone();
+                    data
+                })
+            },
+            |data| {
+                json!({
+                    "hasConfig": data.config.is_some(),
+                    "hasState": data.state.is_some(),
+                    "hasPanes": data.panes.is_some(),
+                    "panesError": data.panes_error,
+                    "dataDir": data.data_dir,
+                    "debugEnabled": data.debug_enabled,
+                    "systemLanguage": data.system_language,
+                    "systemLocale": data.system_locale,
+                })
+            },
+        )
+    })
+    .await
+    .map_err(|error| error.to_string())?
 }
 
 #[tauri::command]
@@ -369,6 +376,9 @@ pub fn run() {
         }
         if matches!(event, RunEvent::Exit) {
             window_placement::save(app, &placement_state);
+            if let Ok(root) = paths::app_data_dir(app) {
+                archive::finish_session(root);
+            }
             logging::flush();
         }
     });
