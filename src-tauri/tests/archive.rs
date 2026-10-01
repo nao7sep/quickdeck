@@ -73,7 +73,13 @@ fn copies_live_wal_bytes_consistently_hashes_them_and_deduplicates() {
         .query_row("SELECT value FROM text", [], |row| row.get(0))
         .unwrap();
     assert_eq!(value, "saved in WAL");
-    assert!(!root.path().join("backups/archives/.lock").exists());
+    assert_eq!(
+        fs::read_dir(root.path().join("backups/archives"))
+            .unwrap()
+            .count(),
+        1,
+        "a written run leaves only its archive: no lock, temporary copy, or SQLite sidecar"
+    );
 }
 
 #[test]
@@ -143,11 +149,21 @@ fn clean_exit_archives_and_clears_the_marker_and_unclean_launch_recovers_once() 
     let directory = root.path().join("backups/archives");
     assert!(directory.join(".running").exists());
     fs::write(directory.join(".lock"), []).unwrap();
-    fs::write(directory.join("interrupted.tmp"), []).unwrap();
+    let leftovers = [
+        "interrupted.tmp",
+        "interrupted.tmp-journal",
+        "interrupted.tmp-wal",
+        "interrupted.tmp-shm",
+    ];
+    for name in leftovers {
+        fs::write(directory.join(name), []).unwrap();
+    }
     let launch = start_session(root.path().to_owned());
     assert!(launch.join(Duration::from_secs(5)));
     assert_eq!(zips(root.path()).len(), 1);
-    assert!(!directory.join("interrupted.tmp").exists());
+    for name in leftovers {
+        assert!(!directory.join(name).exists(), "{name}");
+    }
     assert!(!directory.join(".lock").exists());
     finish_session(root.path().to_owned(), &launch);
     assert!(!directory.join(".running").exists());
@@ -214,4 +230,23 @@ fn keeps_the_ten_newest_complete_archives() {
         .unwrap()
         .to_string_lossy()
         .contains("000002"));
+}
+
+#[test]
+fn an_old_archive_that_cannot_be_deleted_is_logged_and_the_run_still_counts_as_written() {
+    let root = tempfile::tempdir().unwrap();
+    database(root.path());
+    let directory = root.path().join("backups/archives");
+    // A directory is the oldest "archive"; removing it as a file fails.
+    fs::create_dir_all(directory.join("20200101-000000-utc.zip")).unwrap();
+    for second in 1..10 {
+        fs::write(
+            directory.join(format!("20200101-0000{second:02}-utc.zip")),
+            [],
+        )
+        .unwrap();
+    }
+    assert!(archive_stores(root.path()).unwrap());
+    assert!(directory.join("20200101-000000-utc.zip").is_dir());
+    assert_eq!(zips(root.path()).len(), 11);
 }

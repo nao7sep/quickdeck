@@ -11,7 +11,7 @@ use serde_json::json;
 use sha2::{Digest, Sha256};
 use std::{
     fs::{self, File, OpenOptions},
-    io::{Read, Write},
+    io::{self, Read, Write},
     path::{Path, PathBuf},
     sync::{Arc, Condvar, Mutex, PoisonError},
     time::Duration,
@@ -20,6 +20,10 @@ use zip::{write::SimpleFileOptions, CompressionMethod, ZipArchive, ZipWriter};
 
 /// How long launch and exit wait for an archive run before going on without it.
 const WAIT: Duration = Duration::from_secs(5);
+
+/// A temporary file, then the files SQLite keeps beside a temporary store copy
+/// while it is open: the copy inherits the store's WAL mode.
+const TEMPORARY_SUFFIXES: [&str; 4] = ["", "-journal", "-wal", "-shm"];
 
 /// An archive run on its own thread. A run given up on keeps going; if the
 /// process ends first, `.running` stays and the next launch clears what the
@@ -81,8 +85,11 @@ pub fn prepare_session(root: &Path) -> Result<(), String> {
         // cannot belong to a live writer.
         for entry in fs::read_dir(&directory).map_err(error)? {
             let path = entry.map_err(error)?.path();
-            if path.file_name().is_some_and(|name| name == ".lock")
-                || path.extension().is_some_and(|extension| extension == "tmp")
+            let name = path.file_name().unwrap_or_default().to_string_lossy();
+            if name == ".lock"
+                || TEMPORARY_SUFFIXES
+                    .iter()
+                    .any(|suffix| name.ends_with(&format!(".tmp{suffix}")))
             {
                 fs::remove_file(path).map_err(error)?;
             }
@@ -152,7 +159,7 @@ fn error(value: impl std::fmt::Display) -> String {
     value.to_string()
 }
 
-fn copy_sqlite(source: &Path, target: &Path) -> Result<Vec<u8>, String> {
+fn copy_sqlite(source: &Path, target: &Path) -> Result<(), String> {
     let source =
         Connection::open_with_flags(source, OpenFlags::SQLITE_OPEN_READ_ONLY).map_err(error)?;
     source
@@ -170,7 +177,26 @@ fn copy_sqlite(source: &Path, target: &Path) -> Result<Vec<u8>, String> {
             }
         }
     }
-    fs::read(target).map_err(error)
+    Ok(())
+}
+
+fn sha256_file(path: &Path) -> Result<String, String> {
+    let mut file = File::open(path).map_err(error)?;
+    let mut hasher = Sha256::new();
+    let mut buffer = vec![0; 64 * 1024];
+    loop {
+        match file.read(&mut buffer) {
+            Ok(0) => break,
+            Ok(read) => hasher.update(&buffer[..read]),
+            Err(value) if value.kind() == io::ErrorKind::Interrupted => {}
+            Err(value) => return Err(error(value)),
+        }
+    }
+    Ok(hasher
+        .finalize()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect())
 }
 
 fn archives(directory: &Path) -> Result<Vec<PathBuf>, String> {
@@ -220,26 +246,25 @@ pub fn archive_stores(root: &Path) -> Result<bool, String> {
         timestamp_utc: Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true),
         entries: Vec::new(),
     };
-    let mut contents = Vec::new();
+    let mut copies = Vec::new();
     for (relative, entry_name) in crate::storage::ARCHIVED_STORES {
         let source = root.join(relative);
         let target = directory.join(format!("{}.tmp", crate::nanoid::generate()?));
-        let cleanup = Cleanup(target.clone());
+        let cleanup = TEMPORARY_SUFFIXES.map(|suffix| {
+            let mut path = target.clone().into_os_string();
+            path.push(suffix);
+            Cleanup(path.into())
+        });
         let mut entry = Entry {
             original_path: source.to_string_lossy().into_owned(),
             entry_name: entry_name.to_string(),
             hash: None,
             skipped: None,
         };
-        match copy_sqlite(&source, &target) {
-            Ok(bytes) => {
-                entry.hash = Some(
-                    Sha256::digest(&bytes)
-                        .iter()
-                        .map(|byte| format!("{byte:02x}"))
-                        .collect(),
-                );
-                contents.push((*entry_name, bytes));
+        match copy_sqlite(&source, &target).and_then(|()| sha256_file(&target)) {
+            Ok(hash) => {
+                entry.hash = Some(hash);
+                copies.push((*entry_name, target, cleanup));
             }
             Err(reason) => {
                 crate::logging::warn(
@@ -249,10 +274,9 @@ pub fn archive_stores(root: &Path) -> Result<bool, String> {
                 entry.skipped = Some(reason);
             }
         }
-        drop(cleanup);
         manifest.entries.push(entry);
     }
-    if contents.is_empty() {
+    if copies.is_empty() {
         return Ok(false);
     }
     let previous = archives(&directory)?;
@@ -282,9 +306,9 @@ pub fn archive_stores(root: &Path) -> Result<bool, String> {
         .map_err(error)?;
     let mut zip = ZipWriter::new(file);
     let options = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
-    for (name, bytes) in contents {
-        zip.start_file(name, options).map_err(error)?;
-        zip.write_all(&bytes).map_err(error)?;
+    for (name, path, _) in &copies {
+        zip.start_file(*name, options).map_err(error)?;
+        io::copy(&mut File::open(path).map_err(error)?, &mut zip).map_err(error)?;
     }
     zip.start_file("manifest.json", options).map_err(error)?;
     zip.write_all(&serde_json::to_vec_pretty(&manifest).map_err(error)?)
@@ -292,9 +316,22 @@ pub fn archive_stores(root: &Path) -> Result<bool, String> {
     zip.finish().map_err(error)?.sync_all().map_err(error)?;
     fs::rename(&temporary, target).map_err(error)?;
     drop(cleanup);
-    let paths = archives(&directory)?;
-    for path in paths.iter().take(paths.len().saturating_sub(10)) {
-        fs::remove_file(path).map_err(error)?;
+    // The new archive is complete; a retention failure is logged, not the run's.
+    match archives(&directory) {
+        Ok(paths) => {
+            for path in paths.iter().take(paths.len().saturating_sub(10)) {
+                if let Err(reason) = fs::remove_file(path) {
+                    crate::logging::warn(
+                        "archive retention failed",
+                        json!({ "path": path, "reason": reason.to_string() }),
+                    );
+                }
+            }
+        }
+        Err(reason) => crate::logging::warn(
+            "archive retention failed",
+            json!({ "path": directory, "reason": reason }),
+        ),
     }
     Ok(true)
 }
