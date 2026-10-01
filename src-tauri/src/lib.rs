@@ -21,7 +21,7 @@ use tauri::{AppHandle, Manager, RunEvent, State};
 #[tauri::command]
 async fn load_app_data(app: AppHandle) -> Result<LoadedAppData, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        app.state::<archive::SessionArchive>().wait_ready();
+        archive::wait_for_launch(&app.state::<archive::ArchiveRun>());
         let language = app.state::<LanguageState>();
         logging::boundary(
             "load_app_data",
@@ -377,7 +377,7 @@ pub fn run() {
         if matches!(event, RunEvent::Exit) {
             window_placement::save(app, &placement_state);
             if let Ok(root) = paths::app_data_dir(app) {
-                archive::finish_session(root);
+                archive::finish_session(root, &app.state::<archive::ArchiveRun>());
             }
             logging::flush();
         }

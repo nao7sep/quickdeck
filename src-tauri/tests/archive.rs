@@ -1,4 +1,6 @@
-use quickdeck_lib::archive::{archive_stores, finish_session, prepare_session};
+use quickdeck_lib::archive::{
+    archive_stores, finish_session, prepare_session, start_session, ArchiveRun,
+};
 use rusqlite::Connection;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -6,6 +8,8 @@ use std::{
     fs::{self, File},
     io::Read,
     path::Path,
+    sync::mpsc,
+    time::Duration,
 };
 use zip::{CompressionMethod, ZipArchive};
 
@@ -88,10 +92,13 @@ fn a_missing_store_creates_neither_an_empty_database_nor_a_manifest_only_archive
     let root = tempfile::tempdir().unwrap();
     assert!(!archive_stores(root.path()).unwrap());
     assert!(!root.path().join("snapshots.sqlite3").exists());
-    assert!(fs::read_dir(root.path().join("backups/archives"))
-        .unwrap()
-        .next()
-        .is_none(), "an empty run leaves no archive, lock, or temporary file");
+    assert!(
+        fs::read_dir(root.path().join("backups/archives"))
+            .unwrap()
+            .next()
+            .is_none(),
+        "an empty run leaves no archive, lock, or temporary file"
+    );
 }
 
 #[test]
@@ -101,18 +108,22 @@ fn an_unreadable_store_is_preserved_and_produces_no_archive() {
     fs::write(&source, b"not a SQLite database").unwrap();
     assert!(!archive_stores(root.path()).unwrap());
     assert_eq!(fs::read(&source).unwrap(), b"not a SQLite database");
-    assert!(fs::read_dir(root.path().join("backups/archives"))
-        .unwrap()
-        .next()
-        .is_none(), "a skipped run cleans up its lock and temporary files");
+    assert!(
+        fs::read_dir(root.path().join("backups/archives"))
+            .unwrap()
+            .next()
+            .is_none(),
+        "a skipped run cleans up its lock and temporary files"
+    );
 }
 
 #[test]
 fn clean_exit_returns_after_the_archive_is_complete_and_the_marker_is_removed() {
     let root = tempfile::tempdir().unwrap();
     database(root.path());
-    prepare_session(root.path()).unwrap();
-    finish_session(root.path().to_owned());
+    let launch = start_session(root.path().to_owned());
+    assert!(launch.join(Duration::from_secs(5)));
+    finish_session(root.path().to_owned(), &launch);
 
     let paths = zips(root.path());
     assert_eq!(paths.len(), 1);
@@ -133,12 +144,47 @@ fn clean_exit_archives_and_clears_the_marker_and_unclean_launch_recovers_once() 
     assert!(directory.join(".running").exists());
     fs::write(directory.join(".lock"), []).unwrap();
     fs::write(directory.join("interrupted.tmp"), []).unwrap();
-    prepare_session(root.path()).unwrap();
+    let launch = start_session(root.path().to_owned());
+    assert!(launch.join(Duration::from_secs(5)));
     assert_eq!(zips(root.path()).len(), 1);
     assert!(!directory.join("interrupted.tmp").exists());
     assert!(!directory.join(".lock").exists());
-    finish_session(root.path().to_owned());
+    finish_session(root.path().to_owned(), &launch);
     assert!(!directory.join(".running").exists());
+    assert_eq!(zips(root.path()).len(), 1);
+}
+
+#[test]
+fn a_wait_past_its_bound_gives_up_while_the_run_goes_on() {
+    let (release, stalled) = mpsc::channel::<()>();
+    let run = ArchiveRun::spawn(move || {
+        let _ = stalled.recv();
+    });
+    assert!(!run.join(Duration::from_millis(50)));
+    release.send(()).unwrap();
+    assert!(run.join(Duration::from_secs(5)));
+}
+
+#[test]
+fn an_exit_before_the_launch_run_finishes_leaves_its_leftovers_to_the_next_launch() {
+    let root = tempfile::tempdir().unwrap();
+    database(root.path());
+    prepare_session(root.path()).unwrap();
+    let directory = root.path().join("backups/archives");
+    // What an unfinished launch run holds.
+    fs::write(directory.join(".lock"), []).unwrap();
+    fs::write(directory.join("copying.tmp"), []).unwrap();
+    let (_release, stalled) = mpsc::channel::<()>();
+    let launch = ArchiveRun::spawn(move || {
+        let _ = stalled.recv();
+    });
+    finish_session(root.path().to_owned(), &launch);
+    assert!(zips(root.path()).is_empty());
+    assert!(directory.join(".running").exists());
+
+    prepare_session(root.path()).unwrap();
+    assert!(!directory.join(".lock").exists());
+    assert!(!directory.join("copying.tmp").exists());
     assert_eq!(zips(root.path()).len(), 1);
 }
 

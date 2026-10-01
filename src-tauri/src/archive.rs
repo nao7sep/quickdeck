@@ -1,5 +1,6 @@
-//! Best-effort whole-store archive. Native work runs on a worker and finishes
-//! before exit; only completed zip files participate in dedup and retention.
+//! Best-effort whole-store archive. Native work runs on a worker that launch
+//! and exit wait on for at most `WAIT`; only completed zip files participate in
+//! dedup and retention.
 use chrono::{SecondsFormat, Utc};
 use rusqlite::{
     backup::{Backup, StepResult},
@@ -12,38 +13,61 @@ use std::{
     fs::{self, File, OpenOptions},
     io::{Read, Write},
     path::{Path, PathBuf},
-    sync::{mpsc, Mutex},
+    sync::{Arc, Condvar, Mutex, PoisonError},
     time::Duration,
 };
 use zip::{write::SimpleFileOptions, CompressionMethod, ZipArchive, ZipWriter};
 
-pub struct SessionArchive {
-    ready: Mutex<Option<mpsc::Receiver<()>>>,
-}
+/// How long launch and exit wait for an archive run before going on without it.
+const WAIT: Duration = Duration::from_secs(5);
 
-impl SessionArchive {
-    pub fn start(root: PathBuf) -> Self {
-        let (sender, receiver) = mpsc::channel();
+/// An archive run on its own thread. A run given up on keeps going; if the
+/// process ends first, `.running` stays and the next launch clears what the
+/// run left.
+#[derive(Clone)]
+pub struct ArchiveRun(Arc<(Mutex<bool>, Condvar)>);
+
+impl ArchiveRun {
+    pub fn spawn(work: impl FnOnce() + Send + 'static) -> Self {
+        let run = Self(Arc::new((Mutex::new(false), Condvar::new())));
+        let finished = run.clone();
         std::thread::spawn(move || {
-            if let Err(error) = prepare_session(&root) {
-                crate::logging::warn("archive launch failed", json!({ "error": error }));
-            }
-            let _ = sender.send(());
+            work();
+            let (done, changed) = &*finished.0;
+            *done.lock().unwrap_or_else(PoisonError::into_inner) = true;
+            changed.notify_all();
         });
-        Self {
-            ready: Mutex::new(Some(receiver)),
-        }
+        run
     }
 
-    // Called from the blocking load worker before the snapshot database opens.
-    pub fn wait_ready(&self) {
-        if let Ok(mut ready) = self.ready.lock() {
-            if let Some(receiver) = ready.take() {
-                if receiver.recv().is_err() {
-                    crate::logging::warn("archive recovery worker stopped", json!({}));
-                }
-            }
+    /// Whether the run has finished, waiting at most `bound` for it.
+    pub fn join(&self, bound: Duration) -> bool {
+        let (done, changed) = &*self.0;
+        let done = done.lock().unwrap_or_else(PoisonError::into_inner);
+        let (done, _) = changed
+            .wait_timeout_while(done, bound, |done| !*done)
+            .unwrap_or_else(PoisonError::into_inner);
+        *done
+    }
+}
+
+/// Starts the launch run: the recovery archive after an unclean exit, then the
+/// marker.
+pub fn start_session(root: PathBuf) -> ArchiveRun {
+    ArchiveRun::spawn(move || {
+        if let Err(error) = prepare_session(&root) {
+            crate::logging::warn("archive launch failed", json!({ "error": error }));
         }
+    })
+}
+
+/// Called from the blocking load worker before the snapshot database opens.
+pub fn wait_for_launch(launch: &ArchiveRun) {
+    if !launch.join(WAIT) {
+        crate::logging::warn(
+            "archive launch wait expired",
+            json!({ "seconds": WAIT.as_secs() }),
+        );
     }
 }
 
@@ -69,9 +93,18 @@ pub fn prepare_session(root: &Path) -> Result<(), String> {
     fs::write(marker, []).map_err(error)
 }
 
-pub fn finish_session(root: PathBuf) {
-    let (sender, receiver) = mpsc::channel();
-    std::thread::spawn(move || {
+pub fn finish_session(root: PathBuf, launch: &ArchiveRun) {
+    let launch = launch.clone();
+    let run = ArchiveRun::spawn(move || {
+        // An unfinished launch run may still hold the lock and temporary files;
+        // the marker stays, so the next launch clears them and archives.
+        if !launch.join(Duration::ZERO) {
+            crate::logging::warn(
+                "archive exit skipped",
+                json!({ "reason": "the launch archive has not finished" }),
+            );
+            return;
+        }
         // Snapshots use scoped connections; close the remaining owned store.
         crate::backup_store::close_backup_store();
         if let Err(error) = archive_stores(&root) {
@@ -83,10 +116,12 @@ pub fn finish_session(root: PathBuf) {
                 json!({ "error": error.to_string() }),
             );
         }
-        let _ = sender.send(());
     });
-    if receiver.recv().is_err() {
-        crate::logging::warn("archive exit worker stopped", json!({}));
+    if !run.join(WAIT) {
+        crate::logging::warn(
+            "archive exit wait expired",
+            json!({ "seconds": WAIT.as_secs() }),
+        );
     }
 }
 
@@ -170,7 +205,13 @@ pub fn archive_stores(root: &Path) -> Result<bool, String> {
         .open(&lock_path)
     {
         Ok(lock) => lock,
-        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => return Ok(false),
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+            crate::logging::warn(
+                "archive skipped",
+                json!({ "reason": "another run holds the lock" }),
+            );
+            return Ok(false);
+        }
         Err(value) => return Err(error(value)),
     };
     let _lock_cleanup = Cleanup(lock_path);
