@@ -474,6 +474,26 @@ fn atomic_write_records_byte_identical_bytes_through_the_choke_point() {
 
 #[test]
 #[serial(backup_store)]
+fn unrecorded_write_lands_on_disk_but_not_in_the_backup_store() {
+    crate::backup_store::close_backup_store();
+
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("state.json");
+    let value = serde_json::json!({ "version": 1 });
+
+    atomic_write_json_unrecorded(&path, &value).unwrap();
+
+    assert_eq!(read_json_optional(&path).unwrap(), Some(value));
+    assert!(
+        !dir.path().join(crate::backup_store::BACKUPS_DB_FILE_NAME).exists(),
+        "an unrecorded write must not touch the backup store"
+    );
+
+    crate::backup_store::close_backup_store();
+}
+
+#[test]
+#[serial(backup_store)]
 fn failed_rename_cleans_up_the_temp_file() {
     crate::backup_store::close_backup_store();
 

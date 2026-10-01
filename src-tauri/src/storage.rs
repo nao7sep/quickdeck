@@ -17,18 +17,20 @@ use crate::paths::app_data_dir;
 // the on-disk layout has a single source of truth.
 //
 // - `config.json`      — durable user settings.               RECORDED (managed text)
-// - `state.json`       — UI/session state (view only).        RECORDED (managed text)
-// - `window.json`      — native window state (view only).     RECORDED (managed text)
+// - `state.json`       — UI/session state (view only).        not recorded (volatile state)
+// - `window.json`      — native window state (view only).     not recorded (volatile state)
 // - `panes.json`       — the panes' TEXT — the user's work.   RECORDED (managed text)
 // - `snapshots.sqlite3` — the snapshot store.                 not recorded (binary + append-safe)
 // - `backups.sqlite3`   — the write-through backup store.     not recorded (the store itself)
 // - `logs/`             — per-session logs.                   not recorded (append-mode, by construction)
 //
-// Every managed-*text* write goes through `atomic_write_json`, which — strictly
-// AFTER the atomic rename lands — records the exact bytes it just wrote into
-// `backups.sqlite3` (see backup_store.rs). Only these four managed-text files reach
-// that choke point; the enumeration of every write site under ~/.quickdeck and its
-// record/no-record decision lives beside each write below.
+// Every managed-*text* write goes through `write_json_atomically`. The recorded
+// files (config.json, panes.json) use `atomic_write_json`, which — strictly AFTER
+// the atomic rename lands — records the exact bytes it just wrote into
+// `backups.sqlite3` (see backup_store.rs); the volatile-state files (state.json,
+// window.json) use `atomic_write_json_unrecorded`. Only these four managed-text files
+// reach that choke point; the enumeration of every write site under ~/.quickdeck and
+// its record/no-record decision lives beside each write below.
 pub const CONFIG_FILE_NAME: &str = "config.json";
 pub const STATE_FILE_NAME: &str = "state.json";
 pub const WINDOW_FILE_NAME: &str = "window.json";
@@ -135,11 +137,10 @@ pub fn save_config(app: &AppHandle, config: JsonValue) -> Result<(), String> {
 }
 
 pub fn save_state(app: &AppHandle, state: JsonValue) -> Result<(), String> {
-    // records: state.json is pure view/session state (active pane, zoom) —
-    // managed text, recorded on every save; the store's per-path content dedup
-    // absorbs the churn (data-backup conventions).
+    // not recorded: state.json is pure view/session state (active pane, zoom) —
+    // volatile state, kept out of the backup history (data-backup conventions).
     let data_dir = app_data_dir(app)?;
-    atomic_write_json(&data_dir, &data_dir.join(STATE_FILE_NAME), &state)
+    atomic_write_json_unrecorded(&data_dir.join(STATE_FILE_NAME), &state)
 }
 
 pub fn load_window_state(app: &AppHandle) -> Result<Option<JsonValue>, String> {
@@ -148,8 +149,10 @@ pub fn load_window_state(app: &AppHandle) -> Result<Option<JsonValue>, String> {
 }
 
 pub fn save_window_state(app: &AppHandle, state: JsonValue) -> Result<(), String> {
+    // not recorded: window.json is pure window geometry — volatile state, kept out
+    // of the backup history (data-backup conventions).
     let data_dir = app_data_dir(app)?;
-    atomic_write_json(&data_dir, &data_dir.join(WINDOW_FILE_NAME), &state)
+    atomic_write_json_unrecorded(&data_dir.join(WINDOW_FILE_NAME), &state)
 }
 
 pub fn save_panes(app: &AppHandle, panes: JsonValue) -> Result<(), String> {
@@ -499,10 +502,11 @@ fn temp_path_for(path: &Path) -> Result<PathBuf, String> {
 }
 
 // The single managed-text atomic-write choke point for config.json, state.json,
-// window.json,
-// and — crucially — the ONE place the data-backup hook lives. A managed-text write
-// that bypasses this helper is a silent backup gap; there is deliberately no second
-// atomic-write path in the app.
+// window.json and panes.json (`write_json_atomically`), and — crucially — the ONE
+// place the data-backup hook lives (`atomic_write_json`). A recorded managed-text
+// write that bypasses `atomic_write_json` is a silent backup gap; the volatile-state
+// stores opt out of recording through `atomic_write_json_unrecorded`, which shares
+// the same atomic write.
 //
 // Writes `value` to a same-directory `<stem>-<nanoid>.tmp` (the derived-filename
 // grammar), then atomically renames it over `path`, so a crash mid-write cannot
@@ -515,6 +519,28 @@ fn temp_path_for(path: &Path) -> Result<PathBuf, String> {
 // risk capturing a concurrent writer's content). The record never throws back into
 // this write and never affects the save's success (see backup_store.rs).
 fn atomic_write_json(data_dir: &Path, path: &Path, value: &JsonValue) -> Result<(), String> {
+    let bytes = write_json_atomically(path, value)?;
+
+    // After the rename: the file is exactly where it belongs, so record the bytes we
+    // just wrote. Best-effort — record() catches, logs once, and swallows every
+    // failure, so a backup problem can never break the save that already succeeded.
+    crate::backup_store::record(
+        &data_dir.join(crate::backup_store::BACKUPS_DB_FILE_NAME),
+        path,
+        &bytes,
+    );
+
+    Ok(())
+}
+
+// The same atomic write without the backup record, for volatile state (state.json,
+// window.json) that stays out of the backup history.
+fn atomic_write_json_unrecorded(path: &Path, value: &JsonValue) -> Result<(), String> {
+    write_json_atomically(path, value).map(|_| ())
+}
+
+// The temp-file-then-rename write itself; returns the exact bytes now on disk.
+fn write_json_atomically(path: &Path, value: &JsonValue) -> Result<Vec<u8>, String> {
     let parent = path
         .parent()
         .ok_or_else(|| format!("missing parent directory for {}", path.display()))?;
@@ -550,16 +576,7 @@ fn atomic_write_json(data_dir: &Path, path: &Path, value: &JsonValue) -> Result<
         let _ = directory.sync_all();
     }
 
-    // After the rename: the file is exactly where it belongs, so record the bytes we
-    // just wrote. Best-effort — record() catches, logs once, and swallows every
-    // failure, so a backup problem can never break the save that already succeeded.
-    crate::backup_store::record(
-        &data_dir.join(crate::backup_store::BACKUPS_DB_FILE_NAME),
-        path,
-        &bytes,
-    );
-
-    Ok(())
+    Ok(bytes)
 }
 
 fn open_snapshot_db(data_dir: &Path) -> Result<Connection, String> {
