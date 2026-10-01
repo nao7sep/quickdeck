@@ -660,12 +660,12 @@ fn config_keeps_an_object_with_an_invalid_individual_set_in_place() {
 
 #[test]
 #[serial(backup_store)]
-fn a_config_write_quarantines_a_non_object_before_saving_changed_sets() {
+fn a_config_write_quarantines_a_non_object_before_saving_the_sets() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join(CONFIG_FILE_NAME);
     fs::write(&path, b"[1,2,3]").unwrap();
 
-    save_config_sets(dir.path(), serde_json::json!({"zen": true})).unwrap();
+    save_config(dir.path(), serde_json::json!({"zen": true})).unwrap();
     let quarantined = fs::read_dir(dir.path())
         .unwrap()
         .map(|entry| entry.unwrap().path())
@@ -714,21 +714,74 @@ fn count_rows(conn: &Connection) -> i64 {
         .unwrap()
 }
 
+fn save_config(data_dir: &Path, sets: JsonValue) -> Result<(), String> {
+    match config_to_write(data_dir, sets)? {
+        Some(config) => write_config(data_dir, &config),
+        None => Ok(()),
+    }
+}
+
 #[test]
 #[serial(backup_store)]
-fn config_updates_keep_only_touched_known_sets() {
+fn a_config_write_stores_exactly_the_given_known_sets() {
     let root = tempfile::tempdir().unwrap();
-    save_config_sets(root.path(), serde_json::json!({"zen": true})).unwrap();
     let path = root.path().join(CONFIG_FILE_NAME);
+    save_config(root.path(), serde_json::json!({"zen": true})).unwrap();
     assert_eq!(
         read_json_optional(&path).unwrap().unwrap(),
         serde_json::json!({"zen": true})
     );
     fs::write(&path, r#"{"zen":true,"version":1,"dark":true}"#).unwrap();
-    save_config_sets(root.path(), serde_json::json!({"topmost": true})).unwrap();
+    save_config(
+        root.path(),
+        serde_json::json!({"topmost": true, "retired": 1}),
+    )
+    .unwrap();
     assert_eq!(
         read_json_optional(&path).unwrap().unwrap(),
-        serde_json::json!({"zen":true,"topmost":true})
+        serde_json::json!({"topmost": true})
+    );
+    crate::backup_store::close_backup_store();
+}
+
+#[test]
+#[serial(backup_store)]
+fn a_config_write_without_sets_and_without_a_file_writes_nothing() {
+    let root = tempfile::tempdir().unwrap();
+    save_config(root.path(), serde_json::json!({})).unwrap();
+    assert!(!root.path().join(CONFIG_FILE_NAME).exists());
+    crate::backup_store::close_backup_store();
+}
+
+#[test]
+#[serial(backup_store)]
+fn a_config_write_equal_to_the_file_leaves_its_bytes_alone() {
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join(CONFIG_FILE_NAME);
+    let bytes = "{ \"topmost\": true,\n\"zen\": true }";
+    fs::write(&path, bytes).unwrap();
+    assert_eq!(
+        config_to_write(
+            root.path(),
+            serde_json::json!({"zen": true, "topmost": true})
+        )
+        .unwrap(),
+        None
+    );
+    assert_eq!(fs::read_to_string(&path).unwrap(), bytes);
+    crate::backup_store::close_backup_store();
+}
+
+#[test]
+#[serial(backup_store)]
+fn a_config_whose_sets_are_all_back_at_their_built_ins_stays_as_an_empty_object() {
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join(CONFIG_FILE_NAME);
+    save_config(root.path(), serde_json::json!({"zen": true})).unwrap();
+    save_config(root.path(), serde_json::json!({})).unwrap();
+    assert_eq!(
+        read_json_optional(&path).unwrap().unwrap(),
+        serde_json::json!({})
     );
     crate::backup_store::close_backup_store();
 }

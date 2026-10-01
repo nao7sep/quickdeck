@@ -10,7 +10,8 @@ import {
   settingsShapeIssues,
   settingsBySet,
   readSettingsSets,
-  changedSettingsSets,
+  storedSettingsSets,
+  malformedSettingsSets,
 } from "../../src/state/normalize";
 import { DEFAULT_EDITOR_FONT_FAMILY_STACK, defaultSettings } from "../../src/state/defaults";
 import { ZOOM_DEFAULT, ZOOM_MAX, ZOOM_MIN } from "../../src/utils/zoom";
@@ -389,9 +390,36 @@ describe("config sets", () => {
     expect(readSettingsSets({ zen: true })).toEqual({ ...defaultSettings, zen: true });
     expect(readSettingsSets({ editorFont: { size: 20 }, theme: "sepia" })).toEqual(defaultSettings);
   });
-  it("writes the complete editor cluster only when a member changes", () => {
+  it("stores nothing for the built-ins, which are kept in cleaned form", () => {
+    expect(normalizeSettings(defaultSettings)).toEqual(defaultSettings);
+    expect(storedSettingsSets(defaultSettings)).toEqual({});
+  });
+  it("stores the complete editor cluster when one member differs", () => {
     const next = { ...defaultSettings, editorBold: true };
-    expect(changedSettingsSets(defaultSettings, next)).toEqual({ editorFont: settingsBySet(next).editorFont });
-    expect(changedSettingsSets(defaultSettings, { ...defaultSettings, zen: true })).toEqual({ zen: true });
+    expect(storedSettingsSets(next)).toEqual({ editorFont: settingsBySet(next).editorFont });
+  });
+  it("stores every differing set, untouched ones included, and drops a set changed back", () => {
+    const changed = { ...defaultSettings, zen: true, topmost: true };
+    expect(storedSettingsSets(changed)).toEqual({ zen: true, topmost: true });
+    expect(storedSettingsSets({ ...changed, zen: false })).toEqual({ topmost: true });
+  });
+  it("names the malformed sets with their values as the file holds them", () => {
+    expect(
+      malformedSettingsSets({ zen: "yes", topmost: true, editorFont: { size: "14" }, retired: 1 }),
+    ).toEqual({ zen: "yes", editorFont: { size: "14" } });
+  });
+  it("keeps a malformed set as the file holds it until the user changes that set", () => {
+    const malformed = { zen: "yes", editorFont: { size: "14" } };
+    expect(storedSettingsSets(defaultSettings, malformed)).toEqual(malformed);
+    expect(storedSettingsSets({ ...defaultSettings, zen: true }, malformed)).toEqual({
+      zen: true,
+      editorFont: { size: "14" },
+    });
+  });
+  it("compares text after single-line cleanup", () => {
+    expect(storedSettingsSets({ ...defaultSettings, uiFontFamily: " \n " })).toEqual({});
+    expect(storedSettingsSets({ ...defaultSettings, uiFontFamily: " Inter\n" })).toEqual({
+      uiFontFamily: "Inter",
+    });
   });
 });

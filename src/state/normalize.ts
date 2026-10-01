@@ -107,13 +107,23 @@ export function settingsBySet(settings: AppSettings) {
 
 export type ConfigSets = ReturnType<typeof settingsBySet>;
 
-export function changedSettingsSets(previous: AppSettings, next: AppSettings): Partial<ConfigSets> {
-  const before = settingsBySet(previous);
-  const after = settingsBySet(next);
+// Set values as config.json holds them, which for a malformed set is whatever
+// the user left there.
+export type StoredSets = Partial<Record<keyof ConfigSets, unknown>>;
+
+// What config.json holds for these settings: every set that differs from its
+// built-in, whole. Sets are compared after normalizeSettings, which applies the
+// single-line text cleanup to the font families. A malformed set read at load is
+// kept exactly as the file holds it while the set is still at its built-in, so
+// it stays on disk until the user changes that set.
+export function storedSettingsSets(settings: AppSettings, malformed: StoredSets = {}): StoredSets {
+  const builtIn = settingsBySet(defaultSettings);
+  const sets = settingsBySet(normalizeSettings(settings));
   return Object.fromEntries(
-    (Object.keys(after) as (keyof ConfigSets)[])
-      .filter((key) => JSON.stringify(before[key]) !== JSON.stringify(after[key]))
-      .map((key) => [key, after[key]]),
+    (Object.keys(sets) as (keyof ConfigSets)[]).flatMap((key) => {
+      if (JSON.stringify(sets[key]) !== JSON.stringify(builtIn[key])) return [[key, sets[key]]];
+      return key in malformed ? [[key, malformed[key]]] : [];
+    }),
   );
 }
 
@@ -131,13 +141,20 @@ function validSet(key: keyof ConfigSets, value: unknown): boolean {
   return typeof value === typeof builtIn && (typeof builtIn !== "number" || Number.isFinite(value));
 }
 
+// The present sets whose value has the wrong shape, as the file holds them.
+export function malformedSettingsSets(loaded: Record<string, unknown>): StoredSets {
+  return Object.fromEntries(
+    (Object.keys(settingsBySet(defaultSettings)) as (keyof ConfigSets)[])
+      .filter((key) => key in loaded && !validSet(key, loaded[key]))
+      .map((key) => [key, loaded[key]]),
+  );
+}
+
 export function settingsShapeIssues(loaded: unknown): string[] {
   if (loaded === null || typeof loaded !== "object" || Array.isArray(loaded)) {
     return ["config is not a JSON object"];
   }
-  const source = loaded as Record<string, unknown>;
-  return (Object.keys(settingsBySet(defaultSettings)) as (keyof ConfigSets)[])
-    .filter((key) => key in source && !validSet(key, source[key]))
+  return Object.keys(malformedSettingsSets(loaded as Record<string, unknown>))
     .map((key) => `${key} has an invalid shape`);
 }
 

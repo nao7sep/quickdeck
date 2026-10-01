@@ -225,32 +225,35 @@ describe("interface language", () => {
 });
 
 
-it("writes one changed set and leaves config untouched for pane saves", async () => {
+it("sends every set that differs from its built-in on each save", async () => {
   let state: ReturnType<typeof useAppState>;
   function Probe() { state = useAppState(); return null; }
   const host = document.createElement("div");
   root = createRoot(host);
   await act(async () => { root?.render(<AppStateProvider><Probe /></AppStateProvider>); });
   await act(async () => { await state!.saveNow(); });
-  expect(persistence.saveConfig).not.toHaveBeenCalled();
+  expect(persistence.saveConfig).toHaveBeenLastCalledWith({});
   await act(async () => { state!.updateSettings({ ...state!.settings, zen: true }); });
   await act(async () => { await state!.saveNow(); });
-  expect(persistence.saveConfig).toHaveBeenCalledExactlyOnceWith({ zen: true });
+  expect(persistence.saveConfig).toHaveBeenLastCalledWith({ zen: true });
   await act(async () => { state!.updatePaneContent(state!.activePaneId, "new text"); });
   await act(async () => { await state!.saveNow(); });
-  expect(persistence.saveConfig).toHaveBeenCalledTimes(1);
+  expect(persistence.saveConfig).toHaveBeenLastCalledWith({ zen: true });
 });
 
-it("leaves a set whose write failed to the next save", async () => {
+it("keeps a malformed set on disk until the user changes it, then applies the normal rule", async () => {
+  persistence.loadAppData.mockResolvedValue(loadedAppData({ config: { zen: "yes", topmost: true } }));
   let state: ReturnType<typeof useAppState>;
   function Probe() { state = useAppState(); return null; }
   const host = document.createElement("div");
   root = createRoot(host);
   await act(async () => { root?.render(<AppStateProvider><Probe /></AppStateProvider>); });
-  persistence.saveConfig.mockRejectedValueOnce(new Error("disk full"));
-  await act(async () => { state!.updateSettings({ ...state!.settings, zen: true }); });
-  await act(async () => { await expect(state!.saveNow()).rejects.toThrow("disk full"); });
   await act(async () => { await state!.saveNow(); });
-  expect(persistence.saveConfig).toHaveBeenCalledTimes(2);
-  expect(persistence.saveConfig).toHaveBeenLastCalledWith({ zen: true });
+  expect(persistence.saveConfig).toHaveBeenLastCalledWith({ zen: "yes", topmost: true });
+  await act(async () => { state!.updateSettings({ ...state!.settings, zen: true }); });
+  await act(async () => { await state!.saveNow(); });
+  expect(persistence.saveConfig).toHaveBeenLastCalledWith({ zen: true, topmost: true });
+  await act(async () => { state!.updateSettings({ ...state!.settings, zen: false }); });
+  await act(async () => { await state!.saveNow(); });
+  expect(persistence.saveConfig).toHaveBeenLastCalledWith({ topmost: true });
 });

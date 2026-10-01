@@ -130,14 +130,11 @@ pub fn load_app_data(app: &AppHandle) -> Result<LoadedAppData, String> {
     })
 }
 
-pub fn save_config(app: &AppHandle, config: JsonValue) -> Result<(), String> {
-    // records: config.json is durable user settings — managed text, recorded on
-    // every save (data-backup conventions).
-    let data_dir = app_data_dir(app)?;
-    save_config_sets(&data_dir, config)
-}
-
-pub fn save_config_sets(data_dir: &Path, changes: JsonValue) -> Result<(), String> {
+// The file content for the given sets — every set that differs from its
+// built-in, which the frontend decides — keeping only known keys, or None when
+// that equals the file, so an absent file stays absent and a file whose sets are
+// all back at their built-ins stays `{}`.
+pub fn config_to_write(data_dir: &Path, sets: JsonValue) -> Result<Option<JsonValue>, String> {
     const KEYS: &[&str] = &[
         "language",
         "theme",
@@ -148,21 +145,22 @@ pub fn save_config_sets(data_dir: &Path, changes: JsonValue) -> Result<(), Strin
         "snapshotSearchPageSize",
         "editorFont",
     ];
-    let path = data_dir.join(CONFIG_FILE_NAME);
-    let (loaded, _) = read_config_store(&path)?;
-    let mut current = loaded
+    let (loaded, _) = read_config_store(&data_dir.join(CONFIG_FILE_NAME))?;
+    let mut stored = sets
+        .as_object()
+        .ok_or("config sets are not an object")?
+        .clone();
+    stored.retain(|key, _| KEYS.contains(&key.as_str()));
+    let current = loaded
         .and_then(|value| value.as_object().cloned())
         .unwrap_or_default();
-    current.retain(|key, _| KEYS.contains(&key.as_str()));
-    let changes = changes
-        .as_object()
-        .ok_or("config changes are not an object")?;
-    for (key, value) in changes {
-        if KEYS.contains(&key.as_str()) {
-            current.insert(key.clone(), value.clone());
-        }
-    }
-    atomic_write_json(data_dir, &path, &JsonValue::Object(current))
+    Ok((current != stored).then_some(JsonValue::Object(stored)))
+}
+
+pub fn write_config(data_dir: &Path, config: &JsonValue) -> Result<(), String> {
+    // records: config.json is durable user settings — managed text, recorded on
+    // every save (data-backup conventions).
+    atomic_write_json(data_dir, &data_dir.join(CONFIG_FILE_NAME), config)
 }
 
 pub fn save_state(app: &AppHandle, state: JsonValue) -> Result<(), String> {

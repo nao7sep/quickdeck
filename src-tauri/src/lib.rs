@@ -95,14 +95,20 @@ fn apply_language(
     )
 }
 
+// Sets equal to the file write nothing and log nothing, so every autosave can
+// send them; only an actual write crosses the logged boundary.
 #[tauri::command]
 fn save_config(app: AppHandle, config: JsonValue) -> Result<(), String> {
-    logging::boundary(
-        "save_config",
-        json!({}),
-        || storage::save_config(&app, config),
-        |_| json!({}),
-    )
+    let data_dir = paths::app_data_dir(&app)?;
+    match storage::config_to_write(&data_dir, config)? {
+        Some(config) => logging::boundary(
+            "save_config",
+            json!({}),
+            || storage::write_config(&data_dir, &config),
+            |_| json!({}),
+        ),
+        None => Ok(()),
+    }
 }
 
 #[tauri::command]

@@ -13,10 +13,12 @@ import { createDefaultPane, defaultSettings } from "./defaults";
 import {
   normalizePanes,
   readSettingsSets,
-  changedSettingsSets,
   normalizeZoomLevel,
   panesShapeIssues,
+  malformedSettingsSets,
   settingsShapeIssues,
+  storedSettingsSets,
+  type StoredSets,
 } from "./normalize";
 import { ZOOM_DEFAULT } from "../utils/zoom";
 import { toastLifetimeMs } from "../utils/toastPolicy";
@@ -130,7 +132,9 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   // start of a save and only flips back to "saved" when the counter has not
   // moved during the save — keeps an edit from being lost in a save race.
   const dirtyCounterRef = useRef(0);
-  const savedSettingsRef = useRef(defaultSettings);
+  // Sets config.json holds in a shape this build cannot read, kept there as the
+  // user left them until the user changes that set.
+  const malformedSetsRef = useRef<StoredSets>({});
 
   useEffect(() => {
     panesRef.current = panes;
@@ -193,7 +197,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       setSystemLanguage(loadedSystemLanguage);
       setSystemLocale(data.systemLocale);
       setSettings(loadedSettings);
-      savedSettingsRef.current = loadedSettings;
+      malformedSetsRef.current = data.config === null ? {} : malformedSettingsSets(data.config);
       const loadTranslator = createTranslator(
         effectiveLanguage(loadedSettings.language, loadedSystemLanguage),
       );
@@ -488,9 +492,6 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
 
   const updateSettings = useCallback((nextSettings: AppSettings) => {
     setSettings(nextSettings);
-    if (Object.keys(changedSettingsSets(savedSettingsRef.current, nextSettings)).length === 0) {
-      return;
-    }
     dirtyCounterRef.current += 1;
     setSaveState("unsaved");
     logInfo("settings updated", { settings: nextSettings });
@@ -519,13 +520,16 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     const dirtyAtStart = dirtyCounterRef.current;
     setSaveState("saving");
     try {
-      const changes = changedSettingsSets(savedSettingsRef.current, settings);
+      // Every save sends every stored set; the write queue applies them in call
+      // order, and the core writes nothing when they equal the file.
+      const stored = storedSettingsSets(settings, malformedSetsRef.current);
+      malformedSetsRef.current = Object.fromEntries(
+        Object.entries(malformedSetsRef.current).filter(
+          ([key, value]) => stored[key as keyof StoredSets] === value,
+        ),
+      );
       await Promise.all([
-        Object.keys(changes).length > 0
-          ? saveConfig(changes).then(() => {
-              savedSettingsRef.current = settings;
-            })
-          : Promise.resolve(),
+        saveConfig(stored),
         persistState(buildStateFile(activePaneId, zoomLevel)),
         savePanes(buildPanesFile(panes)),
       ]);
