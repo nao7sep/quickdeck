@@ -67,7 +67,7 @@ fn override_that_expands_to_empty_is_rejected() {
 
 // Storage-path-conventions: the root is owner-only (0700) on POSIX — created
 // that way, and tightened to 0700 at each launch when an existing root is
-// broader. Both cases are exercised here against a throwaway QUICKDECK_HOME,
+// broader. Both cases are exercised here against a throwaway QUICKDECK_DATA_DIR,
 // driving the same `secure_root` step `app_data_dir` runs on every launch.
 #[cfg(unix)]
 #[test]
@@ -75,7 +75,7 @@ fn new_root_is_created_owner_only() {
     use std::os::unix::fs::PermissionsExt;
 
     let base = tempfile::tempdir().unwrap();
-    let root = base.path().join("quickdeck-home"); // acts as a throwaway QUICKDECK_HOME
+    let root = base.path().join("quickdeck-home"); // acts as a throwaway QUICKDECK_DATA_DIR
     fs::create_dir_all(&root).unwrap();
 
     secure_root(&root).unwrap();
@@ -110,7 +110,7 @@ fn existing_broader_root_is_tightened_on_launch() {
     use std::os::unix::fs::PermissionsExt;
 
     let base = tempfile::tempdir().unwrap();
-    let root = base.path().join("quickdeck-home"); // acts as a throwaway QUICKDECK_HOME
+    let root = base.path().join("quickdeck-home"); // acts as a throwaway QUICKDECK_DATA_DIR
     fs::create_dir_all(&root).unwrap();
     // Simulate a pre-existing root that is broader than owner-only, e.g. left
     // over from before this rule, or created with a permissive umask.

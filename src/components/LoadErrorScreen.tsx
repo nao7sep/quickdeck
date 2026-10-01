@@ -46,7 +46,7 @@ export function LoadErrorScreen({ error, onSetAsideAndReset }: LoadErrorScreenPr
         <p className="loadErrorHint">
           {rich("load.hint", {
             dataDir: <code>~/.quickdeck</code>,
-            envVar: <code>QUICKDECK_HOME</code>,
+            envVar: <code>QUICKDECK_DATA_DIR</code>,
           })}
         </p>
         <div className="loadErrorActions">

@@ -1,6 +1,6 @@
 //! The write-through data-backup store (data-backup conventions). It owns one
 //! add-only SQLite file, `backups.sqlite3`, directly under quickdeck's storage
-//! root (`QUICKDECK_HOME` or `~/.quickdeck`, resolved in one place by `paths.rs`
+//! root (`QUICKDECK_DATA_DIR` or `~/.quickdeck`, resolved in one place by `paths.rs`
 //! via the storage layer — never a hardcoded path here). Every managed *text*
 //! save records the exact bytes it just wrote here, strictly AFTER its atomic
 //! rename lands (see `storage::atomic_write_json`), so the history is always as
@@ -64,7 +64,7 @@ struct OpenStore {
 ///   later `record` becomes a no-op rather than retrying (and re-logging) a broken
 ///   open on every save.
 /// - `Open`          — the live store, keyed by the file it was opened against so
-///   a changed root (a test's throwaway `QUICKDECK_HOME`) forces a re-open.
+///   a changed root (a test's throwaway `QUICKDECK_DATA_DIR`) forces a re-open.
 enum StoreState {
     Uninitialized,
     Disabled,

@@ -6,11 +6,11 @@ use std::{
 use tauri::{AppHandle, Manager};
 
 const DATA_DIR_NAME: &str = ".quickdeck";
-const HOME_ENV_VAR: &str = "QUICKDECK_HOME";
+const HOME_ENV_VAR: &str = "QUICKDECK_DATA_DIR";
 
 // Resolves (creating if missing) the app's data directory.
 //
-// The root is `QUICKDECK_HOME` when that variable is set and non-empty;
+// The root is `QUICKDECK_DATA_DIR` when that variable is set and non-empty;
 // otherwise it defaults to `~/.quickdeck`. The override value is expanded
 // (a leading `~` becomes the home directory) and made absolute against the
 // home directory — never the current working directory — so the location the
@@ -81,7 +81,7 @@ pub fn data_dir_before_launch() -> Option<PathBuf> {
 }
 
 // Root resolution, factored out so it can be unit-tested with an injected home
-// directory. `override_value` is the raw `QUICKDECK_HOME` value (if any). The
+// directory. `override_value` is the raw `QUICKDECK_DATA_DIR` value (if any). The
 // value is expanded (environment references first, then a leading `~`) and made
 // absolute against the home directory. An override that is set but expands to
 // nothing — an unset `$VAR`/`%VAR%`, say — is a reported error, never a silent

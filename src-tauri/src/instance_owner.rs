@@ -3,7 +3,7 @@
 //! QuickDeck persists whole-file pane snapshots, including authored text, so
 //! two GUI processes must never open the same storage root concurrently. The
 //! OS file lock is authoritative; the loopback endpoint only asks the owner to
-//! show and focus its window. Files live under `QUICKDECK_HOME`, which keeps
+//! show and focus its window. Files live under `QUICKDECK_DATA_DIR`, which keeps
 //! disposable test homes independent from the normal profile.
 
 use std::fs::{File, OpenOptions, TryLockError};
