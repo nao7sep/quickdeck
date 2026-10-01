@@ -84,20 +84,43 @@ fn exclusive_lock_skips_without_removing_another_writers_lock() {
 }
 
 #[test]
-fn a_missing_store_is_manifested_without_creating_an_empty_database() {
+fn a_missing_store_creates_neither_an_empty_database_nor_a_manifest_only_archive() {
     let root = tempfile::tempdir().unwrap();
-    assert!(archive_stores(root.path()).unwrap());
+    assert!(!archive_stores(root.path()).unwrap());
     assert!(!root.path().join("snapshots.sqlite3").exists());
-    let mut zip = ZipArchive::new(File::open(&zips(root.path())[0]).unwrap()).unwrap();
-    assert_eq!(zip.len(), 1);
-    let mut manifest = String::new();
-    zip.by_name("manifest.json")
+    assert!(fs::read_dir(root.path().join("backups/archives"))
         .unwrap()
-        .read_to_string(&mut manifest)
-        .unwrap();
-    let manifest: Value = serde_json::from_str(&manifest).unwrap();
-    assert!(manifest["entries"][0]["skipped"].is_string());
-    assert!(manifest["entries"][0]["hash"].is_null());
+        .next()
+        .is_none(), "an empty run leaves no archive, lock, or temporary file");
+}
+
+#[test]
+fn an_unreadable_store_is_preserved_and_produces_no_archive() {
+    let root = tempfile::tempdir().unwrap();
+    let source = root.path().join("snapshots.sqlite3");
+    fs::write(&source, b"not a SQLite database").unwrap();
+    assert!(!archive_stores(root.path()).unwrap());
+    assert_eq!(fs::read(&source).unwrap(), b"not a SQLite database");
+    assert!(fs::read_dir(root.path().join("backups/archives"))
+        .unwrap()
+        .next()
+        .is_none(), "a skipped run cleans up its lock and temporary files");
+}
+
+#[test]
+fn clean_exit_returns_after_the_archive_is_complete_and_the_marker_is_removed() {
+    let root = tempfile::tempdir().unwrap();
+    database(root.path());
+    prepare_session(root.path()).unwrap();
+    finish_session(root.path().to_owned());
+
+    let paths = zips(root.path());
+    assert_eq!(paths.len(), 1);
+    let mut zip = ZipArchive::new(File::open(&paths[0]).unwrap()).unwrap();
+    assert!(zip.by_name("snapshots.sqlite3").is_ok());
+    assert!(zip.by_name("manifest.json").is_ok());
+    assert!(!root.path().join("backups/archives/.running").exists());
+    assert!(!root.path().join("backups/archives/.lock").exists());
 }
 
 #[test]

@@ -1,5 +1,5 @@
-//! Best-effort whole-store archive. Native work runs off the UI thread with a
-//! bounded wait; only completed zip files participate in dedup and retention.
+//! Best-effort whole-store archive. Native work runs on a worker and finishes
+//! before exit; only completed zip files participate in dedup and retention.
 use chrono::{SecondsFormat, Utc};
 use rusqlite::{
     backup::{Backup, StepResult},
@@ -13,11 +13,9 @@ use std::{
     io::{Read, Write},
     path::{Path, PathBuf},
     sync::{mpsc, Mutex},
-    time::{Duration, Instant},
+    time::Duration,
 };
 use zip::{write::SimpleFileOptions, CompressionMethod, ZipArchive, ZipWriter};
-
-const BUDGET: Duration = Duration::from_secs(3);
 
 pub struct SessionArchive {
     ready: Mutex<Option<mpsc::Receiver<()>>>,
@@ -41,8 +39,8 @@ impl SessionArchive {
     pub fn wait_ready(&self) {
         if let Ok(mut ready) = self.ready.lock() {
             if let Some(receiver) = ready.take() {
-                if receiver.recv_timeout(BUDGET).is_err() {
-                    crate::logging::warn("archive recovery wait expired", json!({}));
+                if receiver.recv().is_err() {
+                    crate::logging::warn("archive recovery worker stopped", json!({}));
                 }
             }
         }
@@ -87,8 +85,8 @@ pub fn finish_session(root: PathBuf) {
         }
         let _ = sender.send(());
     });
-    if receiver.recv_timeout(BUDGET).is_err() {
-        crate::logging::warn("archive exit wait expired", json!({}));
+    if receiver.recv().is_err() {
+        crate::logging::warn("archive exit worker stopped", json!({}));
     }
 }
 
@@ -119,7 +117,7 @@ fn error(value: impl std::fmt::Display) -> String {
     value.to_string()
 }
 
-fn copy_sqlite(source: &Path, target: &Path, deadline: Instant) -> Result<Vec<u8>, String> {
+fn copy_sqlite(source: &Path, target: &Path) -> Result<Vec<u8>, String> {
     let source =
         Connection::open_with_flags(source, OpenFlags::SQLITE_OPEN_READ_ONLY).map_err(error)?;
     source
@@ -129,9 +127,6 @@ fn copy_sqlite(source: &Path, target: &Path, deadline: Instant) -> Result<Vec<u8
         let mut target = Connection::open(target).map_err(error)?;
         let backup = Backup::new(&source, &mut target).map_err(error)?;
         loop {
-            if Instant::now() >= deadline {
-                return Err("archive deadline expired".into());
-            }
             match backup.step(128).map_err(error)? {
                 StepResult::Done => break,
                 StepResult::More => {}
@@ -166,7 +161,6 @@ fn read_manifest(path: &Path) -> Result<Manifest, String> {
 }
 
 pub fn archive_stores(root: &Path) -> Result<bool, String> {
-    let deadline = Instant::now() + BUDGET;
     let directory = root.join("backups/archives");
     fs::create_dir_all(&directory).map_err(error)?;
     let lock_path = directory.join(".lock");
@@ -196,7 +190,7 @@ pub fn archive_stores(root: &Path) -> Result<bool, String> {
             hash: None,
             skipped: None,
         };
-        match copy_sqlite(&source, &target, deadline) {
+        match copy_sqlite(&source, &target) {
             Ok(bytes) => {
                 entry.hash = Some(
                     Sha256::digest(&bytes)
@@ -217,6 +211,9 @@ pub fn archive_stores(root: &Path) -> Result<bool, String> {
         drop(cleanup);
         manifest.entries.push(entry);
     }
+    if contents.is_empty() {
+        return Ok(false);
+    }
     let previous = archives(&directory)?;
     if let Some(latest) = previous.last() {
         match read_manifest(latest) {
@@ -229,9 +226,6 @@ pub fn archive_stores(root: &Path) -> Result<bool, String> {
                 json!({ "path": latest, "reason": reason }),
             ),
         }
-    }
-    if Instant::now() >= deadline {
-        return Err("archive deadline expired".into());
     }
     let target = directory.join(format!("{}.zip", Utc::now().format("%Y%m%d-%H%M%S-utc")));
     // Never overwrite a completed archive when two different runs share a second.
@@ -248,16 +242,8 @@ pub fn archive_stores(root: &Path) -> Result<bool, String> {
     let mut zip = ZipWriter::new(file);
     let options = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
     for (name, bytes) in contents {
-        if Instant::now() >= deadline {
-            return Err("archive deadline expired".into());
-        }
         zip.start_file(name, options).map_err(error)?;
-        for chunk in bytes.chunks(64 * 1024) {
-            if Instant::now() >= deadline {
-                return Err("archive deadline expired".into());
-            }
-            zip.write_all(chunk).map_err(error)?;
-        }
+        zip.write_all(&bytes).map_err(error)?;
     }
     zip.start_file("manifest.json", options).map_err(error)?;
     zip.write_all(&serde_json::to_vec_pretty(&manifest).map_err(error)?)
