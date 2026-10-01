@@ -76,7 +76,7 @@ pub fn wait_for_launch(launch: &ArchiveRun) {
 }
 
 pub fn prepare_session(root: &Path) -> Result<(), String> {
-    let directory = root.join("backups/archives");
+    let directory = root.join("backups");
     fs::create_dir_all(&directory).map_err(error)?;
     let marker = directory.join(".running");
     if marker.exists() {
@@ -117,7 +117,7 @@ pub fn finish_session(root: PathBuf, launch: &ArchiveRun) {
         if let Err(error) = archive_stores(&root) {
             crate::logging::warn("archive exit failed", json!({ "error": error }));
         }
-        if let Err(error) = fs::remove_file(root.join("backups/archives/.running")) {
+        if let Err(error) = fs::remove_file(root.join("backups/.running")) {
             crate::logging::warn(
                 "archive marker cleanup failed",
                 json!({ "error": error.to_string() }),
@@ -222,7 +222,7 @@ fn read_manifest(path: &Path) -> Result<Manifest, String> {
 }
 
 pub fn archive_stores(root: &Path) -> Result<bool, String> {
-    let directory = root.join("backups/archives");
+    let directory = root.join("backups");
     fs::create_dir_all(&directory).map_err(error)?;
     let lock_path = directory.join(".lock");
     let lock = match OpenOptions::new()

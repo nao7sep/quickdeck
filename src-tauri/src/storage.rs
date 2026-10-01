@@ -22,6 +22,7 @@ use crate::paths::app_data_dir;
 // - `panes.json`       — the panes' TEXT — the user's work.   RECORDED (managed text)
 // - `snapshots.sqlite3` — the snapshot store.                 not recorded (binary + append-safe)
 // - `backups.sqlite3`   — the write-through backup store.     not recorded (the store itself)
+// - `backups/`          — archive zips, `.lock`, `.running`.  not recorded (binary; archive.rs)
 // - `logs/`             — per-session logs.                   not recorded (append-mode, by construction)
 //
 // Every managed-*text* write goes through `write_json_atomically`. The recorded

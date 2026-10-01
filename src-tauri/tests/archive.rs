@@ -22,7 +22,7 @@ fn database(root: &Path) -> Connection {
 }
 
 fn zips(root: &Path) -> Vec<std::path::PathBuf> {
-    let mut paths = fs::read_dir(root.join("backups/archives"))
+    let mut paths = fs::read_dir(root.join("backups"))
         .unwrap()
         .map(|entry| entry.unwrap().path())
         .filter(|path| path.extension().is_some_and(|extension| extension == "zip"))
@@ -74,9 +74,7 @@ fn copies_live_wal_bytes_consistently_hashes_them_and_deduplicates() {
         .unwrap();
     assert_eq!(value, "saved in WAL");
     assert_eq!(
-        fs::read_dir(root.path().join("backups/archives"))
-            .unwrap()
-            .count(),
+        fs::read_dir(root.path().join("backups")).unwrap().count(),
         1,
         "a written run leaves only its archive: no lock, temporary copy, or SQLite sidecar"
     );
@@ -85,7 +83,7 @@ fn copies_live_wal_bytes_consistently_hashes_them_and_deduplicates() {
 #[test]
 fn exclusive_lock_skips_without_removing_another_writers_lock() {
     let root = tempfile::tempdir().unwrap();
-    let directory = root.path().join("backups/archives");
+    let directory = root.path().join("backups");
     fs::create_dir_all(&directory).unwrap();
     fs::write(directory.join(".lock"), []).unwrap();
     assert!(!archive_stores(root.path()).unwrap());
@@ -99,7 +97,7 @@ fn a_missing_store_creates_neither_an_empty_database_nor_a_manifest_only_archive
     assert!(!archive_stores(root.path()).unwrap());
     assert!(!root.path().join("snapshots.sqlite3").exists());
     assert!(
-        fs::read_dir(root.path().join("backups/archives"))
+        fs::read_dir(root.path().join("backups"))
             .unwrap()
             .next()
             .is_none(),
@@ -115,7 +113,7 @@ fn an_unreadable_store_is_preserved_and_produces_no_archive() {
     assert!(!archive_stores(root.path()).unwrap());
     assert_eq!(fs::read(&source).unwrap(), b"not a SQLite database");
     assert!(
-        fs::read_dir(root.path().join("backups/archives"))
+        fs::read_dir(root.path().join("backups"))
             .unwrap()
             .next()
             .is_none(),
@@ -136,8 +134,8 @@ fn clean_exit_returns_after_the_archive_is_complete_and_the_marker_is_removed() 
     let mut zip = ZipArchive::new(File::open(&paths[0]).unwrap()).unwrap();
     assert!(zip.by_name("snapshots.sqlite3").is_ok());
     assert!(zip.by_name("manifest.json").is_ok());
-    assert!(!root.path().join("backups/archives/.running").exists());
-    assert!(!root.path().join("backups/archives/.lock").exists());
+    assert!(!root.path().join("backups/.running").exists());
+    assert!(!root.path().join("backups/.lock").exists());
 }
 
 #[test]
@@ -146,7 +144,7 @@ fn clean_exit_archives_and_clears_the_marker_and_unclean_launch_recovers_once() 
     database(root.path());
     prepare_session(root.path()).unwrap();
     assert!(zips(root.path()).is_empty());
-    let directory = root.path().join("backups/archives");
+    let directory = root.path().join("backups");
     assert!(directory.join(".running").exists());
     fs::write(directory.join(".lock"), []).unwrap();
     let leftovers = [
@@ -186,7 +184,7 @@ fn an_exit_before_the_launch_run_finishes_leaves_its_leftovers_to_the_next_launc
     let root = tempfile::tempdir().unwrap();
     database(root.path());
     prepare_session(root.path()).unwrap();
-    let directory = root.path().join("backups/archives");
+    let directory = root.path().join("backups");
     // What an unfinished launch run holds.
     fs::write(directory.join(".lock"), []).unwrap();
     fs::write(directory.join("copying.tmp"), []).unwrap();
@@ -219,7 +217,7 @@ fn keeps_the_ten_newest_complete_archives() {
         fs::rename(
             newest,
             root.path()
-                .join(format!("backups/archives/20260101-0000{number:02}-utc.zip")),
+                .join(format!("backups/20260101-0000{number:02}-utc.zip")),
         )
         .unwrap();
     }
@@ -236,7 +234,7 @@ fn keeps_the_ten_newest_complete_archives() {
 fn an_old_archive_that_cannot_be_deleted_is_logged_and_the_run_still_counts_as_written() {
     let root = tempfile::tempdir().unwrap();
     database(root.path());
-    let directory = root.path().join("backups/archives");
+    let directory = root.path().join("backups");
     // A directory is the oldest "archive"; removing it as a file fails.
     fs::create_dir_all(directory.join("20200101-000000-utc.zip")).unwrap();
     for second in 1..10 {
@@ -249,4 +247,24 @@ fn an_old_archive_that_cannot_be_deleted_is_logged_and_the_run_still_counts_as_w
     assert!(archive_stores(root.path()).unwrap());
     assert!(directory.join("20200101-000000-utc.zip").is_dir());
     assert_eq!(zips(root.path()).len(), 11);
+}
+
+#[test]
+fn archives_live_directly_in_backups_and_an_older_archives_folder_is_left_alone() {
+    let root = tempfile::tempdir().unwrap();
+    database(root.path());
+    let older = root.path().join("backups/archives");
+    fs::create_dir_all(&older).unwrap();
+    for name in ["20200101-000000-utc.zip", ".running", ".lock"] {
+        fs::write(older.join(name), []).unwrap();
+    }
+    prepare_session(root.path()).unwrap();
+    assert!(root.path().join("backups/.running").exists());
+    assert!(archive_stores(root.path()).unwrap());
+    let paths = zips(root.path());
+    assert_eq!(paths.len(), 1);
+    assert_eq!(paths[0].parent().unwrap(), root.path().join("backups"));
+    for name in ["20200101-000000-utc.zip", ".running", ".lock"] {
+        assert!(older.join(name).exists(), "{name}");
+    }
 }
