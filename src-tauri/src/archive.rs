@@ -59,14 +59,23 @@ impl ArchiveRun {
     }
 }
 
+/// The archive session: the storage root resolved at launch, kept so exit does
+/// no path resolution, and the launch run.
+pub struct ArchiveSession {
+    pub root: PathBuf,
+    pub launch: ArchiveRun,
+}
+
 /// Starts the launch run: the recovery archive after an unclean exit, then the
 /// marker.
-pub fn start_session(root: PathBuf) -> ArchiveRun {
-    ArchiveRun::spawn(move || {
-        if let Err(error) = prepare_session(&root) {
+pub fn start_session(root: PathBuf) -> ArchiveSession {
+    let launch_root = root.clone();
+    let launch = ArchiveRun::spawn(move || {
+        if let Err(error) = prepare_session(&launch_root) {
             crate::logging::warn("archive launch failed", json!({ "error": error }));
         }
-    })
+    });
+    ArchiveSession { root, launch }
 }
 
 /// Called from the blocking load worker before the snapshot database opens.

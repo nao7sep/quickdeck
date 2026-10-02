@@ -29,7 +29,7 @@ async fn off_main_thread<T: Send + 'static>(
 #[tauri::command]
 async fn load_app_data(app: AppHandle) -> Result<LoadedAppData, String> {
     off_main_thread(move || {
-        archive::wait_for_launch(&app.state::<archive::ArchiveRun>());
+        archive::wait_for_launch(&app.state::<archive::ArchiveSession>().launch);
         let language = app.state::<LanguageState>();
         logging::boundary(
             "load_app_data",
@@ -409,9 +409,8 @@ pub fn run() {
         }
         if matches!(event, RunEvent::Exit) {
             window_placement::save(app, &placement_state);
-            if let Ok(root) = paths::app_data_dir(app) {
-                archive::finish_session(root, &app.state::<archive::ArchiveRun>());
-            }
+            let session = app.state::<archive::ArchiveSession>();
+            archive::finish_session(session.root.clone(), &session.launch);
             logging::flush();
         }
     });

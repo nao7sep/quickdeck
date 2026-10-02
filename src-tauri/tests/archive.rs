@@ -125,7 +125,7 @@ fn an_unreadable_store_is_preserved_and_produces_no_archive() {
 fn clean_exit_returns_after_the_archive_is_complete_and_the_marker_is_removed() {
     let root = tempfile::tempdir().unwrap();
     database(root.path());
-    let launch = start_session(root.path().to_owned());
+    let launch = start_session(root.path().to_owned()).launch;
     assert!(launch.join(Duration::from_secs(5)));
     finish_session(root.path().to_owned(), &launch);
 
@@ -156,7 +156,7 @@ fn clean_exit_archives_and_clears_the_marker_and_unclean_launch_recovers_once() 
     for name in leftovers {
         fs::write(directory.join(name), []).unwrap();
     }
-    let launch = start_session(root.path().to_owned());
+    let launch = start_session(root.path().to_owned()).launch;
     assert!(launch.join(Duration::from_secs(5)));
     assert_eq!(zips(root.path()).len(), 1);
     for name in leftovers {
