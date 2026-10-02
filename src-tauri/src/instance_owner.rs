@@ -33,6 +33,7 @@ fn claim(root: &Path) -> Result<Claim, String> {
     let endpoint_path = root.join(ENDPOINT_FILE_NAME);
     let lock_file = OpenOptions::new()
         .create(true)
+        .truncate(false)
         .read(true)
         .write(true)
         .open(&path)
@@ -60,7 +61,7 @@ fn claim(root: &Path) -> Result<Claim, String> {
                 .local_addr()
                 .map_err(|e| format!("could not inspect process activation endpoint: {e}"))?
                 .port();
-            write!(endpoint_file, "{port}\n").map_err(|e| e.to_string())?;
+            writeln!(endpoint_file, "{port}").map_err(|e| e.to_string())?;
             endpoint_file.sync_all().map_err(|e| e.to_string())?;
             Ok(Claim::Primary {
                 lock: lock_file,

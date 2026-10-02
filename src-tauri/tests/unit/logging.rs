@@ -114,7 +114,16 @@ fn write_record_stores_the_session_and_moves_domain_ids_to_their_columns() {
         &Map::new(),
     );
 
-    let rows: Vec<(String, String, String, String, Option<String>, Option<String>, String)> = conn
+    type Row = (
+        String,
+        String,
+        String,
+        String,
+        Option<String>,
+        Option<String>,
+        String,
+    );
+    let rows: Vec<Row> = conn
         .prepare("SELECT session, time, level, message, pane_id, snapshot_id, fields FROM log_lines ORDER BY id")
         .unwrap()
         .query_map([], |row| {

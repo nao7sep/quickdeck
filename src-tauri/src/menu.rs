@@ -14,9 +14,6 @@ use crate::i18n;
 
 pub const SAFE_QUIT_MENU_ID: &str = "quickdeck.safe-quit";
 
-/// Every catalogue key the native menu reads; the tests check each one exists
-/// in every language.
-
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 pub fn build(app: &AppHandle, language: &str) -> tauri::Result<Menu<Wry>> {
     let name = app.package_info().name.clone();

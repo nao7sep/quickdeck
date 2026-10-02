@@ -1,3 +1,5 @@
+/// Every catalogue key the native menu reads; the tests check each one exists
+/// in every language.
 const KEYS: [&str; 22] = [
     "nativeMenu.about",
     "nativeMenu.services",
