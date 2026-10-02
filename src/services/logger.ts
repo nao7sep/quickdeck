@@ -126,8 +126,9 @@ function dispatch(event: LogEvent): void {
     time: event.time,
     fields: event.fields,
   }).catch((forwardError) => {
-    // The file logger is unreachable from here, so the console is the last
-    // place left to surface both the event and why it could not be forwarded.
+    // The event never reached the Rust core that records log lines, so the
+    // console is the last place left to surface both the event and why it
+    // could not be forwarded.
     consoleFallback(event);
     consoleFallback(buildLogEvent("error", "log forward failed", { error: serializeError(forwardError) }));
   });
