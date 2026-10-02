@@ -1,9 +1,18 @@
-use std::sync::{Arc, Mutex};
+use std::{
+    sync::{
+        mpsc::{self, RecvTimeoutError},
+        Arc, Mutex,
+    },
+    time::Duration,
+};
 
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, PhysicalPosition, PhysicalSize, Window, WindowEvent, Wry};
 
 use crate::{logging, storage};
+
+// How long exit waits for window.json before going on without it.
+const SAVE_WAIT: Duration = Duration::from_secs(2);
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -192,12 +201,21 @@ pub(crate) fn on_window_event(window: &Window<Wry>, event: &WindowEvent, state: 
     }
 }
 
+// `restore` reads window.json in setup, on the main thread, because the
+// placement must be applied before the window is first shown (window
+// conventions). The exit write runs on its own thread so a stalled data volume
+// cannot hold the quit for longer than `SAVE_WAIT` (PLAYBOOK, "Bound every
+// external wait").
 pub(crate) fn save(app: &AppHandle, state: &PlacementState) {
-    let placement = state.lock().ok().and_then(|current| *current);
-    if let Some(placement) = placement {
+    let Some(placement) = state.lock().ok().and_then(|current| *current) else {
+        return;
+    };
+    let app = app.clone();
+    let (done, finished) = mpsc::channel();
+    std::thread::spawn(move || {
         match serde_json::to_value(placement) {
             Ok(value) => {
-                if let Err(error) = storage::save_window_state(app, value) {
+                if let Err(error) = storage::save_window_state(&app, value) {
                     logging::warn(
                         "window placement could not be saved",
                         serde_json::json!({ "error": error }),
@@ -209,5 +227,12 @@ pub(crate) fn save(app: &AppHandle, state: &PlacementState) {
                 serde_json::json!({ "error": error.to_string() }),
             ),
         }
+        let _ = done.send(());
+    });
+    if let Err(RecvTimeoutError::Timeout) = finished.recv_timeout(SAVE_WAIT) {
+        logging::warn(
+            "window placement save wait expired",
+            serde_json::json!({ "seconds": SAVE_WAIT.as_secs() }),
+        );
     }
 }
