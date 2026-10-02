@@ -1,5 +1,5 @@
 use quickdeck_lib::archive::{
-    archive_stores, finish_session, prepare_session, start_session, ArchiveRun,
+    archive_stores, finish_session, prepare_session, start_session, thinned, ArchiveRun,
 };
 use rusqlite::Connection;
 use serde_json::Value;
@@ -203,31 +203,62 @@ fn an_exit_before_the_launch_run_finishes_leaves_its_leftovers_to_the_next_launc
 }
 
 #[test]
-fn keeps_the_ten_newest_complete_archives() {
+fn thins_by_age_on_the_fixed_schedule() {
+    let now = "2026-10-02T00:00:00Z".parse().unwrap();
+    let names = [
+        // Days 1 to 21: every copy.
+        "20261001-120000-utc.zip",
+        "20261001-130000-utc.zip",
+        "20260912-000000-utc.zip",
+        // Days 22 to 90: the last copy of each UTC day.
+        "20260901-080000-utc.zip",
+        "20260901-200000-utc.zip",
+        "20260705-000000-utc.zip",
+        // Days 91 to 1,095: the last copy of each ISO week (Sunday ends one).
+        "20260614-000000-utc.zip",
+        "20260615-000000-utc.zip",
+        "20260617-000000-utc.zip",
+        // After that: the last copy of each calendar month.
+        "20220301-000000-utc.zip",
+        "20220331-000000-utc.zip",
+        "20220401-000000-utc.zip",
+        // Not an archive time: never dropped.
+        "notes.zip",
+    ];
+    let paths = names.map(std::path::PathBuf::from);
+    let mut dropped = thinned(&paths, now);
+    dropped.sort();
+    assert_eq!(
+        dropped,
+        [
+            "20220301-000000-utc.zip",
+            "20260615-000000-utc.zip",
+            "20260901-080000-utc.zip",
+        ]
+        .map(std::path::PathBuf::from)
+    );
+}
+
+#[test]
+fn the_newest_copy_is_kept_however_old() {
+    let now = "2026-10-02T00:00:00Z".parse().unwrap();
+    let paths = ["20200101-000000-utc.zip", "20200102-000000-utc.zip"].map(std::path::PathBuf::from);
+    assert_eq!(thinned(&paths, now), [paths[0].clone()]);
+}
+
+#[test]
+fn a_written_run_thins_older_archives() {
     let root = tempfile::tempdir().unwrap();
-    let connection = database(root.path());
-    for number in 0..12 {
-        connection
-            .execute("INSERT INTO text VALUES (?1)", [number.to_string()])
-            .unwrap();
-        assert!(archive_stores(root.path()).unwrap());
-        let newest = zips(root.path()).pop().unwrap();
-        // Move the current archive to an earlier distinct run timestamp so the
-        // following run can use the current second without a clock-dependent wait.
-        fs::rename(
-            newest,
-            root.path()
-                .join(format!("backups/20260101-0000{number:02}-utc.zip")),
-        )
-        .unwrap();
+    database(root.path());
+    let directory = root.path().join("backups");
+    fs::create_dir_all(&directory).unwrap();
+    for name in ["20200101-000000-utc.zip", "20200115-000000-utc.zip"] {
+        fs::write(directory.join(name), []).unwrap();
     }
-    let paths = zips(root.path());
-    assert_eq!(paths.len(), 10);
-    assert!(paths[0]
-        .file_name()
-        .unwrap()
-        .to_string_lossy()
-        .contains("000002"));
+    assert!(archive_stores(root.path()).unwrap());
+    assert!(!directory.join("20200101-000000-utc.zip").exists());
+    assert!(directory.join("20200115-000000-utc.zip").exists());
+    assert_eq!(zips(root.path()).len(), 2);
 }
 
 #[test]
@@ -235,18 +266,12 @@ fn an_old_archive_that_cannot_be_deleted_is_logged_and_the_run_still_counts_as_w
     let root = tempfile::tempdir().unwrap();
     database(root.path());
     let directory = root.path().join("backups");
-    // A directory is the oldest "archive"; removing it as a file fails.
+    // A directory is the thinned "archive"; removing it as a file fails.
     fs::create_dir_all(directory.join("20200101-000000-utc.zip")).unwrap();
-    for second in 1..10 {
-        fs::write(
-            directory.join(format!("20200101-0000{second:02}-utc.zip")),
-            [],
-        )
-        .unwrap();
-    }
+    fs::write(directory.join("20200101-000001-utc.zip"), []).unwrap();
     assert!(archive_stores(root.path()).unwrap());
     assert!(directory.join("20200101-000000-utc.zip").is_dir());
-    assert_eq!(zips(root.path()).len(), 11);
+    assert_eq!(zips(root.path()).len(), 3);
 }
 
 #[test]

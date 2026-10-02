@@ -1,7 +1,7 @@
 //! Best-effort whole-store archive. Native work runs on a worker that launch
 //! and exit wait on for at most `WAIT`; only completed zip files participate in
-//! dedup and retention.
-use chrono::{SecondsFormat, Utc};
+//! dedup and thinning.
+use chrono::{DateTime, Datelike, NaiveDateTime, SecondsFormat, TimeDelta, Utc};
 use rusqlite::{
     backup::{Backup, StepResult},
     Connection, OpenFlags,
@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sha2::{Digest, Sha256};
 use std::{
+    collections::HashSet,
     fs::{self, File, OpenOptions},
     io::{self, Read, Write},
     path::{Path, PathBuf},
@@ -17,6 +18,9 @@ use std::{
     time::Duration,
 };
 use zip::{write::SimpleFileOptions, CompressionMethod, ZipArchive, ZipWriter};
+
+/// An archive's file name: its run time, per the timestamp-conventions.
+const ARCHIVE_NAME_FORMAT: &str = "%Y%m%d-%H%M%S-utc.zip";
 
 /// How long launch and exit wait for an archive run before going on without it.
 const WAIT: Duration = Duration::from_secs(5);
@@ -292,7 +296,7 @@ pub fn archive_stores(root: &Path) -> Result<bool, String> {
             ),
         }
     }
-    let target = directory.join(format!("{}.zip", Utc::now().format("%Y%m%d-%H%M%S-utc")));
+    let target = directory.join(Utc::now().format(ARCHIVE_NAME_FORMAT).to_string());
     // Never overwrite a completed archive when two different runs share a second.
     if target.exists() {
         return Err("archive timestamp already exists".into());
@@ -316,22 +320,56 @@ pub fn archive_stores(root: &Path) -> Result<bool, String> {
     zip.finish().map_err(error)?.sync_all().map_err(error)?;
     fs::rename(&temporary, target).map_err(error)?;
     drop(cleanup);
-    // The new archive is complete; a retention failure is logged, not the run's.
+    // The new archive is complete; a thinning failure is logged, not the run's.
     match archives(&directory) {
         Ok(paths) => {
-            for path in paths.iter().take(paths.len().saturating_sub(10)) {
-                if let Err(reason) = fs::remove_file(path) {
+            for path in thinned(&paths, Utc::now()) {
+                if let Err(reason) = fs::remove_file(&path) {
                     crate::logging::warn(
-                        "archive retention failed",
+                        "archive thinning failed",
                         json!({ "path": path, "reason": reason.to_string() }),
                     );
                 }
             }
         }
         Err(reason) => crate::logging::warn(
-            "archive retention failed",
+            "archive thinning failed",
             json!({ "path": directory, "reason": reason }),
         ),
     }
     Ok(true)
+}
+
+/// The archives the data-lifecycle-conventions' schedule drops at `now`. A copy
+/// is kept when it is the newest of its period within its own age band, so the
+/// newest copy of all always is; a file not named by an archive time is kept.
+pub fn thinned(paths: &[PathBuf], now: DateTime<Utc>) -> Vec<PathBuf> {
+    let mut dated = paths
+        .iter()
+        .filter_map(|path| {
+            let name = path.file_name()?.to_str()?;
+            let time = NaiveDateTime::parse_from_str(name, ARCHIVE_NAME_FORMAT).ok()?;
+            Some((time.and_utc(), path))
+        })
+        .collect::<Vec<_>>();
+    dated.sort_by(|(left, _), (right, _)| right.cmp(left));
+    let mut periods = HashSet::new();
+    dated
+        .into_iter()
+        .filter(|(time, _)| {
+            let age = now.signed_duration_since(*time);
+            let period = if age < TimeDelta::days(21) {
+                return false;
+            } else if age < TimeDelta::days(90) {
+                ("day", time.year(), time.ordinal())
+            } else if age < TimeDelta::days(1095) {
+                let week = time.iso_week();
+                ("week", week.year(), week.week())
+            } else {
+                ("month", time.year(), time.month())
+            };
+            !periods.insert(period)
+        })
+        .map(|(_, path)| path.clone())
+        .collect()
 }
