@@ -1,15 +1,16 @@
 //! Log lines as rows in `records.sqlite3` (logging and data-lifecycle
 //! conventions), each carrying its session and the pane or snapshot it belongs
 //! to. The Rust core owns the database; the webview forwards structured log
-//! objects via the `log_event` command (see `lib.rs`). A failed write goes to
-//! `logs/<session stamp>.log` as one JSON line.
+//! objects via the `log_event` command (see `lib.rs`). Rows are written on the
+//! logger's own thread, and `flush` waits for those already sent. A failed write
+//! goes to `logs/<session stamp>.log` as one JSON line.
 
 use std::{
     fs::{self, OpenOptions},
     io::Write,
     path::{Path, PathBuf},
-    sync::{Mutex, OnceLock},
-    time::Instant,
+    sync::{mpsc, OnceLock},
+    time::{Duration, Instant},
 };
 
 use chrono::{SecondsFormat, Utc};
@@ -37,6 +38,9 @@ CREATE INDEX IF NOT EXISTS log_lines_session ON log_lines (session, id);
 
 // The free fields that name a domain object, and the column each one fills.
 const DOMAIN_IDS: [&str; 2] = ["paneId", "snapshotId"];
+
+// How long `flush` waits for the writer before going on without it.
+const FLUSH_WAIT: Duration = Duration::from_secs(2);
 
 // The four levels, and only four.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -71,23 +75,38 @@ impl Level {
 
 // This launch: its start time, which every row carries, and where the fallback
 // file goes (None when the data directory could not be resolved).
+#[derive(Clone)]
 struct Session {
     started: String,
     stamp: String,
     root: Option<PathBuf>,
 }
 
+// What the writer thread receives: a line to write, or a request to say when
+// every line sent before it is written.
+enum Message {
+    Line {
+        level: Level,
+        message: String,
+        time: String,
+        fields: Map<String, Value>,
+    },
+    Flush(mpsc::SyncSender<()>),
+}
+
+// `session` is kept here too, for the fallback when the writer thread is gone.
 struct Logger {
     session: Session,
-    records: Mutex<Option<Connection>>,
+    writer: mpsc::Sender<Message>,
     debug_enabled: bool,
 }
 
 static LOGGER: OnceLock<Logger> = OnceLock::new();
 
-// Opens the records database, installs the panic hook, and writes the startup
-// line. Safe to call once; later calls are ignored. Never fails the app: without
-// the database every line takes the fallback.
+// Installs the panic hook, starts the writer thread, which opens the records
+// database, and writes the startup line. Safe to call once; later calls are
+// ignored. Never fails the app: without the database or the thread every line
+// takes the fallback.
 pub fn init(app: &AppHandle, version: &str) {
     let debug_enabled = cfg!(debug_assertions)
         || std::env::var("QUICKDECK_DEBUG")
@@ -96,24 +115,15 @@ pub fn init(app: &AppHandle, version: &str) {
 
     let started = Utc::now();
     let root = paths::app_data_dir(app);
-    let records = match &root {
-        Ok(root) => {
-            open_records(&root.join(RECORDS_DB_FILE_NAME)).map_err(|error| error.to_string())
-        }
-        Err(error) => Err(error.clone()),
+    let session = Session {
+        started: started.to_rfc3339_opts(SecondsFormat::Millis, true),
+        stamp: session_stamp(started),
+        root: root.clone().ok(),
     };
-    let (records, unavailable) = match records {
-        Ok(conn) => (Some(conn), None),
-        Err(error) => (None, Some(error)),
-    };
-
+    let (writer, lines) = mpsc::channel();
     let logger = Logger {
-        session: Session {
-            started: started.to_rfc3339_opts(SecondsFormat::Millis, true),
-            stamp: session_stamp(started),
-            root: root.ok(),
-        },
-        records: Mutex::new(records),
+        session: session.clone(),
+        writer,
         debug_enabled,
     };
 
@@ -123,8 +133,15 @@ pub fn init(app: &AppHandle, version: &str) {
 
     install_panic_hook();
 
-    if let Some(error) = unavailable {
-        warn("records database unavailable", json!({ "error": error }));
+    let file = root.map(|root| root.join(RECORDS_DB_FILE_NAME));
+    let spawned = std::thread::Builder::new()
+        .name("records".to_string())
+        .spawn(move || run_writer(file, session, lines));
+    if let Err(error) = spawned {
+        warn(
+            "records writer unavailable",
+            json!({ "error": error.to_string() }),
+        );
     }
 
     write_event(
@@ -137,6 +154,58 @@ pub fn init(app: &AppHandle, version: &str) {
             "debugEnabled": debug_enabled,
         })),
     );
+}
+
+// The writer thread: owns the records database for the rest of the process and
+// writes each line in the order it was sent.
+fn run_writer(file: Result<PathBuf, String>, session: Session, lines: mpsc::Receiver<Message>) {
+    let records = file.and_then(|file| open_records(&file).map_err(|error| error.to_string()));
+    let records = match records {
+        Ok(conn) => Some(conn),
+        Err(error) => {
+            write_record(
+                None,
+                &session,
+                Level::Warn,
+                "records database unavailable",
+                &now_iso(),
+                &into_map(json!({ "error": error })),
+            );
+            None
+        }
+    };
+    for line in lines {
+        match line {
+            Message::Line {
+                level,
+                message,
+                time,
+                fields,
+            } => write_record(records.as_ref(), &session, level, &message, &time, &fields),
+            Message::Flush(done) => {
+                let _ = done.send(());
+            }
+        }
+    }
+}
+
+// Waits, at most `FLUSH_WAIT`, until every line sent so far is written: on exit
+// and after a panic (logging conventions, Flush and durability).
+pub fn flush() {
+    let Some(logger) = LOGGER.get() else {
+        return;
+    };
+    let (done, written) = mpsc::sync_channel(1);
+    if logger.writer.send(Message::Flush(done)).is_err() {
+        return;
+    }
+    if written.recv_timeout(FLUSH_WAIT).is_err() {
+        let _ = writeln!(
+            std::io::stderr(),
+            "[quickdeck] log flush gave up after {} s",
+            FLUSH_WAIT.as_secs()
+        );
+    }
 }
 
 // not recorded: records.sqlite3 is written only here, never through the
@@ -262,27 +331,30 @@ fn write_event(level: Level, message: &str, time: String, fields: Map<String, Va
         return;
     }
 
-    let records = match logger.records.lock() {
-        Ok(records) => records,
-        Err(poisoned) => poisoned.into_inner(),
+    let line = Message::Line {
+        level,
+        message: message.to_string(),
+        time,
+        fields,
     };
-    write_record(
-        records.as_ref(),
-        &logger.session,
+    // A writer thread that never started or has stopped leaves the fallback.
+    if let Err(mpsc::SendError(Message::Line {
         level,
         message,
-        &time,
-        &fields,
-    );
+        time,
+        fields,
+    })) = logger.writer.send(line)
+    {
+        write_record(None, &logger.session, level, &message, &time, &fields);
+    }
 }
 
 // Inserts one row, or appends the line to the fallback file when there is no
-// database or the insert fails. Runs while the caller holds the records lock, so
-// it must NEVER panic: the std print macros (eprint!/eprintln!) panic on a failed
-// stderr write, which on a no-console GUI build would fire the panic hook on this
-// same thread while the lock is held, re-enter it, and deadlock. All stderr
-// output here therefore goes through non-panicking `write!`/`writeln!` whose
-// Result is deliberately ignored.
+// database or the insert fails. It must NEVER panic: the std print macros
+// (eprint!/eprintln!) panic on a failed stderr write, which on a no-console GUI
+// build would fire the panic hook, which logs and flushes, on the writer thread
+// itself. All stderr output here therefore goes through non-panicking
+// `write!`/`writeln!` whose Result is deliberately ignored.
 fn write_record(
     records: Option<&Connection>,
     session: &Session,
@@ -426,6 +498,7 @@ fn install_panic_hook() {
             now_iso(),
             into_map(json!({ "payload": payload, "location": location })),
         );
+        flush();
         previous(info);
     }));
 }

@@ -196,3 +196,67 @@ fn write_record_falls_back_when_the_insert_fails() {
         "unexpected fallback: {contents}"
     );
 }
+
+#[test]
+fn the_writer_thread_writes_lines_in_order_before_answering_a_flush() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("records.sqlite3");
+    let (writer, lines) = mpsc::channel();
+    let thread_session = session(Some(dir.path()));
+    let thread_file = file.clone();
+    let thread = std::thread::spawn(move || run_writer(Ok(thread_file), thread_session, lines));
+    for message in ["first", "second"] {
+        writer
+            .send(Message::Line {
+                level: Level::Info,
+                message: message.to_string(),
+                time: "2026-01-01T00:00:01.000Z".to_string(),
+                fields: Map::new(),
+            })
+            .unwrap();
+    }
+    let (done, written) = mpsc::sync_channel(1);
+    writer.send(Message::Flush(done)).unwrap();
+    written.recv_timeout(FLUSH_WAIT).unwrap();
+
+    let conn = rusqlite::Connection::open(&file).unwrap();
+    let messages: Vec<String> = conn
+        .prepare("SELECT message FROM log_lines ORDER BY id")
+        .unwrap()
+        .query_map([], |row| row.get(0))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    assert_eq!(messages, ["first", "second"]);
+    drop(writer);
+    thread.join().unwrap();
+}
+
+#[test]
+fn the_writer_thread_falls_back_when_the_database_cannot_open() {
+    let dir = tempfile::tempdir().unwrap();
+    let (writer, lines) = mpsc::channel();
+    writer
+        .send(Message::Line {
+            level: Level::Info,
+            message: "kept".to_string(),
+            time: "2026-01-01T00:00:01.000Z".to_string(),
+            fields: Map::new(),
+        })
+        .unwrap();
+    drop(writer);
+    run_writer(
+        Err("no data directory".to_string()),
+        session(Some(dir.path())),
+        lines,
+    );
+
+    let contents =
+        std::fs::read_to_string(dir.path().join("logs").join("20260101-000000-000-utc.log"))
+            .unwrap();
+    let messages: Vec<Value> = contents
+        .lines()
+        .map(|line| serde_json::from_str::<Value>(line).unwrap()["message"].clone())
+        .collect();
+    assert_eq!(messages, [json!("records database unavailable"), json!("kept")]);
+}

@@ -414,6 +414,7 @@ pub fn run() {
             if let Ok(root) = paths::app_data_dir(app) {
                 archive::finish_session(root, &app.state::<archive::ArchiveRun>());
             }
+            logging::flush();
         }
     });
 }
