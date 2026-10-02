@@ -56,12 +56,16 @@ fn create_data_dir(dir: &Path) -> std::io::Result<()> {
 fn secure_root(dir: &Path) -> Result<(), String> {
     use std::os::unix::fs::PermissionsExt;
 
-    let metadata = fs::metadata(dir)
-        .map_err(|e| format!("could not stat data dir {}: {e}", dir.display()))?;
+    let metadata =
+        fs::metadata(dir).map_err(|e| format!("could not stat data dir {}: {e}", dir.display()))?;
     let mode = metadata.permissions().mode() & 0o777;
     if mode != 0o700 {
-        fs::set_permissions(dir, fs::Permissions::from_mode(0o700))
-            .map_err(|e| format!("could not set permissions on data dir {}: {e}", dir.display()))?;
+        fs::set_permissions(dir, fs::Permissions::from_mode(0o700)).map_err(|e| {
+            format!(
+                "could not set permissions on data dir {}: {e}",
+                dir.display()
+            )
+        })?;
     }
     Ok(())
 }
@@ -110,7 +114,10 @@ fn expand_tilde(home: &Path, value: &str) -> PathBuf {
     if value == "~" {
         return home.to_path_buf();
     }
-    if let Some(rest) = value.strip_prefix("~/").or_else(|| value.strip_prefix("~\\")) {
+    if let Some(rest) = value
+        .strip_prefix("~/")
+        .or_else(|| value.strip_prefix("~\\"))
+    {
         return home.join(rest);
     }
     PathBuf::from(value)
@@ -149,7 +156,8 @@ fn expand_env_references(value: &str) -> String {
         if let Some(after) = rest.strip_prefix('%') {
             if let Some(end) = after.find('%') {
                 let name = &after[..end];
-                if !name.is_empty() && name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_') {
+                if !name.is_empty() && name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')
+                {
                     out.push_str(&std::env::var(name).unwrap_or_default());
                     rest = &after[end + 1..];
                     continue;

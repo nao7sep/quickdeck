@@ -11,7 +11,15 @@ fn system_language_takes_the_first_supported_preferred_locale() {
 
 #[test]
 fn every_chinese_locale_resolves_to_simplified_chinese() {
-    for locale in ["zh-CN", "zh-Hans-CN", "zh-TW", "zh-Hant-TW", "zh-HK", "zh-Hant-HK", "zh"] {
+    for locale in [
+        "zh-CN",
+        "zh-Hans-CN",
+        "zh-TW",
+        "zh-Hant-TW",
+        "zh-HK",
+        "zh-Hant-HK",
+        "zh",
+    ] {
         assert_eq!(system_language([locale]), "zh-Hans", "{locale}");
     }
 }
@@ -41,7 +49,10 @@ fn preference_normalizes_like_the_frontend() {
 
 #[test]
 fn saved_preference_reads_the_language_field() {
-    assert_eq!(saved_preference(r#"{"language":"de","theme":"dark"}"#), Some("de"));
+    assert_eq!(
+        saved_preference(r#"{"language":"de","theme":"dark"}"#),
+        Some("de")
+    );
     assert_eq!(saved_preference(r#"{"language":"system"}"#), None);
     assert_eq!(saved_preference(r#"{"language":7}"#), None);
     assert_eq!(saved_preference(r#"{"theme":"dark"}"#), None);
@@ -69,6 +80,12 @@ fn embeds_exactly_the_catalogues_in_the_locales_folder() {
 
 #[test]
 fn catalogue_text_fills_in_the_app_name() {
-    assert_eq!(catalogue("en").text("nativeMenu.quit", "QuickDeck"), "Quit QuickDeck");
-    assert_eq!(catalogue("ja").text("nativeMenu.quit", "QuickDeck"), "QuickDeckを終了");
+    assert_eq!(
+        catalogue("en").text("nativeMenu.quit", "QuickDeck"),
+        "Quit QuickDeck"
+    );
+    assert_eq!(
+        catalogue("ja").text("nativeMenu.quit", "QuickDeck"),
+        "QuickDeckを終了"
+    );
 }

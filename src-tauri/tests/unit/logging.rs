@@ -258,5 +258,8 @@ fn the_writer_thread_falls_back_when_the_database_cannot_open() {
         .lines()
         .map(|line| serde_json::from_str::<Value>(line).unwrap()["message"].clone())
         .collect();
-    assert_eq!(messages, [json!("records database unavailable"), json!("kept")]);
+    assert_eq!(
+        messages,
+        [json!("records database unavailable"), json!("kept")]
+    );
 }

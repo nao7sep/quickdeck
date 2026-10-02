@@ -6,7 +6,10 @@ fn default_root_is_home_dot_quickdeck() {
     let home = PathBuf::from("/home/tester");
     // Unset / empty / whitespace all fall back to the default root.
     assert_eq!(resolve_root(&home, None).unwrap(), home.join(".quickdeck"));
-    assert_eq!(resolve_root(&home, Some(String::new())).unwrap(), home.join(".quickdeck"));
+    assert_eq!(
+        resolve_root(&home, Some(String::new())).unwrap(),
+        home.join(".quickdeck")
+    );
     assert_eq!(
         resolve_root(&home, Some("   ".to_string())).unwrap(),
         home.join(".quickdeck")
@@ -115,7 +118,10 @@ fn existing_broader_root_is_tightened_on_launch() {
     // Simulate a pre-existing root that is broader than owner-only, e.g. left
     // over from before this rule, or created with a permissive umask.
     fs::set_permissions(&root, fs::Permissions::from_mode(0o755)).unwrap();
-    assert_eq!(fs::metadata(&root).unwrap().permissions().mode() & 0o777, 0o755);
+    assert_eq!(
+        fs::metadata(&root).unwrap().permissions().mode() & 0o777,
+        0o755
+    );
 
     secure_root(&root).unwrap();
 

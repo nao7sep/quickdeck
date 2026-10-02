@@ -80,7 +80,10 @@ fn deleting_takes_one_copy_or_the_whole_store() {
     assert_eq!(after.rows.len(), 2);
     assert!(after.rows.iter().all(|row| row.id != target));
 
-    assert_eq!(delete_all_snapshots_with_connection(&conn).expect("delete all"), 2);
+    assert_eq!(
+        delete_all_snapshots_with_connection(&conn).expect("delete all"),
+        2
+    );
     let empty = list_snapshots_with_connection(&conn, "", 10, 0).expect("list");
     assert!(empty.rows.is_empty());
 
@@ -146,8 +149,15 @@ fn insert_writes_canonical_iso_created_at_utc() {
         )
         .unwrap();
     assert_eq!(created_at_utc.len(), 24, "created_at_utc: {created_at_utc}");
-    assert!(created_at_utc.ends_with('Z'), "created_at_utc: {created_at_utc}");
-    assert_eq!(&created_at_utc[19..20], ".", "created_at_utc: {created_at_utc}");
+    assert!(
+        created_at_utc.ends_with('Z'),
+        "created_at_utc: {created_at_utc}"
+    );
+    assert_eq!(
+        &created_at_utc[19..20],
+        ".",
+        "created_at_utc: {created_at_utc}"
+    );
     assert!(
         chrono::DateTime::parse_from_rfc3339(&created_at_utc).is_ok(),
         "not rfc3339: {created_at_utc}"
@@ -243,12 +253,28 @@ fn escape_like_escapes_wildcards_and_backslash() {
 #[test]
 fn blank_query_lists_the_whole_store_newest_first() {
     let conn = mem_db();
-    insert_row(&conn, "id1", "p1", "2026-01-01T00:00:01.000Z", "hello world");
-    insert_row(&conn, "id2", "p2", "2026-01-01T00:00:02.000Z", "nothing in common");
+    insert_row(
+        &conn,
+        "id1",
+        "p1",
+        "2026-01-01T00:00:01.000Z",
+        "hello world",
+    );
+    insert_row(
+        &conn,
+        "id2",
+        "p2",
+        "2026-01-01T00:00:02.000Z",
+        "nothing in common",
+    );
 
     for query in ["", "   ", "\t\n"] {
         let result = list_snapshots_with_connection(&conn, query, 25, 0).unwrap();
-        let ids = result.rows.iter().map(|row| row.id.as_str()).collect::<Vec<_>>();
+        let ids = result
+            .rows
+            .iter()
+            .map(|row| row.id.as_str())
+            .collect::<Vec<_>>();
         assert_eq!(ids, ["id2", "id1"], "query {query:?} should list every row");
         assert!(!result.has_more);
     }
@@ -269,14 +295,22 @@ fn blank_query_paginates_like_a_search() {
 
     let first = list_snapshots_with_connection(&conn, "", 2, 0).unwrap();
     assert_eq!(
-        first.rows.iter().map(|row| row.id.as_str()).collect::<Vec<_>>(),
+        first
+            .rows
+            .iter()
+            .map(|row| row.id.as_str())
+            .collect::<Vec<_>>(),
         ["id3", "id2"]
     );
     assert!(first.has_more);
 
     let second = list_snapshots_with_connection(&conn, "", 2, 2).unwrap();
     assert_eq!(
-        second.rows.iter().map(|row| row.id.as_str()).collect::<Vec<_>>(),
+        second
+            .rows
+            .iter()
+            .map(|row| row.id.as_str())
+            .collect::<Vec<_>>(),
         ["id1"]
     );
     assert!(!second.has_more);
@@ -287,7 +321,13 @@ fn blank_query_paginates_like_a_search() {
 #[test]
 fn rows_carry_the_pane_they_came_from() {
     let conn = mem_db();
-    insert_row(&conn, "id1", "pane-abc", "2026-01-01T00:00:01.000Z", "hello world");
+    insert_row(
+        &conn,
+        "id1",
+        "pane-abc",
+        "2026-01-01T00:00:01.000Z",
+        "hello world",
+    );
 
     let result = list_snapshots_with_connection(&conn, "", 25, 0).unwrap();
     assert_eq!(result.rows[0].pane_id, "pane-abc");
@@ -296,7 +336,13 @@ fn rows_carry_the_pane_they_came_from() {
 #[test]
 fn search_is_case_insensitive() {
     let conn = mem_db();
-    insert_row(&conn, "id1", "p1", "2026-01-01T00:00:01.000Z", "The Quick Brown Fox");
+    insert_row(
+        &conn,
+        "id1",
+        "p1",
+        "2026-01-01T00:00:01.000Z",
+        "The Quick Brown Fox",
+    );
     let result = list_snapshots_with_connection(&conn, "QUICK", 25, 0).unwrap();
     assert_eq!(result.rows.len(), 1);
     assert_eq!(result.rows[0].id, "id1");
@@ -305,7 +351,13 @@ fn search_is_case_insensitive() {
 #[test]
 fn search_requires_all_terms() {
     let conn = mem_db();
-    insert_row(&conn, "both", "p1", "2026-01-01T00:00:02.000Z", "alpha beta gamma");
+    insert_row(
+        &conn,
+        "both",
+        "p1",
+        "2026-01-01T00:00:02.000Z",
+        "alpha beta gamma",
+    );
     insert_row(&conn, "one", "p1", "2026-01-01T00:00:01.000Z", "alpha only");
 
     let result = list_snapshots_with_connection(&conn, "alpha gamma", 25, 0).unwrap();
@@ -316,8 +368,20 @@ fn search_requires_all_terms() {
 #[test]
 fn search_treats_like_wildcards_literally() {
     let conn = mem_db();
-    insert_row(&conn, "pct", "p1", "2026-01-01T00:00:02.000Z", "50% off today");
-    insert_row(&conn, "plain", "p1", "2026-01-01T00:00:01.000Z", "500 dollars");
+    insert_row(
+        &conn,
+        "pct",
+        "p1",
+        "2026-01-01T00:00:02.000Z",
+        "50% off today",
+    );
+    insert_row(
+        &conn,
+        "plain",
+        "p1",
+        "2026-01-01T00:00:01.000Z",
+        "500 dollars",
+    );
 
     // Without LIKE escaping, "50%" would match "500" too.
     let result = list_snapshots_with_connection(&conn, "50%", 25, 0).unwrap();
@@ -343,8 +407,20 @@ fn search_orders_same_second_rows_by_subsecond_precision() {
     // Same second, different milliseconds. Under the old second-granularity
     // created_at_utc these tied and fell back to the id; the canonical ISO
     // form now carries ms, so they order directly — newest (latest ms) first.
-    insert_row(&conn, "id-early", "p1", "2026-01-01T00:00:01.100Z", "note alpha");
-    insert_row(&conn, "id-late", "p1", "2026-01-01T00:00:01.900Z", "note beta");
+    insert_row(
+        &conn,
+        "id-early",
+        "p1",
+        "2026-01-01T00:00:01.100Z",
+        "note alpha",
+    );
+    insert_row(
+        &conn,
+        "id-late",
+        "p1",
+        "2026-01-01T00:00:01.900Z",
+        "note beta",
+    );
 
     let result = list_snapshots_with_connection(&conn, "note", 25, 0).unwrap();
     let ids: Vec<_> = result.rows.iter().map(|r| r.id.as_str()).collect();
@@ -492,8 +568,15 @@ fn atomic_write_records_byte_identical_bytes_through_the_choke_point() {
             |row| row.get(0),
         )
         .unwrap();
-    assert_eq!(recorded, on_disk, "recorded blob must equal the file's bytes");
-    assert_eq!(recorded.last(), Some(&b'\n'), "the trailing newline must be recorded too");
+    assert_eq!(
+        recorded, on_disk,
+        "recorded blob must equal the file's bytes"
+    );
+    assert_eq!(
+        recorded.last(),
+        Some(&b'\n'),
+        "the trailing newline must be recorded too"
+    );
 
     crate::backup_store::close_backup_store();
 }
@@ -511,7 +594,9 @@ fn unrecorded_write_lands_on_disk_but_not_in_the_backup_store() {
 
     assert_eq!(read_json_optional(&path).unwrap(), Some(value));
     assert!(
-        !dir.path().join(crate::backup_store::BACKUPS_DB_FILE_NAME).exists(),
+        !dir.path()
+            .join(crate::backup_store::BACKUPS_DB_FILE_NAME)
+            .exists(),
         "an unrecorded write must not touch the backup store"
     );
 
@@ -553,9 +638,18 @@ fn temp_path_for_uses_stem_discriminator_dot_tmp_shape_in_the_same_directory() {
     assert_eq!(tmp.parent(), path.parent());
 
     let tmp_name = tmp.file_name().and_then(|n| n.to_str()).unwrap();
-    assert!(tmp_name.starts_with("config-"), "unexpected tmp name: {tmp_name}");
-    assert!(tmp_name.ends_with(".tmp"), "unexpected tmp name: {tmp_name}");
-    assert!(!tmp_name.contains("config.json"), "old shape leaked in: {tmp_name}");
+    assert!(
+        tmp_name.starts_with("config-"),
+        "unexpected tmp name: {tmp_name}"
+    );
+    assert!(
+        tmp_name.ends_with(".tmp"),
+        "unexpected tmp name: {tmp_name}"
+    );
+    assert!(
+        !tmp_name.contains("config.json"),
+        "old shape leaked in: {tmp_name}"
+    );
     let discriminator = &tmp_name["config-".len()..tmp_name.len() - ".tmp".len()];
     // The discriminator is a nanoid: crate::nanoid::DEFAULT_LENGTH characters
     // drawn from the standard URL-safe alphabet (A-Za-z0-9_-), not the old
@@ -594,8 +688,12 @@ fn a_write_leaves_another_writers_in_flight_temp_alone() {
     let other = dir.path().join("config-otherwriter.tmp");
     fs::write(&other, b"in flight").unwrap();
 
-    atomic_write_json(dir.path(), &dir.path().join("config.json"), &serde_json::json!({ "a": 1 }))
-        .unwrap();
+    atomic_write_json(
+        dir.path(),
+        &dir.path().join("config.json"),
+        &serde_json::json!({ "a": 1 }),
+    )
+    .unwrap();
     let failing = dir.path().join("state.json");
     fs::create_dir(&failing).unwrap();
     assert!(atomic_write_json(dir.path(), &failing, &serde_json::json!({ "a": 1 })).is_err());
@@ -606,7 +704,11 @@ fn a_write_leaves_another_writers_in_flight_temp_alone() {
         .flatten()
         .filter(|e| e.file_name().to_string_lossy().ends_with(".tmp"))
         .collect();
-    assert_eq!(temps.len(), 1, "only the other writer's temp remains: {temps:?}");
+    assert_eq!(
+        temps.len(),
+        1,
+        "only the other writer's temp remains: {temps:?}"
+    );
 
     crate::backup_store::close_backup_store();
 }

@@ -8,8 +8,7 @@
 // 64 divides 256 evenly, so masking each random byte down to its low 6 bits
 // (`byte & 0x3F`) lands on every alphabet index with exactly equal
 // probability. No modulo bias, no rejection sampling, no loops.
-const ALPHABET: [u8; 64] =
-    *b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-";
+const ALPHABET: [u8; 64] = *b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-";
 
 // The `nanoid` package's own default length, carried over here so IDs from
 // either side of the IPC boundary look and behave the same.

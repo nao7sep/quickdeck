@@ -13,7 +13,9 @@ use std::sync::Mutex;
 use serde_json::{Map, Value as JsonValue};
 
 /// The supported tags, in the frontend's LANGUAGES order.
-pub const LANGUAGES: [&str; 10] = ["en", "de", "es", "fr", "it", "pt-BR", "ru", "ja", "ko", "zh-Hans"];
+pub const LANGUAGES: [&str; 10] = [
+    "en", "de", "es", "fr", "it", "pt-BR", "ru", "ja", "ko", "zh-Hans",
+];
 
 const CATALOGUES: [(&str, &str); 10] = [
     ("en", include_str!("../../src/i18n/locales/en.json")),
@@ -25,14 +27,20 @@ const CATALOGUES: [(&str, &str); 10] = [
     ("ru", include_str!("../../src/i18n/locales/ru.json")),
     ("ja", include_str!("../../src/i18n/locales/ja.json")),
     ("ko", include_str!("../../src/i18n/locales/ko.json")),
-    ("zh-Hans", include_str!("../../src/i18n/locales/zh-Hans.json")),
+    (
+        "zh-Hans",
+        include_str!("../../src/i18n/locales/zh-Hans.json"),
+    ),
 ];
 
 /// The supported tag a computer locale resolves to, if any. Every Chinese
 /// locale, Taiwan and Hong Kong included, resolves to Simplified Chinese, and
 /// every Portuguese one to Brazilian Portuguese.
 fn match_locale(locale: &str) -> Option<&'static str> {
-    let primary = locale.split(['-', '_', '.', '@']).next()?.to_ascii_lowercase();
+    let primary = locale
+        .split(['-', '_', '.', '@'])
+        .next()?
+        .to_ascii_lowercase();
     match primary.as_str() {
         "zh" => Some("zh-Hans"),
         "pt" => Some("pt-BR"),
@@ -92,11 +100,17 @@ impl LanguageState {
     }
 
     pub fn current(&self) -> &'static str {
-        *self.current.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+        *self
+            .current
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
     pub fn set_current(&self, language: &'static str) {
-        *self.current.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = language;
+        *self
+            .current
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = language;
     }
 }
 
@@ -116,7 +130,10 @@ fn parse(tag: &str) -> Map<String, JsonValue> {
 }
 
 pub fn catalogue(language: &str) -> Catalogue {
-    Catalogue { entries: parse(language), fallback: parse("en") }
+    Catalogue {
+        entries: parse(language),
+        fallback: parse("en"),
+    }
 }
 
 impl Catalogue {

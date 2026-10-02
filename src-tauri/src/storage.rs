@@ -277,8 +277,9 @@ fn list_snapshots_with_connection(
 
     let bounded_limit = limit.clamp(1, 200);
     let fetch_limit = bounded_limit + 1;
-    let mut sql =
-        String::from("select id, pane_id, pane_title, created_at_utc, content from snapshots where 1 = 1");
+    let mut sql = String::from(
+        "select id, pane_id, pane_title, created_at_utc, content from snapshots where 1 = 1",
+    );
     let mut values: Vec<Value> = Vec::new();
 
     for term in terms {
@@ -463,10 +464,7 @@ fn read_json_optional(path: &Path) -> Result<Option<JsonValue>, String> {
 // derived-filename grammar with a moment discriminator (storage-path
 // conventions' quarantine name), stamped by the one shared formatter.
 fn quarantine_name(path: &Path) -> PathBuf {
-    let stem = path
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or("store");
+    let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("store");
     path.with_file_name(format!(
         "{stem}-{}.invalid",
         crate::logging::session_stamp(Utc::now())
@@ -622,8 +620,7 @@ fn write_json_atomically(path: &Path, value: &JsonValue) -> Result<Vec<u8>, Stri
 
 fn open_snapshot_db(data_dir: &Path) -> Result<Connection, String> {
     ensure_snapshot_db(data_dir)?;
-    let conn =
-        Connection::open(data_dir.join(SNAPSHOTS_DB_FILE_NAME)).map_err(to_string_error)?;
+    let conn = Connection::open(data_dir.join(SNAPSHOTS_DB_FILE_NAME)).map_err(to_string_error)?;
     // WAL alone only orders writers; without this a second writer contending for
     // the write lock (e.g. two panes' copy/paste snapshots, or a close-time batch
     // racing an in-flight single snapshot) fails immediately with SQLITE_BUSY

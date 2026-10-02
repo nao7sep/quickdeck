@@ -10,12 +10,10 @@ pub mod storage;
 pub mod theme;
 pub mod window_placement;
 
-use serde_json::{json, Map, Value as JsonValue};
-use storage::{
-    LoadedAppData, SnapshotInput, SnapshotListResult, SnapshotWriteResult,
-};
 use i18n::LanguageState;
 use menu::SAFE_QUIT_MENU_ID;
+use serde_json::{json, Map, Value as JsonValue};
+use storage::{LoadedAppData, SnapshotInput, SnapshotListResult, SnapshotWriteResult};
 use tauri::{AppHandle, Manager, RunEvent, State};
 
 // File, database and clipboard work runs on a blocking thread, per the

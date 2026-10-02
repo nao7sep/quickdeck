@@ -46,7 +46,10 @@ fn content_blob_is_byte_identical_including_crlf_and_non_utf8() {
     record(&store, &target, &bytes);
 
     let (content, sha, byte_size, _written) = latest_row(&store, &target).unwrap();
-    assert_eq!(content, bytes, "BLOB must be byte-identical to what was written");
+    assert_eq!(
+        content, bytes,
+        "BLOB must be byte-identical to what was written"
+    );
     assert_eq!(byte_size, bytes.len() as i64);
     assert_eq!(sha, sha256_hex(&bytes));
 }
@@ -72,7 +75,10 @@ fn written_at_utc_is_serialized_iso_ms_not_the_filename_stamp() {
     );
     // It is NOT the yyyymmdd-hhmmss(-fff)-utc filename stamp: no "-utc" suffix,
     // and it carries ':' and '-' in the ISO layout the filename form strips.
-    assert!(!written.ends_with("-utc"), "must not be a filename stamp: {written}");
+    assert!(
+        !written.ends_with("-utc"),
+        "must not be a filename stamp: {written}"
+    );
     assert!(written.contains(':'), "must be the ISO form: {written}");
 }
 
@@ -85,7 +91,11 @@ fn unchanged_resave_is_deduped_and_writes_no_row() {
 
     record(&store, &target, b"same body");
     record(&store, &target, b"same body");
-    assert_eq!(row_count(&store, &target), 1, "an unchanged re-save must not insert");
+    assert_eq!(
+        row_count(&store, &target),
+        1,
+        "an unchanged re-save must not insert"
+    );
 }
 
 #[test]

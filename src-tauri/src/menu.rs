@@ -27,10 +27,18 @@ pub fn build(app: &AppHandle, language: &str) -> tauri::Result<Menu<Wry>> {
         name: Some(name.clone()),
         version: Some(app.package_info().version.to_string()),
         copyright: config.bundle.copyright.clone(),
-        authors: config.bundle.publisher.clone().map(|publisher| vec![publisher]),
+        authors: config
+            .bundle
+            .publisher
+            .clone()
+            .map(|publisher| vec![publisher]),
         ..Default::default()
     };
-    let quit_text = if cfg!(target_os = "macos") { t("nativeMenu.quit") } else { t("nativeMenu.exit") };
+    let quit_text = if cfg!(target_os = "macos") {
+        t("nativeMenu.quit")
+    } else {
+        t("nativeMenu.exit")
+    };
     let quit = MenuItem::with_id(app, SAFE_QUIT_MENU_ID, quit_text, true, Some("CmdOrCtrl+Q"))?;
     let about_item = PredefinedMenuItem::about(app, Some(&t("nativeMenu.about")), Some(about))?;
 
@@ -58,7 +66,11 @@ pub fn build(app: &AppHandle, language: &str) -> tauri::Result<Menu<Wry>> {
             &PredefinedMenuItem::select_all(app, Some(&t("nativeMenu.selectAll")))?,
         ],
     )?;
-    let maximize_key = if cfg!(target_os = "macos") { "nativeMenu.zoom" } else { "nativeMenu.maximize" };
+    let maximize_key = if cfg!(target_os = "macos") {
+        "nativeMenu.zoom"
+    } else {
+        "nativeMenu.maximize"
+    };
     let window = Submenu::with_id_and_items(
         app,
         WINDOW_SUBMENU_ID,
@@ -104,7 +116,10 @@ pub fn build(app: &AppHandle, language: &str) -> tauri::Result<Menu<Wry>> {
             app,
             t("nativeMenu.view"),
             true,
-            &[&PredefinedMenuItem::fullscreen(app, Some(&t("nativeMenu.fullscreen")))?],
+            &[&PredefinedMenuItem::fullscreen(
+                app,
+                Some(&t("nativeMenu.fullscreen")),
+            )?],
         )?;
         Menu::with_items(app, &[&app_menu, &file, &edit, &view, &window, &help])
     }
