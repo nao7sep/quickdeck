@@ -15,10 +15,8 @@ import {
   readSettingsSets,
   normalizeZoomLevel,
   panesShapeIssues,
-  malformedSettingsSets,
   settingsShapeIssues,
   storedSettingsSets,
-  type StoredSets,
 } from "./normalize";
 import { ZOOM_DEFAULT } from "../utils/zoom";
 import { toastLifetimeMs } from "../utils/toastPolicy";
@@ -132,9 +130,6 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   // start of a save and only flips back to "saved" when the counter has not
   // moved during the save — keeps an edit from being lost in a save race.
   const dirtyCounterRef = useRef(0);
-  // Sets config.json holds in a shape this build cannot read, kept there as the
-  // user left them until the user changes that set.
-  const malformedSetsRef = useRef<StoredSets>({});
 
   useEffect(() => {
     panesRef.current = panes;
@@ -197,7 +192,6 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       setSystemLanguage(loadedSystemLanguage);
       setSystemLocale(data.systemLocale);
       setSettings(loadedSettings);
-      malformedSetsRef.current = data.config === null ? {} : malformedSettingsSets(data.config);
       const loadTranslator = createTranslator(
         effectiveLanguage(loadedSettings.language, loadedSystemLanguage),
       );
@@ -237,7 +231,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       }
 
       for (const issue of data.config === null ? [] : settingsShapeIssues(data.config)) {
-        logWarn("config set ignored", { issue });
+        logWarn("config set read as its built-in", { issue });
       }
 
       const effectiveSettings = loadedSettings;
@@ -522,14 +516,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     try {
       // Every save sends every stored set; the write queue applies them in call
       // order, and the core writes nothing when they equal the file.
-      const stored = storedSettingsSets(settings, malformedSetsRef.current);
-      malformedSetsRef.current = Object.fromEntries(
-        Object.entries(malformedSetsRef.current).filter(
-          ([key, value]) => stored[key as keyof StoredSets] === value,
-        ),
-      );
       await Promise.all([
-        saveConfig(stored),
+        saveConfig(storedSettingsSets(settings)),
         persistState(buildStateFile(activePaneId, zoomLevel)),
         savePanes(buildPanesFile(panes)),
       ]);

@@ -13,10 +13,9 @@ import { normalizeLanguagePreference } from "../i18n/languages";
 import { normalizeThemePreference } from "../utils/theme";
 import { ZOOM_DEFAULT, ZOOM_MAX, ZOOM_MIN } from "../utils/zoom";
 
-// Inclusive bounds for the numeric settings. Single source of truth for the
-// load-path clamp (normalizeSettings), the commit-enable check
-// (isSettingsDraftValid), and the Settings form's input min/max and labels, so
-// the form can never accept a value the load path would silently clamp away.
+// Inclusive bounds for the numeric settings: the Settings form's input min/max
+// and labels, and isSettingsDraftValid, which gates Save and the read of each
+// set (config-sets conventions).
 export const SETTINGS_BOUNDS = {
   editorFontSize: { min: 10, max: 32 },
   editorLineHeight: { min: 1, max: 3 },
@@ -33,11 +32,6 @@ export function clampNumber(value: number, min: number, max: number, fallback: n
   }
 
   return Math.min(max, Math.max(min, value));
-}
-
-function clampSetting(value: number, key: BoundedKey): number {
-  const { min, max } = SETTINGS_BOUNDS[key];
-  return clampNumber(value, min, max, defaultSettings[key]);
 }
 
 function inBounds(value: number, key: BoundedKey): boolean {
@@ -63,6 +57,10 @@ function asBoolean(value: unknown, fallback: boolean): boolean {
   return typeof value === "boolean" ? value : fallback;
 }
 
+function asFiniteNumber(value: unknown, fallback: number): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
 export function normalizeSettings(settings: AppSettings | null): AppSettings {
   if (!settings) {
     return defaultSettings;
@@ -85,14 +83,14 @@ export function normalizeSettings(settings: AppSettings | null): AppSettings {
       typeof settings.editorFontFamily === "string"
         ? singleLine(settings.editorFontFamily)
         : defaultSettings.editorFontFamily,
-    editorFontSize: clampSetting(settings.editorFontSize, "editorFontSize"),
-    editorLineHeight: clampSetting(settings.editorLineHeight, "editorLineHeight"),
-    editorPadding: clampSetting(settings.editorPadding, "editorPadding"),
+    editorFontSize: asFiniteNumber(settings.editorFontSize, defaultSettings.editorFontSize),
+    editorLineHeight: asFiniteNumber(settings.editorLineHeight, defaultSettings.editorLineHeight),
+    editorPadding: asFiniteNumber(settings.editorPadding, defaultSettings.editorPadding),
     editorBold: asBoolean(settings.editorBold, defaultSettings.editorBold),
     editorItalic: asBoolean(settings.editorItalic, defaultSettings.editorItalic),
     editorUnderline: asBoolean(settings.editorUnderline, defaultSettings.editorUnderline),
-    autosaveDelaySeconds: clampSetting(settings.autosaveDelaySeconds, "autosaveDelaySeconds"),
-    snapshotSearchPageSize: clampSetting(settings.snapshotSearchPageSize, "snapshotSearchPageSize"),
+    autosaveDelaySeconds: asFiniteNumber(settings.autosaveDelaySeconds, defaultSettings.autosaveDelaySeconds),
+    snapshotSearchPageSize: asFiniteNumber(settings.snapshotSearchPageSize, defaultSettings.snapshotSearchPageSize),
   };
 }
 
@@ -107,27 +105,27 @@ export function settingsBySet(settings: AppSettings) {
 
 export type ConfigSets = ReturnType<typeof settingsBySet>;
 
-// Set values as config.json holds them, which for a malformed set is whatever
-// the user left there.
-export type StoredSets = Partial<Record<keyof ConfigSets, unknown>>;
+function settingsFromSets({ editorFont, ...scalars }: ConfigSets): AppSettings {
+  return { ...scalars, editorFontFamily: editorFont.family,
+    editorFontSize: editorFont.size, editorLineHeight: editorFont.lineHeight,
+    editorPadding: editorFont.padding, editorBold: editorFont.bold,
+    editorItalic: editorFont.italic, editorUnderline: editorFont.underline };
+}
 
 // What config.json holds for these settings: every set that differs from its
 // built-in, whole. Sets are compared after normalizeSettings, which applies the
-// single-line text cleanup to the font families. A malformed set read at load is
-// kept exactly as the file holds it while the set is still at its built-in, so
-// it stays on disk until the user changes that set.
-export function storedSettingsSets(settings: AppSettings, malformed: StoredSets = {}): StoredSets {
+// single-line text cleanup to the font families.
+export function storedSettingsSets(settings: AppSettings): Partial<ConfigSets> {
   const builtIn = settingsBySet(defaultSettings);
   const sets = settingsBySet(normalizeSettings(settings));
   return Object.fromEntries(
-    (Object.keys(sets) as (keyof ConfigSets)[]).flatMap((key) => {
-      if (JSON.stringify(sets[key]) !== JSON.stringify(builtIn[key])) return [[key, sets[key]]];
-      return key in malformed ? [[key, malformed[key]]] : [];
-    }),
+    (Object.keys(sets) as (keyof ConfigSets)[])
+      .filter((key) => JSON.stringify(sets[key]) !== JSON.stringify(builtIn[key]))
+      .map((key) => [key, sets[key]]),
   );
 }
 
-function validSet(key: keyof ConfigSets, value: unknown): boolean {
+function shapedSet(key: keyof ConfigSets, value: unknown): boolean {
   const builtIn = settingsBySet(defaultSettings)[key];
   if (key === "language") return typeof value === "string" && normalizeLanguagePreference(value) === value;
   if (key === "theme") return typeof value === "string" && normalizeThemePreference(value) === value;
@@ -135,27 +133,26 @@ function validSet(key: keyof ConfigSets, value: unknown): boolean {
     if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
     const source = value as Record<string, unknown>;
     return Object.entries(builtIn as ConfigSets["editorFont"]).every(([member, defaultValue]) =>
-      typeof source[member] === typeof defaultValue &&
-      (typeof defaultValue !== "number" || Number.isFinite(source[member])));
+      typeof source[member] === typeof defaultValue);
   }
-  return typeof value === typeof builtIn && (typeof builtIn !== "number" || Number.isFinite(value));
+  return typeof value === typeof builtIn;
 }
 
-// The present sets whose value has the wrong shape, as the file holds them.
-export function malformedSettingsSets(loaded: Record<string, unknown>): StoredSets {
-  return Object.fromEntries(
-    (Object.keys(settingsBySet(defaultSettings)) as (keyof ConfigSets)[])
-      .filter((key) => key in loaded && !validSet(key, loaded[key]))
-      .map((key) => [key, loaded[key]]),
-  );
+// A set is read only when it passes the check Save applies (config-sets
+// conventions), judged with every other set at its built-in.
+function validSet(key: keyof ConfigSets, value: unknown): boolean {
+  return shapedSet(key, value) &&
+    isSettingsDraftValid(settingsFromSets({ ...settingsBySet(defaultSettings), [key]: value }));
 }
 
 export function settingsShapeIssues(loaded: unknown): string[] {
   if (loaded === null || typeof loaded !== "object" || Array.isArray(loaded)) {
     return ["config is not a JSON object"];
   }
-  return Object.keys(malformedSettingsSets(loaded as Record<string, unknown>))
-    .map((key) => `${key} has an invalid shape`);
+  const source = loaded as Record<string, unknown>;
+  return (Object.keys(settingsBySet(defaultSettings)) as (keyof ConfigSets)[])
+    .filter((key) => key in source && !validSet(key, source[key]))
+    .map((key) => `${key} is invalid`);
 }
 
 export function readSettingsSets(loaded: unknown): AppSettings {
@@ -167,11 +164,7 @@ export function readSettingsSets(loaded: unknown): AppSettings {
       Object.assign(sets, { [key]: source[key] });
     }
   }
-  const { editorFont, ...scalars } = sets;
-  return normalizeSettings({ ...scalars, editorFontFamily: editorFont.family,
-    editorFontSize: editorFont.size, editorLineHeight: editorFont.lineHeight,
-    editorPadding: editorFont.padding, editorBold: editorFont.bold,
-    editorItalic: editorFont.italic, editorUnderline: editorFont.underline });
+  return normalizeSettings(settingsFromSets(sets));
 }
 
 // Shape failures in a loaded panes.json — the store that carries the user's TEXT, so a

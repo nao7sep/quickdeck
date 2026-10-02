@@ -1,4 +1,4 @@
-import type { StoredSets } from "../state/normalize";
+import type { ConfigSets } from "../state/normalize";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import type { Pane, SnapshotTrigger } from "../types";
 
@@ -130,11 +130,11 @@ function makeWriteQueue<T>(command: string): (payload: T) => Promise<void> {
   };
 }
 
-const enqueueConfigWrite = makeWriteQueue<{ config: StoredSets }>("save_config");
+const enqueueConfigWrite = makeWriteQueue<{ config: Partial<ConfigSets> }>("save_config");
 const enqueueStateWrite = makeWriteQueue<{ state: StateFile }>("save_state");
 const enqueuePanesWrite = makeWriteQueue<{ panes: PanesFile }>("save_panes");
 
-export async function saveConfig(config: StoredSets): Promise<void> {
+export async function saveConfig(config: Partial<ConfigSets>): Promise<void> {
   if (!isTauri()) {
     return;
   }

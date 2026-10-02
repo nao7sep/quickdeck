@@ -3,6 +3,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useI18n } from "../../src/i18n/I18nContext";
 import { AppStateProvider, useAppState } from "../../src/state/AppStateContext";
+import { defaultSettings } from "../../src/state/defaults";
 import type { LoadedAppData } from "../../src/services/persistence";
 
 const persistence = vi.hoisted(() => ({
@@ -241,19 +242,17 @@ it("sends every set that differs from its built-in on each save", async () => {
   expect(persistence.saveConfig).toHaveBeenLastCalledWith({ zen: true });
 });
 
-it("keeps a malformed set on disk until the user changes it, then applies the normal rule", async () => {
-  persistence.loadAppData.mockResolvedValue(loadedAppData({ config: { zen: "yes", topmost: true } }));
+it("reads an invalid set as its built-in and drops it from the file at the next save", async () => {
+  persistence.loadAppData.mockResolvedValue(
+    loadedAppData({ config: { zen: "yes", autosaveDelaySeconds: 0, topmost: true } }),
+  );
   let state: ReturnType<typeof useAppState>;
   function Probe() { state = useAppState(); return null; }
   const host = document.createElement("div");
   root = createRoot(host);
   await act(async () => { root?.render(<AppStateProvider><Probe /></AppStateProvider>); });
-  await act(async () => { await state!.saveNow(); });
-  expect(persistence.saveConfig).toHaveBeenLastCalledWith({ zen: "yes", topmost: true });
-  await act(async () => { state!.updateSettings({ ...state!.settings, zen: true }); });
-  await act(async () => { await state!.saveNow(); });
-  expect(persistence.saveConfig).toHaveBeenLastCalledWith({ zen: true, topmost: true });
-  await act(async () => { state!.updateSettings({ ...state!.settings, zen: false }); });
+  expect(state!.settings).toEqual({ ...defaultSettings, topmost: true });
+  expect(persistence.saveConfig).not.toHaveBeenCalled();
   await act(async () => { await state!.saveNow(); });
   expect(persistence.saveConfig).toHaveBeenLastCalledWith({ topmost: true });
 });

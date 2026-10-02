@@ -11,7 +11,6 @@ import {
   settingsBySet,
   readSettingsSets,
   storedSettingsSets,
-  malformedSettingsSets,
 } from "../../src/state/normalize";
 import { DEFAULT_EDITOR_FONT_FAMILY_STACK, defaultSettings } from "../../src/state/defaults";
 import { ZOOM_DEFAULT, ZOOM_MAX, ZOOM_MIN } from "../../src/utils/zoom";
@@ -42,28 +41,6 @@ describe("normalizeSettings", () => {
     expect(result.zen).toBe(true);
     expect(result.editorFontFamily).toBe(defaultSettings.editorFontFamily);
     expect(result.editorFontSize).toBe(defaultSettings.editorFontSize);
-  });
-
-  it("clamps numeric settings to their allowed ranges", () => {
-    const result = normalizeSettings({
-      ...defaultSettings,
-      editorFontSize: 100,
-      autosaveDelaySeconds: 0,
-      snapshotSearchPageSize: 9999,
-    });
-    expect(result.editorFontSize).toBe(32);
-    expect(result.autosaveDelaySeconds).toBe(1);
-    expect(result.snapshotSearchPageSize).toBe(200);
-
-    const low = normalizeSettings({
-      ...defaultSettings,
-      editorFontSize: 2,
-      autosaveDelaySeconds: 999,
-      snapshotSearchPageSize: 1,
-    });
-    expect(low.editorFontSize).toBe(10);
-    expect(low.autosaveDelaySeconds).toBe(60);
-    expect(low.snapshotSearchPageSize).toBe(5);
   });
 
   it("falls back when a numeric setting is not finite", () => {
@@ -167,16 +144,12 @@ describe("normalizeSettings", () => {
     ).toBe(defaultSettings.uiFontFamily);
   });
 
-  it("clamps editor line-height and padding, and coerces the style toggles", () => {
+  it("coerces the style toggles", () => {
     const r = normalizeSettings({
       ...defaultSettings,
-      editorLineHeight: 9,
-      editorPadding: -5,
       editorBold: true,
       editorItalic: "yes" as unknown as boolean,
     });
-    expect(r.editorLineHeight).toBe(SETTINGS_BOUNDS.editorLineHeight.max);
-    expect(r.editorPadding).toBe(SETTINGS_BOUNDS.editorPadding.min);
     expect(r.editorBold).toBe(true);
     expect(r.editorItalic).toBe(defaultSettings.editorItalic); // non-boolean → default
     expect(r.editorUnderline).toBe(false);
@@ -242,32 +215,30 @@ describe("isSettingsDraftValid", () => {
   });
 });
 
-// The form (isSettingsDraftValid + input min/max) and the load path
-// (normalizeSettings clamp) read the same SETTINGS_BOUNDS, so they can never
-// disagree about what is acceptable. This guards against the form accepting a
-// value the load path would silently clamp away on the next launch.
-describe("SETTINGS_BOUNDS agreement between validation and clamping", () => {
-  const keys = ["editorFontSize", "autosaveDelaySeconds", "snapshotSearchPageSize"] as const;
+// Save (isSettingsDraftValid) and the read of config.json accept the same
+// values, so a launch reads exactly what the form could have saved.
+describe("SETTINGS_BOUNDS agreement between Save and read", () => {
+  const keys = Object.keys(SETTINGS_BOUNDS) as (keyof typeof SETTINGS_BOUNDS)[];
 
   for (const key of keys) {
     const { min, max } = SETTINGS_BOUNDS[key];
 
-    it(`treats ${key} at its max as valid and leaves it unchanged`, () => {
+    it(`saves and reads ${key} at its max`, () => {
       const draft = { ...defaultSettings, [key]: max };
       expect(isSettingsDraftValid(draft)).toBe(true);
-      expect(normalizeSettings(draft)[key]).toBe(max);
+      expect(readSettingsSets(storedSettingsSets(draft))[key]).toBe(max);
     });
 
-    it(`rejects ${key} above its max and clamps it to the same max`, () => {
+    it(`rejects ${key} above its max and reads that set as its built-in`, () => {
       const draft = { ...defaultSettings, [key]: max + 1 };
       expect(isSettingsDraftValid(draft)).toBe(false);
-      expect(normalizeSettings(draft)[key]).toBe(max);
+      expect(readSettingsSets(storedSettingsSets(draft))).toEqual(defaultSettings);
     });
 
-    it(`rejects ${key} below its min and clamps it to the same min`, () => {
+    it(`rejects ${key} below its min and reads that set as its built-in`, () => {
       const draft = { ...defaultSettings, [key]: min - 1 };
       expect(isSettingsDraftValid(draft)).toBe(false);
-      expect(normalizeSettings(draft)[key]).toBe(min);
+      expect(readSettingsSets(storedSettingsSets(draft))).toEqual(defaultSettings);
     });
   }
 });
@@ -326,12 +297,13 @@ describe("settingsShapeIssues", () => {
     expect(settingsShapeIssues({ zen: true })).toEqual([]);
   });
 
-  it("flags wrong-typed present fields — the corrupt branch, never a coerce-and-flush", () => {
-    expect(settingsShapeIssues({ ...defaultSettings, theme: true })).toEqual(["theme has an invalid shape"]);
+  it("flags wrong-typed and out-of-range present sets", () => {
+    expect(settingsShapeIssues({ ...defaultSettings, theme: true })).toEqual(["theme is invalid"]);
+    expect(settingsShapeIssues({ autosaveDelaySeconds: 0 })).toEqual(["autosaveDelaySeconds is invalid"]);
     // The retired "dark" key is an unknown key, dropped rather than treated as corruption.
     expect(settingsShapeIssues({ ...defaultSettings, dark: true })).toEqual([]);
     expect(settingsShapeIssues({ ...defaultSettings, editorFont: { size: "14" } })).toContain(
-      "editorFont has an invalid shape",
+      "editorFont is invalid",
     );
     expect(settingsShapeIssues("not an object")).toEqual(["config is not a JSON object"]);
     expect(settingsShapeIssues(null)).toEqual(["config is not a JSON object"]);
@@ -403,18 +375,9 @@ describe("config sets", () => {
     expect(storedSettingsSets(changed)).toEqual({ zen: true, topmost: true });
     expect(storedSettingsSets({ ...changed, zen: false })).toEqual({ topmost: true });
   });
-  it("names the malformed sets with their values as the file holds them", () => {
-    expect(
-      malformedSettingsSets({ zen: "yes", topmost: true, editorFont: { size: "14" }, retired: 1 }),
-    ).toEqual({ zen: "yes", editorFont: { size: "14" } });
-  });
-  it("keeps a malformed set as the file holds it until the user changes that set", () => {
-    const malformed = { zen: "yes", editorFont: { size: "14" } };
-    expect(storedSettingsSets(defaultSettings, malformed)).toEqual(malformed);
-    expect(storedSettingsSets({ ...defaultSettings, zen: true }, malformed)).toEqual({
-      zen: true,
-      editorFont: { size: "14" },
-    });
+  it("reads a set with any member out of range as its built-in, never clamped", () => {
+    const editorFont = { ...settingsBySet(defaultSettings).editorFont, bold: true, size: 99 };
+    expect(readSettingsSets({ editorFont, zen: true })).toEqual({ ...defaultSettings, zen: true });
   });
   it("compares text after single-line cleanup", () => {
     expect(storedSettingsSets({ ...defaultSettings, uiFontFamily: " \n " })).toEqual({});
