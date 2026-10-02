@@ -18,9 +18,19 @@ use i18n::LanguageState;
 use menu::SAFE_QUIT_MENU_ID;
 use tauri::{AppHandle, Manager, RunEvent, State};
 
+// File, database and clipboard work runs on a blocking thread, per the
+// PLAYBOOK's "Own the work in flight".
+async fn off_main_thread<T: Send + 'static>(
+    work: impl FnOnce() -> Result<T, String> + Send + 'static,
+) -> Result<T, String> {
+    tauri::async_runtime::spawn_blocking(work)
+        .await
+        .map_err(|error| error.to_string())?
+}
+
 #[tauri::command]
 async fn load_app_data(app: AppHandle) -> Result<LoadedAppData, String> {
-    tauri::async_runtime::spawn_blocking(move || {
+    off_main_thread(move || {
         archive::wait_for_launch(&app.state::<archive::ArchiveRun>());
         let language = app.state::<LanguageState>();
         logging::boundary(
@@ -50,7 +60,6 @@ async fn load_app_data(app: AppHandle) -> Result<LoadedAppData, String> {
         )
     })
     .await
-    .map_err(|error| error.to_string())?
 }
 
 #[tauri::command]
@@ -98,146 +107,179 @@ fn apply_language(
 // Sets equal to the file write nothing and log nothing, so every autosave can
 // send them; only an actual write crosses the logged boundary.
 #[tauri::command]
-fn save_config(app: AppHandle, config: JsonValue) -> Result<(), String> {
-    let data_dir = paths::app_data_dir(&app)?;
-    match storage::config_to_write(&data_dir, config)? {
-        Some(config) => logging::boundary(
-            "save_config",
+async fn save_config(app: AppHandle, config: JsonValue) -> Result<(), String> {
+    off_main_thread(move || {
+        let data_dir = paths::app_data_dir(&app)?;
+        match storage::config_to_write(&data_dir, config)? {
+            Some(config) => logging::boundary(
+                "save_config",
+                json!({}),
+                || storage::write_config(&data_dir, &config),
+                |_| json!({}),
+            ),
+            None => Ok(()),
+        }
+    })
+    .await
+}
+
+#[tauri::command]
+async fn save_state(app: AppHandle, state: JsonValue) -> Result<(), String> {
+    off_main_thread(move || {
+        logging::boundary(
+            "save_state",
             json!({}),
-            || storage::write_config(&data_dir, &config),
+            || storage::save_state(&app, state),
             |_| json!({}),
-        ),
-        None => Ok(()),
-    }
+        )
+    })
+    .await
 }
 
 #[tauri::command]
-fn save_state(app: AppHandle, state: JsonValue) -> Result<(), String> {
-    logging::boundary(
-        "save_state",
-        json!({}),
-        || storage::save_state(&app, state),
-        |_| json!({}),
-    )
+async fn save_panes(app: AppHandle, panes: JsonValue) -> Result<(), String> {
+    off_main_thread(move || {
+        logging::boundary(
+            "save_panes",
+            json!({}),
+            || storage::save_panes(&app, panes),
+            |_| json!({}),
+        )
+    })
+    .await
 }
 
 #[tauri::command]
-fn save_panes(app: AppHandle, panes: JsonValue) -> Result<(), String> {
-    logging::boundary(
-        "save_panes",
-        json!({}),
-        || storage::save_panes(&app, panes),
-        |_| json!({}),
-    )
+async fn quarantine_corrupt_panes(app: AppHandle) -> Result<String, String> {
+    off_main_thread(move || {
+        logging::boundary(
+            "quarantine_corrupt_panes",
+            json!({}),
+            || storage::quarantine_corrupt_panes(&app),
+            |quarantined| json!({ "quarantinedTo": quarantined }),
+        )
+    })
+    .await
 }
 
 #[tauri::command]
-fn quarantine_corrupt_panes(app: AppHandle) -> Result<String, String> {
-    logging::boundary(
-        "quarantine_corrupt_panes",
-        json!({}),
-        || storage::quarantine_corrupt_panes(&app),
-        |quarantined| json!({ "quarantinedTo": quarantined }),
-    )
-}
-
-#[tauri::command]
-fn create_snapshot(
+async fn create_snapshot(
     app: AppHandle,
     pane_id: String,
     pane_title: String,
     trigger: String,
     content: String,
 ) -> Result<SnapshotWriteResult, String> {
-    // Summarize, don't dump: log the content's length, never its text.
-    let params = json!({ "paneId": pane_id.clone(), "trigger": trigger.clone(), "contentLen": content.len() });
-    logging::boundary(
-        "create_snapshot",
-        params,
-        move || storage::create_snapshot(&app, pane_id, pane_title, trigger, content),
-        |result| json!({ "inserted": result.inserted, "snapshotId": result.id }),
-    )
+    off_main_thread(move || {
+        // Summarize, don't dump: log the content's length, never its text.
+        let params = json!({ "paneId": pane_id.clone(), "trigger": trigger.clone(), "contentLen": content.len() });
+        logging::boundary(
+            "create_snapshot",
+            params,
+            move || storage::create_snapshot(&app, pane_id, pane_title, trigger, content),
+            |result| json!({ "inserted": result.inserted, "snapshotId": result.id }),
+        )
+    })
+    .await
 }
 
 #[tauri::command]
-fn create_snapshots(
+async fn create_snapshots(
     app: AppHandle,
     snapshots: Vec<SnapshotInput>,
 ) -> Result<Vec<SnapshotWriteResult>, String> {
-    let count = snapshots.len();
-    logging::boundary(
-        "create_snapshots",
-        json!({ "count": count }),
-        move || storage::create_snapshots(&app, snapshots),
-        |results| {
-            json!({
-                "count": results.len(),
-                "inserted": results.iter().filter(|result| result.inserted).count(),
-            })
-        },
-    )
+    off_main_thread(move || {
+        let count = snapshots.len();
+        logging::boundary(
+            "create_snapshots",
+            json!({ "count": count }),
+            move || storage::create_snapshots(&app, snapshots),
+            |results| {
+                json!({
+                    "count": results.len(),
+                    "inserted": results.iter().filter(|result| result.inserted).count(),
+                })
+            },
+        )
+    })
+    .await
 }
 
 #[tauri::command]
-fn list_snapshots(
+async fn list_snapshots(
     app: AppHandle,
     query: String,
     limit: u32,
     offset: u32,
 ) -> Result<SnapshotListResult, String> {
-    // The query is the user's own search text; log its length, not its content.
-    let params = json!({ "queryLen": query.len(), "limit": limit, "offset": offset });
-    logging::boundary(
-        "list_snapshots",
-        params,
-        move || storage::list_snapshots(&app, query, limit, offset),
-        |result| json!({ "rows": result.rows.len(), "hasMore": result.has_more }),
-    )
+    off_main_thread(move || {
+        // The query is the user's own search text; log its length, not its content.
+        let params = json!({ "queryLen": query.len(), "limit": limit, "offset": offset });
+        logging::boundary(
+            "list_snapshots",
+            params,
+            move || storage::list_snapshots(&app, query, limit, offset),
+            |result| json!({ "rows": result.rows.len(), "hasMore": result.has_more }),
+        )
+    })
+    .await
 }
 
 // Puts a snapshot's text on the system clipboard. The text is the user's own
 // writing, so only its length is logged.
 #[tauri::command]
-fn copy_text(text: String) -> Result<(), String> {
-    logging::boundary(
-        "copy_text",
-        json!({ "textLen": text.len() }),
-        move || {
-            let mut clipboard = arboard::Clipboard::new().map_err(|error| error.to_string())?;
-            clipboard.set_text(text).map_err(|error| error.to_string())
-        },
-        |_| json!({}),
-    )
+async fn copy_text(text: String) -> Result<(), String> {
+    off_main_thread(move || {
+        logging::boundary(
+            "copy_text",
+            json!({ "textLen": text.len() }),
+            move || {
+                let mut clipboard = arboard::Clipboard::new().map_err(|error| error.to_string())?;
+                clipboard.set_text(text).map_err(|error| error.to_string())
+            },
+            |_| json!({}),
+        )
+    })
+    .await
 }
 
 #[tauri::command]
-fn count_snapshots(app: AppHandle) -> Result<u64, String> {
-    logging::boundary(
-        "count_snapshots",
-        json!({}),
-        || storage::count_snapshots(&app),
-        |count| json!({ "count": count }),
-    )
+async fn count_snapshots(app: AppHandle) -> Result<u64, String> {
+    off_main_thread(move || {
+        logging::boundary(
+            "count_snapshots",
+            json!({}),
+            || storage::count_snapshots(&app),
+            |count| json!({ "count": count }),
+        )
+    })
+    .await
 }
 
 #[tauri::command]
-fn delete_snapshot(app: AppHandle, id: String) -> Result<bool, String> {
-    logging::boundary(
-        "delete_snapshot",
-        json!({ "snapshotId": id.clone() }),
-        move || storage::delete_snapshot(&app, id),
-        |removed| json!({ "removed": removed }),
-    )
+async fn delete_snapshot(app: AppHandle, id: String) -> Result<bool, String> {
+    off_main_thread(move || {
+        logging::boundary(
+            "delete_snapshot",
+            json!({ "snapshotId": id.clone() }),
+            move || storage::delete_snapshot(&app, id),
+            |removed| json!({ "removed": removed }),
+        )
+    })
+    .await
 }
 
 #[tauri::command]
-fn delete_all_snapshots(app: AppHandle) -> Result<u64, String> {
-    logging::boundary(
-        "delete_all_snapshots",
-        json!({}),
-        || storage::delete_all_snapshots(&app),
-        |count| json!({ "count": count }),
-    )
+async fn delete_all_snapshots(app: AppHandle) -> Result<u64, String> {
+    off_main_thread(move || {
+        logging::boundary(
+            "delete_all_snapshots",
+            json!({}),
+            || storage::delete_all_snapshots(&app),
+            |count| json!({ "count": count }),
+        )
+    })
+    .await
 }
 
 // Receives a structured log object from the sandboxed webview and records it.

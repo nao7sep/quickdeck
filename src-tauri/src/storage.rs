@@ -5,7 +5,10 @@ use std::{
 };
 
 use chrono::{SecondsFormat, Utc};
-use rusqlite::{params, params_from_iter, types::Value, Connection, OptionalExtension};
+use rusqlite::{
+    params, params_from_iter, types::Value, Connection, OptionalExtension, Transaction,
+    TransactionBehavior,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use sha2::{Digest, Sha256};
@@ -237,7 +240,7 @@ pub fn create_snapshots(
 ) -> Result<Vec<SnapshotWriteResult>, String> {
     let data_dir = app_data_dir(app)?;
     let mut conn = open_snapshot_db(&data_dir)?;
-    let transaction = conn.transaction().map_err(to_string_error)?;
+    let transaction = begin_snapshot_write(&mut conn)?;
     let results = snapshots
         .into_iter()
         .map(|snapshot| create_snapshot_with_connection(&transaction, snapshot))
@@ -324,8 +327,19 @@ fn create_snapshot_from_input(
     }
 
     let data_dir = app_data_dir(app)?;
-    let conn = open_snapshot_db(&data_dir)?;
-    create_snapshot_with_connection(&conn, snapshot)
+    let mut conn = open_snapshot_db(&data_dir)?;
+    let transaction = begin_snapshot_write(&mut conn)?;
+    let result = create_snapshot_with_connection(&transaction, snapshot)?;
+    transaction.commit().map_err(to_string_error)?;
+    Ok(result)
+}
+
+// Snapshot commands run concurrently, so a write takes SQLite's write lock before
+// its duplicate check: two copies of the same text then cannot both pass the
+// check and collide on the unique index.
+fn begin_snapshot_write(conn: &mut Connection) -> Result<Transaction<'_>, String> {
+    conn.transaction_with_behavior(TransactionBehavior::Immediate)
+        .map_err(to_string_error)
 }
 
 fn create_snapshot_with_connection(

@@ -192,6 +192,32 @@ fn batch_insert_dedupes_within_transaction() {
     assert_eq!(count_rows(&conn), 2);
 }
 
+#[test]
+fn concurrent_writes_of_the_same_copy_store_it_once_without_failing() {
+    let dir = tempfile::tempdir().unwrap();
+    let start = std::sync::Arc::new(std::sync::Barrier::new(8));
+    let writers: Vec<_> = (0..8)
+        .map(|_| {
+            let data_dir = dir.path().to_path_buf();
+            let start = start.clone();
+            std::thread::spawn(move || {
+                let mut conn = open_snapshot_db(&data_dir)?;
+                start.wait();
+                let transaction = begin_snapshot_write(&mut conn)?;
+                let result = create_snapshot_with_connection(&transaction, input("p1", "same"))?;
+                transaction.commit().map_err(to_string_error)?;
+                Ok::<_, String>(result)
+            })
+        })
+        .collect();
+    let results: Vec<_> = writers
+        .into_iter()
+        .map(|writer| writer.join().unwrap().unwrap())
+        .collect();
+    assert_eq!(results.iter().filter(|result| result.inserted).count(), 1);
+    assert!(results.iter().all(|result| result.id == results[0].id));
+}
+
 // --- hashing & LIKE escaping -------------------------------------------
 
 #[test]
