@@ -1,9 +1,5 @@
 use super::*;
 
-fn denied() -> HashSet<String> {
-    default_denied_keys()
-}
-
 fn map(value: Value) -> Map<String, Value> {
     into_map(value)
 }
@@ -43,55 +39,12 @@ fn only_info_is_buffered() {
 }
 
 #[test]
-fn redact_replaces_matched_keys_case_insensitively() {
-    let mut fields = map(json!({
-        "Token": "abc",
-        "PASSWORD": "hunter2",
-        "apiKey": "sk-1",
-        "user": "alice",
-    }));
-    redact_map(&mut fields, &denied());
-    assert_eq!(fields["Token"], json!("[redacted]"));
-    assert_eq!(fields["PASSWORD"], json!("[redacted]"));
-    assert_eq!(fields["apiKey"], json!("[redacted]"));
-    // Non-denied fields are untouched, byte-identical.
-    assert_eq!(fields["user"], json!("alice"));
-}
-
-#[test]
-fn redact_never_matches_substrings() {
-    let mut fields = map(json!({
-        "tokenCount": 42,
-        "broken": true,
-        "passwordless": "ok",
-    }));
-    redact_map(&mut fields, &denied());
-    assert_eq!(fields["tokenCount"], json!(42));
-    assert_eq!(fields["broken"], json!(true));
-    assert_eq!(fields["passwordless"], json!("ok"));
-}
-
-#[test]
-fn redact_recurses_objects_and_arrays() {
-    let mut fields = map(json!({
-        "outer": { "secret": "x", "keep": 1 },
-        "list": [ { "token": "t" }, { "fine": "y" } ],
-    }));
-    redact_map(&mut fields, &denied());
-    assert_eq!(fields["outer"]["secret"], json!("[redacted]"));
-    assert_eq!(fields["outer"]["keep"], json!(1));
-    assert_eq!(fields["list"][0]["token"], json!("[redacted]"));
-    assert_eq!(fields["list"][1]["fine"], json!("y"));
-}
-
-#[test]
 fn build_line_starts_with_envelope_in_order() {
     let line = build_line(
         Level::Info,
         "hello",
         "2026-01-01T00:00:00.000Z",
         map(json!({ "op": "load" })),
-        &denied(),
     );
     assert!(
         line.starts_with(
@@ -109,7 +62,6 @@ fn build_line_preserves_fields_that_collide_with_the_envelope() {
         "real message",
         "2026-01-01T00:00:00.000Z",
         map(json!({ "message": "spoofed", "level": "debug", "ok": true })),
-        &denied(),
     );
     let parsed: Value = serde_json::from_str(&line).unwrap();
     // The envelope stays authoritative...
@@ -122,27 +74,12 @@ fn build_line_preserves_fields_that_collide_with_the_envelope() {
 }
 
 #[test]
-fn build_line_applies_redaction() {
-    let line = build_line(
-        Level::Error,
-        "boom",
-        "2026-01-01T00:00:00.000Z",
-        map(json!({ "password": "p", "context": "save" })),
-        &denied(),
-    );
-    let parsed: Value = serde_json::from_str(&line).unwrap();
-    assert_eq!(parsed["password"], json!("[redacted]"));
-    assert_eq!(parsed["context"], json!("save"));
-}
-
-#[test]
 fn build_line_emits_one_physical_line_for_multiline_values() {
     let line = build_line(
         Level::Info,
         "multi",
         "2026-01-01T00:00:00.000Z",
         map(json!({ "detail": "line one\nline two" })),
-        &denied(),
     );
     // The JSON escapes the newline, so the serialized line has none.
     assert!(!line.contains('\n'), "line contained a raw newline: {line}");

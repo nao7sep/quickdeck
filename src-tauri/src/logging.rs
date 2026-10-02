@@ -4,11 +4,10 @@
 //! The privileged Rust core owns the file; the sandboxed webview forwards
 //! structured log objects via the `log_event` command (see `lib.rs`). Each line
 //! is one JSON object with a fixed envelope (`time`, `level`, `message`) plus
-//! free fields. Hand-rolled on purpose so flush, level-gating, redaction, and
-//! console fallback behave exactly as the logging convention prescribes.
+//! free fields. Hand-rolled on purpose so flush, level-gating, and console
+//! fallback behave exactly as the logging convention prescribes.
 
 use std::{
-    collections::HashSet,
     fs::{File, OpenOptions},
     io::{BufWriter, Write},
     sync::{Mutex, OnceLock},
@@ -67,20 +66,10 @@ enum Sink {
 
 struct Logger {
     sink: Mutex<Sink>,
-    // Denied field names, stored lowercased for exact case-insensitive matching.
-    denied: HashSet<String>,
     debug_enabled: bool,
 }
 
 static LOGGER: OnceLock<Logger> = OnceLock::new();
-
-// Seeded with the obvious secret-bearing names; extend here as needed.
-fn default_denied_keys() -> HashSet<String> {
-    ["apikey", "authorization", "token", "password", "secret"]
-        .into_iter()
-        .map(String::from)
-        .collect()
-}
 
 // Opens this launch's session log, installs the panic hook, and writes the
 // startup line. Safe to call once; later calls are ignored. Never fails the app:
@@ -104,7 +93,6 @@ pub fn init(app: &AppHandle, version: &str) {
 
     let logger = Logger {
         sink: Mutex::new(sink),
-        denied: default_denied_keys(),
         debug_enabled,
     };
 
@@ -251,7 +239,7 @@ fn write_event(level: Level, message: &str, time: String, fields: Map<String, Va
         return;
     }
 
-    let line = build_line(level, message, &time, fields, &logger.denied);
+    let line = build_line(level, message, &time, fields);
     if line.is_empty() {
         return;
     }
@@ -264,18 +252,15 @@ fn write_event(level: Level, message: &str, time: String, fields: Map<String, Va
     write_line(&mut sink, &line, level.flush_immediately());
 }
 
-// Pure: redact, then serialize one JSON line with the envelope first
+// Pure: serialize one JSON line with the envelope first
 // (time, level, message) followed by the free fields. serde_json's
 // preserve_order feature keeps this insertion order in the output.
 fn build_line(
     level: Level,
     message: &str,
     time: &str,
-    mut fields: Map<String, Value>,
-    denied: &HashSet<String>,
+    fields: Map<String, Value>,
 ) -> String {
-    redact_map(&mut fields, denied);
-
     let mut obj = Map::new();
     obj.insert("time".to_string(), Value::String(time.to_string()));
     obj.insert("level".to_string(), Value::String(level.as_str().to_string()));
@@ -341,34 +326,6 @@ pub fn flush() {
         };
         if let Sink::File(writer) = &mut *sink {
             let _ = writer.flush();
-        }
-    }
-}
-
-// --- Redaction -----------------------------------------------------------------
-
-// Non-destructive, type-preserving redaction. Matches denied field names by
-// exact, case-insensitive name (never substring), replaces only the matched
-// value with "[redacted]", recurses into nested objects and arrays, never scans
-// string contents, and cannot drop fields or throw.
-fn redact(value: &mut Value, denied: &HashSet<String>) {
-    match value {
-        Value::Object(map) => redact_map(map, denied),
-        Value::Array(items) => {
-            for item in items {
-                redact(item, denied);
-            }
-        }
-        _ => {}
-    }
-}
-
-fn redact_map(map: &mut Map<String, Value>, denied: &HashSet<String>) {
-    for (key, value) in map.iter_mut() {
-        if denied.contains(&key.to_ascii_lowercase()) {
-            *value = Value::String("[redacted]".to_string());
-        } else {
-            redact(value, denied);
         }
     }
 }

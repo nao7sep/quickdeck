@@ -93,19 +93,6 @@ describe("serializeError", () => {
 });
 
 describe("buildConsoleObject", () => {
-  it("redacts denied field names, including nested ones, before output", () => {
-    const out = buildConsoleObject(
-      buildLogEvent("error", "save failed", {
-        password: "hunter2",
-        context: { token: "sk-1", retries: 2 },
-      }),
-    );
-    expect(out.password).toBe("[redacted]");
-    expect((out.context as Record<string, unknown>).token).toBe("[redacted]");
-    // Non-denied siblings are preserved.
-    expect((out.context as Record<string, unknown>).retries).toBe(2);
-  });
-
   it("keeps the envelope authoritative and preserves colliding fields (suffixed)", () => {
     const out = buildConsoleObject(
       buildLogEvent("warn", "real message", { message: "spoofed", ok: true }),

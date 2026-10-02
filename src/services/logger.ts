@@ -22,17 +22,6 @@ export type LogEvent = {
 // field under a suffixed name.
 const ENVELOPE_KEYS: ReadonlySet<string> = new Set(["time", "level", "message"]);
 
-// Field names whose values are replaced before a line is written. Mirror of the
-// Rust denied set in src-tauri/src/logging.rs — kept in sync deliberately, since
-// each writer (the Rust file sink, this console fallback) redacts its own output.
-const REDACTED_KEYS: ReadonlySet<string> = new Set([
-  "apikey",
-  "authorization",
-  "token",
-  "password",
-  "secret",
-]);
-
 // Cause chains are short in practice; this only bounds pathological input.
 const MAX_CAUSE_DEPTH = 16;
 
@@ -87,36 +76,17 @@ export function buildLogEvent(level: LogLevel, message: string, fields?: LogFiel
   };
 }
 
-// Non-destructive, type-preserving redaction: replaces the value of any field
-// whose name matches REDACTED_KEYS (exact, case-insensitive), recurses through
-// nested objects and arrays, and never scans string contents. Mirrors the Rust
-// redactor's contract for the console sink.
-function redactValue(value: unknown): unknown {
-  if (Array.isArray(value)) {
-    return value.map(redactValue);
-  }
-  if (value !== null && typeof value === "object") {
-    const out: Record<string, unknown> = {};
-    for (const [key, inner] of Object.entries(value as Record<string, unknown>)) {
-      out[key] = REDACTED_KEYS.has(key.toLowerCase()) ? "[redacted]" : redactValue(inner);
-    }
-    return out;
-  }
-  return value;
-}
-
-// Pure: the flattened, redacted object a console line carries — envelope first,
+// Pure: the flattened object a console line carries — envelope first,
 // then the free fields, with any field colliding with an envelope key preserved
 // under a suffixed name. Mirrors the Rust build_line shape so the console and
 // file sinks agree on every event.
 export function buildConsoleObject(event: LogEvent): Record<string, unknown> {
-  const redacted = redactValue(event.fields) as LogFields;
   const out: Record<string, unknown> = {
     time: event.time,
     level: event.level,
     message: event.message,
   };
-  for (const [key, value] of Object.entries(redacted)) {
+  for (const [key, value] of Object.entries(event.fields)) {
     out[ENVELOPE_KEYS.has(key) ? `${key}_` : key] = value;
   }
   return out;
