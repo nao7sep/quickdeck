@@ -41,7 +41,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
 
   function save() {
     // Reuse the load-path normalizer so the form and disk agree on the canonical
-    // shape (trimmed font, clamped bounds).
+    // shape.
     updateSettings(normalizeSettings(draft));
     onClose();
   }

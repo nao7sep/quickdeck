@@ -53,44 +53,24 @@ export function isSettingsDraftValid(draft: AppSettings): boolean {
   );
 }
 
-function asBoolean(value: unknown, fallback: boolean): boolean {
-  return typeof value === "boolean" ? value : fallback;
-}
-
-function asFiniteNumber(value: unknown, fallback: number): number {
-  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
-}
-
-export function normalizeSettings(settings: AppSettings | null): AppSettings {
-  if (!settings) {
-    return defaultSettings;
-  }
-
-  // Build the result from known keys only, in the canonical field order, so a
-  // stray key on the input never reaches the in-memory settings.
+// Callers pass values that already passed isSettingsDraftValid; this keeps the
+// canonical key order and cleans the font families (text-cleanup conventions).
+export function normalizeSettings(settings: AppSettings): AppSettings {
   return {
-    language: normalizeLanguagePreference(settings.language),
-    theme: normalizeThemePreference(settings.theme),
-    zen: asBoolean(settings.zen, defaultSettings.zen),
-    topmost: asBoolean(settings.topmost, defaultSettings.topmost),
-    // Both font families are free text and may be blank (blank = the built-in stack), so only a
-    // non-string reverts to the default.
-    uiFontFamily:
-      typeof settings.uiFontFamily === "string"
-        ? singleLine(settings.uiFontFamily)
-        : defaultSettings.uiFontFamily,
-    editorFontFamily:
-      typeof settings.editorFontFamily === "string"
-        ? singleLine(settings.editorFontFamily)
-        : defaultSettings.editorFontFamily,
-    editorFontSize: asFiniteNumber(settings.editorFontSize, defaultSettings.editorFontSize),
-    editorLineHeight: asFiniteNumber(settings.editorLineHeight, defaultSettings.editorLineHeight),
-    editorPadding: asFiniteNumber(settings.editorPadding, defaultSettings.editorPadding),
-    editorBold: asBoolean(settings.editorBold, defaultSettings.editorBold),
-    editorItalic: asBoolean(settings.editorItalic, defaultSettings.editorItalic),
-    editorUnderline: asBoolean(settings.editorUnderline, defaultSettings.editorUnderline),
-    autosaveDelaySeconds: asFiniteNumber(settings.autosaveDelaySeconds, defaultSettings.autosaveDelaySeconds),
-    snapshotSearchPageSize: asFiniteNumber(settings.snapshotSearchPageSize, defaultSettings.snapshotSearchPageSize),
+    language: settings.language,
+    theme: settings.theme,
+    zen: settings.zen,
+    topmost: settings.topmost,
+    uiFontFamily: singleLine(settings.uiFontFamily),
+    editorFontFamily: singleLine(settings.editorFontFamily),
+    editorFontSize: settings.editorFontSize,
+    editorLineHeight: settings.editorLineHeight,
+    editorPadding: settings.editorPadding,
+    editorBold: settings.editorBold,
+    editorItalic: settings.editorItalic,
+    editorUnderline: settings.editorUnderline,
+    autosaveDelaySeconds: settings.autosaveDelaySeconds,
+    snapshotSearchPageSize: settings.snapshotSearchPageSize,
   };
 }
 

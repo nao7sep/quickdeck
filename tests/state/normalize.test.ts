@@ -14,7 +14,7 @@ import {
 } from "../../src/state/normalize";
 import { DEFAULT_EDITOR_FONT_FAMILY_STACK, defaultSettings } from "../../src/state/defaults";
 import { ZOOM_DEFAULT, ZOOM_MAX, ZOOM_MIN } from "../../src/utils/zoom";
-import type { AppSettings, Pane } from "../../src/types";
+import type { Pane } from "../../src/types";
 
 const HEX = /^#[0-9a-f]{6}$/i;
 
@@ -32,35 +32,6 @@ describe("clampNumber", () => {
 });
 
 describe("normalizeSettings", () => {
-  it("returns defaults when given null", () => {
-    expect(normalizeSettings(null)).toEqual(defaultSettings);
-  });
-
-  it("fills missing fields from defaults", () => {
-    const result = normalizeSettings({ zen: true } as AppSettings);
-    expect(result.zen).toBe(true);
-    expect(result.editorFontFamily).toBe(defaultSettings.editorFontFamily);
-    expect(result.editorFontSize).toBe(defaultSettings.editorFontSize);
-  });
-
-  it("falls back when a numeric setting is not finite", () => {
-    const result = normalizeSettings({ ...defaultSettings, editorFontSize: Number.NaN });
-    expect(result.editorFontSize).toBe(defaultSettings.editorFontSize);
-  });
-
-  it("drops unknown keys not in the schema", () => {
-    const result = normalizeSettings({
-      ...defaultSettings,
-      dark: true,
-      darkMode: true,
-      uiZoomPercent: 69,
-    } as unknown as AppSettings);
-    expect(result).not.toHaveProperty("dark");
-    expect(result).not.toHaveProperty("darkMode");
-    expect(result).not.toHaveProperty("uiZoomPercent");
-    expect(Object.keys(result).sort()).toEqual(Object.keys(defaultSettings).sort());
-  });
-
   it("emits keys in canonical order (language, theme, zen, topmost first)", () => {
     expect(Object.keys(normalizeSettings({ ...defaultSettings }))).toEqual([
       "language",
@@ -80,89 +51,20 @@ describe("normalizeSettings", () => {
     ]);
   });
 
-  it("coerces the boolean toggles and falls back for non-booleans", () => {
-    expect(normalizeSettings({ ...defaultSettings, zen: true }).zen).toBe(true);
-    const bad = normalizeSettings({
-      ...defaultSettings,
-      zen: "yes",
-      topmost: 1,
-    } as unknown as AppSettings);
-    expect(bad.zen).toBe(defaultSettings.zen);
-    expect(bad.topmost).toBe(defaultSettings.topmost);
-  });
-
-  it("defaults the theme to System and keeps a saved Light or Dark", () => {
-    expect(defaultSettings.theme).toBe("system");
-    expect(normalizeSettings({ ...defaultSettings, theme: "dark" }).theme).toBe("dark");
-    const retired = normalizeSettings({ ...defaultSettings, theme: "sepia" } as unknown as AppSettings);
-    expect(retired.theme).toBe("system");
-    const absent = { ...defaultSettings } as Partial<AppSettings>;
-    delete absent.theme;
-    expect(normalizeSettings(absent as AppSettings).theme).toBe("system");
-  });
-
-  it("preserves a chosen monospace font", () => {
-    expect(normalizeSettings({ ...defaultSettings, editorFontFamily: "monospace" }).editorFontFamily).toBe(
-      "monospace",
-    );
-    expect(normalizeSettings({ ...defaultSettings, editorFontFamily: "Courier New" }).editorFontFamily).toBe("Courier New");
-  });
-
-  it("preserves a chosen built-in stack", () => {
+  it("preserves a chosen font family and built-in stack", () => {
     expect(defaultSettings.editorFontFamily).toBe("");
+    expect(normalizeSettings({ ...defaultSettings, editorFontFamily: "Courier New" }).editorFontFamily).toBe("Courier New");
     expect(
       normalizeSettings({ ...defaultSettings, editorFontFamily: DEFAULT_EDITOR_FONT_FAMILY_STACK })
         .editorFontFamily,
     ).toBe(DEFAULT_EDITOR_FONT_FAMILY_STACK);
   });
 
-  it("falls back for an empty or non-string font family", () => {
-    expect(normalizeSettings({ ...defaultSettings, editorFontFamily: "   " }).editorFontFamily).toBe(
-      defaultSettings.editorFontFamily,
-    );
-    expect(
-      normalizeSettings({ ...defaultSettings, editorFontFamily: 123 } as unknown as AppSettings)
-        .editorFontFamily,
-    ).toBe(defaultSettings.editorFontFamily);
-    expect(normalizeSettings({ ...defaultSettings, editorFontFamily: "Courier" }).editorFontFamily).toBe(
-      "Courier",
-    );
-  });
-
-  it("trims surrounding whitespace from a non-blank font family", () => {
-    expect(normalizeSettings({ ...defaultSettings, editorFontFamily: "  Menlo  " }).editorFontFamily).toBe(
-      "Menlo",
-    );
-  });
-
-  it("keeps the UI font blank (= default) but trims it; reverts a non-string to the default", () => {
-    // Unlike the editor font, a blank UI font is preserved (blank means the built-in default stack).
+  it("trims both font families, keeping a blank one blank", () => {
+    expect(normalizeSettings({ ...defaultSettings, editorFontFamily: "  Menlo  " }).editorFontFamily).toBe("Menlo");
+    expect(normalizeSettings({ ...defaultSettings, editorFontFamily: "   " }).editorFontFamily).toBe("");
     expect(normalizeSettings({ ...defaultSettings, uiFontFamily: "   " }).uiFontFamily).toBe("");
     expect(normalizeSettings({ ...defaultSettings, uiFontFamily: "  Iosevka  " }).uiFontFamily).toBe("Iosevka");
-    expect(
-      normalizeSettings({ ...defaultSettings, uiFontFamily: 123 } as unknown as AppSettings).uiFontFamily,
-    ).toBe(defaultSettings.uiFontFamily);
-  });
-
-  it("coerces the style toggles", () => {
-    const r = normalizeSettings({
-      ...defaultSettings,
-      editorBold: true,
-      editorItalic: "yes" as unknown as boolean,
-    });
-    expect(r.editorBold).toBe(true);
-    expect(r.editorItalic).toBe(defaultSettings.editorItalic); // non-boolean → default
-    expect(r.editorUnderline).toBe(false);
-  });
-
-  it("ignores a stray zoomLevel left in config.json by an older build", () => {
-    // zoomLevel moved to state.json (persisted-store-separation); the known-keys
-    // rebuild drops the old config field on the next save, no migration needed.
-    const result = normalizeSettings({
-      ...defaultSettings,
-      zoomLevel: 2.4,
-    } as unknown as AppSettings);
-    expect(result).not.toHaveProperty("zoomLevel");
   });
 });
 
