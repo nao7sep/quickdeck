@@ -43,6 +43,7 @@ import {
   isLanguage,
   type Language,
 } from "../i18n/languages";
+import { loadCatalogue } from "../i18n/catalogues";
 import { createTranslator, message, type Message } from "../i18n/translate";
 import type {
   AppSettings,
@@ -120,7 +121,10 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const [loadErrorIsCorruptPanes, setLoadErrorIsCorruptPanes] = useState(false);
   const [snapshotCount, setSnapshotCount] = useState(0);
   const [snapshotJustSavedAt, setSnapshotJustSavedAt] = useState<number | null>(null);
-  const language = effectiveLanguage(settings.language, systemLanguage);
+  // The interface shows a language once its catalogue has loaded, so a saved
+  // change takes effect when the catalogue is ready.
+  const [language, setLanguage] = useState<Language>("en");
+  const chosenLanguage = effectiveLanguage(settings.language, systemLanguage);
   const locale = formattingLocale(language, systemLocale);
   const translator = useMemo(() => createTranslator(language, locale), [language, locale]);
   const panesRef = useRef(panes);
@@ -189,12 +193,16 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       // screen: the saved choice if config.json could be read, else System.
       const loadedSystemLanguage = isLanguage(data.systemLanguage) ? data.systemLanguage : "en";
       const loadedSettings = readSettingsSets(data.config);
+      const loadedLanguage = effectiveLanguage(loadedSettings.language, loadedSystemLanguage);
+      await loadCatalogue(loadedLanguage);
+      if (canceledRef.current) {
+        return;
+      }
       setSystemLanguage(loadedSystemLanguage);
       setSystemLocale(data.systemLocale);
       setSettings(loadedSettings);
-      const loadTranslator = createTranslator(
-        effectiveLanguage(loadedSettings.language, loadedSystemLanguage),
-      );
+      setLanguage(loadedLanguage);
+      const loadTranslator = createTranslator(loadedLanguage);
 
       // panes.json carries the user's text: present-but-unreadable HALTS the
       // app (the file is left exactly in place; the error screen offers the
@@ -287,6 +295,20 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       }
     }
   }, [firstPane, showBlockingError]);
+
+  useEffect(() => {
+    if (chosenLanguage === language) return undefined;
+    let current = true;
+    loadCatalogue(chosenLanguage).then(
+      () => {
+        if (current) setLanguage(chosenLanguage);
+      },
+      (error) => logError("catalogue load failed", { language: chosenLanguage, error: serializeError(error) }),
+    );
+    return () => {
+      current = false;
+    };
+  }, [chosenLanguage, language]);
 
   useEffect(() => {
     canceledRef.current = false;

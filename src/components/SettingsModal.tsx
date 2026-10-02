@@ -4,9 +4,8 @@ import type { AppSettings } from "../types";
 import { SETTINGS_BOUNDS, isSettingsDraftValid, normalizeSettings } from "../state/normalize";
 import { DEFAULT_EDITOR_FONT_FAMILY_STACK } from "../state/defaults";
 import { THEME_PREFERENCES } from "../utils/theme";
-import { CATALOGUES } from "../i18n/catalogues";
 import { useI18n } from "../i18n/I18nContext";
-import { LANGUAGES, normalizeLanguagePreference } from "../i18n/languages";
+import { LANGUAGES, LANGUAGE_NAMES, normalizeLanguagePreference } from "../i18n/languages";
 import { ConfirmCloseModal } from "./ConfirmCloseModal";
 import { ModalBase } from "./ModalBase";
 
@@ -84,7 +83,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
               <option value="system">{t("settings.languageSystem")}</option>
               {LANGUAGES.map((language) => (
                 <option key={language} value={language} lang={language}>
-                  {CATALOGUES[language]["language.name"] as string}
+                  {LANGUAGE_NAMES[language]}
                 </option>
               ))}
             </select>

@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
+import { loadCatalogue } from "../../src/i18n/catalogues";
 import { createTranslator } from "../../src/i18n/translate";
 import { formatSnapshotTimestamp } from "../../src/utils/snapshotTimestamp";
 
@@ -7,6 +8,10 @@ import { formatSnapshotTimestamp } from "../../src/utils/snapshotTimestamp";
 process.env.TZ = "Asia/Tokyo";
 
 describe("formatSnapshotTimestamp", () => {
+  beforeAll(async () => {
+    await Promise.all([loadCatalogue("ja"), loadCatalogue("de")]);
+  });
+
   it("shows a canonical ISO instant in local time, in the given locale's format", () => {
     // 03:15 UTC is 12:15 in Asia/Tokyo (+9).
     const instant = "2026-06-10T03:15:42.123Z";

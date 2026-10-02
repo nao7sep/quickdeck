@@ -1,9 +1,17 @@
 import { describe, expect, it } from "vitest";
 import {
+  LANGUAGES,
+  LANGUAGE_NAMES,
   effectiveLanguage,
   formattingLocale,
   normalizeLanguagePreference,
 } from "../../src/i18n/languages";
+
+describe("LANGUAGE_NAMES", () => {
+  it("names every language differently", () => {
+    expect(new Set(LANGUAGES.map((language) => LANGUAGE_NAMES[language])).size).toBe(LANGUAGES.length);
+  });
+});
 
 describe("normalizeLanguagePreference", () => {
   it("keeps System and every supported tag", () => {

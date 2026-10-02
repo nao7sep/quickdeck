@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { CATALOGUES } from "../../src/i18n/catalogues";
+import { CATALOGUE_LOADERS } from "../../src/i18n/catalogues";
 import { LANGUAGES, type Language } from "../../src/i18n/languages";
 
 // The catalogue gate. English defines the key set; every other language must
@@ -12,9 +12,11 @@ import { LANGUAGES, type Language } from "../../src/i18n/languages";
 type Entry = string | Record<string, string>;
 type Catalogue = Record<string, Entry>;
 
-// Read through the app's own imports, so a change to any catalogue selects
+// Read through the app's own loaders, so a change to any catalogue selects
 // this gate as a related test.
-const catalogues = CATALOGUES as unknown as Record<Language, Catalogue>;
+const catalogues = Object.fromEntries(
+  await Promise.all(LANGUAGES.map(async (language) => [language, await CATALOGUE_LOADERS[language]()])),
+) as unknown as Record<Language, Catalogue>;
 
 const english = catalogues.en;
 const translations = LANGUAGES.filter((language) => language !== "en");
@@ -113,11 +115,6 @@ describe("catalogues", () => {
       ),
     );
     expect(literal).toEqual([]);
-  });
-
-  it("names every language differently, in its own words", () => {
-    const names = LANGUAGES.map((language) => catalogues[language]["language.name"]);
-    expect(new Set(names).size).toBe(LANGUAGES.length);
   });
 
   // Every control that opens About reads exactly "About <App>" in the interface

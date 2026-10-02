@@ -170,6 +170,7 @@ async function renderLanguageProbe(): Promise<HTMLElement> {
       </AppStateProvider>,
     );
   });
+  await act(() => vi.dynamicImportSettled());
   return host;
 }
 
@@ -203,6 +204,35 @@ describe("interface language", () => {
     expect(host.querySelector('[data-testid="language"]')?.textContent).toBe("en");
   });
 
+  it("speaks a newly saved language once its catalogue has loaded", async () => {
+    persistence.loadAppData.mockResolvedValueOnce(loadedAppData({ systemLanguage: "en" }));
+    let state: ReturnType<typeof useAppState> | undefined;
+    function SettingsProbe() {
+      state = useAppState();
+      return null;
+    }
+    const host = document.createElement("div");
+    document.body.append(host);
+    root = createRoot(host);
+    await act(async () => {
+      root?.render(
+        <AppStateProvider>
+          <SettingsProbe />
+          <LanguageProbe />
+        </AppStateProvider>,
+      );
+    });
+    expect(host.querySelector('[data-testid="settings-title"]')?.textContent).toBe("Settings");
+
+    await act(async () => {
+      state?.updateSettings({ ...state.settings, language: "fr" });
+    });
+    await act(() => vi.dynamicImportSettled());
+
+    expect(host.querySelector('[data-testid="language"]')?.textContent).toBe("fr");
+    expect(host.querySelector('[data-testid="settings-title"]')?.textContent).toBe("Réglages");
+  });
+
   it("gives the first pane its default title in that language", async () => {
     persistence.loadAppData.mockResolvedValueOnce(loadedAppData({ systemLanguage: "de" }));
     let panes: { title: string }[] = [];
@@ -220,6 +250,7 @@ describe("interface language", () => {
         </AppStateProvider>,
       );
     });
+    await act(() => vi.dynamicImportSettled());
 
     expect(panes.map((pane) => pane.title)).toEqual(["Neuer Puffer"]);
   });

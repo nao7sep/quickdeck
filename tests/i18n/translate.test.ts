@@ -1,9 +1,21 @@
 import { isValidElement, type ReactElement } from "react";
-import type { MessageKey } from "../../src/i18n/catalogues";
-import { describe, expect, it } from "vitest";
+import { loadCatalogue, type MessageKey } from "../../src/i18n/catalogues";
+import { beforeAll, describe, expect, it } from "vitest";
 import { createTranslator } from "../../src/i18n/translate";
 
+describe("loadCatalogue", () => {
+  it("lets a translator speak a language only once its catalogue is loaded", async () => {
+    expect(createTranslator("ko").t("common.close")).toBe("Close");
+    await loadCatalogue("ko");
+    expect(createTranslator("ko").t("common.close")).not.toBe("Close");
+  });
+});
+
 describe("createTranslator", () => {
+  beforeAll(async () => {
+    await Promise.all((["de", "fr", "ja", "ru"] as const).map(loadCatalogue));
+  });
+
   it("fills placeholders and formats numbers for the locale", () => {
     expect(createTranslator("en").t("about.version", { version: "1.2.0" })).toBe("Version 1.2.0");
     expect(createTranslator("en", "en-US").t("pane.words", { count: 12345 })).toBe("Words 12,345");
