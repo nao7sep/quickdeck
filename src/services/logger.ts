@@ -2,7 +2,7 @@ import { invoke, isTauri } from "@tauri-apps/api/core";
 
 // Thin frontend logging client. The sandboxed webview never opens a file; it
 // forwards structured log objects to the Rust core (the `log_event` command),
-// which owns the session file. Logging must never crash the app or surface into
+// which owns the records database. Logging must never crash the app or surface into
 // the UI, so every path here is best-effort and falls back to the console.
 
 export type LogLevel = "debug" | "info" | "warn" | "error";

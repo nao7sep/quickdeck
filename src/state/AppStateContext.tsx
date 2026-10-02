@@ -447,7 +447,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
           }
         })
         .catch((error) => {
-          logWarn("snapshot not saved", { trigger, error: serializeError(error) });
+          logWarn("snapshot not saved", { paneId, trigger, error: serializeError(error) });
           // One owner for every pane: the message cannot say which pane failed.
           showToast("snapshot", "warning", message("toast.snapshotFailed"));
         });

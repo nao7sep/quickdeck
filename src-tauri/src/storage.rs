@@ -23,7 +23,8 @@ use crate::paths::app_data_dir;
 // - `snapshots.sqlite3` — the snapshot store.                 not recorded (binary + append-safe)
 // - `backups.sqlite3`   — the write-through backup store.     not recorded (the store itself)
 // - `backups/`          — archive zips, `.lock`, `.running`.  not recorded (binary; archive.rs)
-// - `logs/`             — per-session logs.                   not recorded (append-mode, by construction)
+// - `records.sqlite3`   — log lines (logging.rs).             not recorded (binary; never archived)
+// - `logs/`             — log lines whose record write failed. not recorded (append-mode, by construction)
 //
 // Every managed-*text* write goes through `write_json_atomically`. The recorded
 // files (config.json, panes.json) use `atomic_write_json`, which — strictly AFTER
@@ -39,6 +40,7 @@ pub const PANES_FILE_NAME: &str = "panes.json";
 // Original relative path and archive-root entry name, beside the store paths.
 pub const ARCHIVED_STORES: &[(&str, &str)] = &[(SNAPSHOTS_DB_FILE_NAME, SNAPSHOTS_DB_FILE_NAME)];
 pub const SNAPSHOTS_DB_FILE_NAME: &str = "snapshots.sqlite3";
+pub const RECORDS_DB_FILE_NAME: &str = "records.sqlite3";
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]

@@ -1,24 +1,42 @@
-//! Per-session, append-only, JSON-Lines session logger.
-//!
-//! One file per process launch under `~/.quickdeck/logs/<yyyymmdd-hhmmss-fff-utc>.log`.
-//! The privileged Rust core owns the file; the sandboxed webview forwards
-//! structured log objects via the `log_event` command (see `lib.rs`). Each line
-//! is one JSON object with a fixed envelope (`time`, `level`, `message`) plus
-//! free fields. Hand-rolled on purpose so flush, level-gating, and console
-//! fallback behave exactly as the logging convention prescribes.
+//! Log lines as rows in `records.sqlite3` (logging and data-lifecycle
+//! conventions), each carrying its session and the pane or snapshot it belongs
+//! to. The Rust core owns the database; the webview forwards structured log
+//! objects via the `log_event` command (see `lib.rs`). A failed write goes to
+//! `logs/<session stamp>.log` as one JSON line.
 
 use std::{
-    fs::{File, OpenOptions},
-    io::{BufWriter, Write},
+    fs::{self, OpenOptions},
+    io::Write,
+    path::{Path, PathBuf},
     sync::{Mutex, OnceLock},
     time::Instant,
 };
 
 use chrono::{SecondsFormat, Utc};
+use rusqlite::{params, Connection};
 use serde_json::{json, Map, Value};
 use tauri::AppHandle;
 
-use crate::paths;
+use crate::{paths, storage::RECORDS_DB_FILE_NAME};
+
+// `fields` holds the free fields as given, minus the domain ids, which have their
+// own columns.
+const SCHEMA: &str = "
+CREATE TABLE IF NOT EXISTS log_lines (
+  id          INTEGER PRIMARY KEY,
+  session     TEXT NOT NULL,
+  time        TEXT NOT NULL,
+  level       TEXT NOT NULL,
+  message     TEXT NOT NULL,
+  pane_id     TEXT,
+  snapshot_id TEXT,
+  fields      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS log_lines_session ON log_lines (session, id);
+";
+
+// The free fields that name a domain object, and the column each one fills.
+const DOMAIN_IDS: [&str; 2] = ["paneId", "snapshotId"];
 
 // The four levels, and only four.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -49,50 +67,53 @@ impl Level {
             _ => Level::Info,
         }
     }
-
-    // info may stay buffered for efficiency; warn/error/debug flush immediately
-    // so a line is on disk the moment you need it while debugging.
-    fn flush_immediately(self) -> bool {
-        !matches!(self, Level::Info)
-    }
 }
 
-// File sink, or stderr when the file is unavailable (open failed, or a write
-// failed mid-session). Either way the app keeps running.
-enum Sink {
-    File(BufWriter<File>),
-    Stderr,
+// This launch: its start time, which every row carries, and where the fallback
+// file goes (None when the data directory could not be resolved).
+struct Session {
+    started: String,
+    stamp: String,
+    root: Option<PathBuf>,
 }
 
 struct Logger {
-    sink: Mutex<Sink>,
+    session: Session,
+    records: Mutex<Option<Connection>>,
     debug_enabled: bool,
 }
 
 static LOGGER: OnceLock<Logger> = OnceLock::new();
 
-// Opens this launch's session log, installs the panic hook, and writes the
-// startup line. Safe to call once; later calls are ignored. Never fails the app:
-// if the file cannot be opened the logger degrades to stderr.
+// Opens the records database, installs the panic hook, and writes the startup
+// line. Safe to call once; later calls are ignored. Never fails the app: without
+// the database every line takes the fallback.
 pub fn init(app: &AppHandle, version: &str) {
     let debug_enabled = cfg!(debug_assertions)
         || std::env::var("QUICKDECK_DEBUG")
             .map(|value| value == "1")
             .unwrap_or(false);
 
-    let sink = match open_session_file(app) {
-        Ok(file) => Sink::File(BufWriter::new(file)),
-        Err(err) => {
-            // Best effort: surface the failure somewhere and keep going. Use a
-            // non-panicking stderr write (not eprintln!, which panics on a
-            // failed write — fatal on a no-console GUI build).
-            let _ = writeln!(std::io::stderr(), "[quickdeck] log file unavailable, using stderr: {err}");
-            Sink::Stderr
+    let started = Utc::now();
+    let root = paths::app_data_dir(app);
+    let records = match &root {
+        Ok(root) => {
+            open_records(&root.join(RECORDS_DB_FILE_NAME)).map_err(|error| error.to_string())
         }
+        Err(error) => Err(error.clone()),
+    };
+    let (records, unavailable) = match records {
+        Ok(conn) => (Some(conn), None),
+        Err(error) => (None, Some(error)),
     };
 
     let logger = Logger {
-        sink: Mutex::new(sink),
+        session: Session {
+            started: started.to_rfc3339_opts(SecondsFormat::Millis, true),
+            stamp: session_stamp(started),
+            root: root.ok(),
+        },
+        records: Mutex::new(records),
         debug_enabled,
     };
 
@@ -101,6 +122,10 @@ pub fn init(app: &AppHandle, version: &str) {
     }
 
     install_panic_hook();
+
+    if let Some(error) = unavailable {
+        warn("records database unavailable", json!({ "error": error }));
+    }
 
     write_event(
         Level::Info,
@@ -114,33 +139,29 @@ pub fn init(app: &AppHandle, version: &str) {
     );
 }
 
-// Formats `now` as the session-log filename stem: `yyyymmdd-hhmmss-fff-utc`, the
-// machine-paced millisecond form (see timestamp-conventions). Pure and
-// injectable so the shape is unit-testable without spinning up an AppHandle.
-// pub(crate): also the moment discriminator for other derived-sibling names
-// (storage's quarantine `<stem>-<stamp>.invalid`) — one formatter, never two.
-pub(crate) fn session_stamp(now: chrono::DateTime<Utc>) -> String {
-    format!("{}-{:03}-utc", now.format("%Y%m%d-%H%M%S"), now.timestamp_subsec_millis())
+// not recorded: records.sqlite3 is written only here, never through the
+// managed-text atomic path, and is not archived (data-backup and data-lifecycle
+// conventions).
+fn open_records(file: &Path) -> rusqlite::Result<Connection> {
+    let conn = Connection::open(file)?;
+    // Each row commits on its own; NORMAL under WAL keeps that from syncing the
+    // disk every time, and a crashed process still loses nothing.
+    conn.pragma_update(None, "journal_mode", "WAL")?;
+    conn.pragma_update(None, "synchronous", "NORMAL")?;
+    conn.pragma_update(None, "busy_timeout", 5000)?;
+    conn.execute_batch(SCHEMA)?;
+    Ok(conn)
 }
 
-fn open_session_file(app: &AppHandle) -> Result<File, String> {
-    // not recorded: session logs under logs/ are append-mode and never written
-    // through the managed-text atomic path, so they never reach the backup record
-    // hook — excluded by construction (data-backup conventions). They are runtime
-    // logs, not user data.
-    let dir = paths::logs_dir(app)?;
-    // UTC session-start stamp and nothing else — strictly `yyyymmdd-hhmmss-fff-utc.log`
-    // (see timestamp-conventions). `create_new` so a launch never appends into an
-    // existing file; a same-millisecond collision between two launches is
-    // accepted, not engineered around — the create simply fails and `init`
-    // degrades to stderr.
-    let stamp = session_stamp(Utc::now());
-    let path = dir.join(format!("{stamp}.log"));
-    OpenOptions::new()
-        .create_new(true)
-        .write(true)
-        .open(&path)
-        .map_err(|err| format!("{}: {}", path.display(), err))
+// Formats `now` as `yyyymmdd-hhmmss-fff-utc`, the machine-paced millisecond form
+// (timestamp-conventions): the fallback file's name, and the moment discriminator
+// for other derived-sibling names (storage's quarantine `<stem>-<stamp>.invalid`).
+pub(crate) fn session_stamp(now: chrono::DateTime<Utc>) -> String {
+    format!(
+        "{}-{:03}-utc",
+        now.format("%Y%m%d-%H%M%S"),
+        now.timestamp_subsec_millis()
+    )
 }
 
 // The authoritative debug gate, exposed so the command layer can hand the
@@ -168,7 +189,12 @@ pub fn log_forwarded(
         Some(value) if !value.is_empty() => value,
         _ => now_iso(),
     };
-    write_event(Level::parse(level), message, time, fields.unwrap_or_default());
+    write_event(
+        Level::parse(level),
+        message,
+        time,
+        fields.unwrap_or_default(),
+    );
 }
 
 // Records the clean end of a session. Logged from the Rust run-loop on exit
@@ -178,10 +204,8 @@ pub fn log_shutdown() {
     write_event(Level::Info, "shutdown", now_iso(), Map::new());
 }
 
-// A single Rust-side warning. Used by the write-through backup store (backup_store.rs)
-// to log its one best-effort failure line — the store must never surface an error,
-// so it logs exactly one `warn` and swallows the rest. `fields` is any JSON object
-// (a non-object payload is wrapped, never lost); the timestamp is stamped here.
+// A single Rust-side warning. `fields` is any JSON object (a non-object payload
+// is wrapped, never lost); the timestamp is stamped here.
 pub fn warn(message: &str, fields: Value) {
     write_event(Level::Warn, message, now_iso(), into_map(fields));
 }
@@ -190,8 +214,9 @@ pub fn warn(message: &str, fields: Value) {
 
 // Wraps an external-boundary operation (file / database / IPC command) with the
 // standard logging: a `debug` line at the start, then exactly one `info` line on
-// success or one `error` line on failure, each carrying the elapsed duration.
-// This is what keeps "log every boundary crossing" to one info line per crossing.
+// success or one `error` line on failure, each carrying the parameters and the
+// elapsed duration. This is what keeps "log every boundary crossing" to one info
+// line per crossing.
 pub fn boundary<T>(
     op: &str,
     params: Value,
@@ -200,24 +225,22 @@ pub fn boundary<T>(
 ) -> Result<T, String> {
     let started = Instant::now();
 
-    let mut start_fields = into_map(params);
-    start_fields.insert("op".to_string(), Value::String(op.to_string()));
-    write_event(Level::Debug, "boundary start", now_iso(), start_fields);
+    let mut fields = into_map(params);
+    fields.insert("op".to_string(), Value::String(op.to_string()));
+    write_event(Level::Debug, "boundary start", now_iso(), fields.clone());
 
     let result = body();
-    let ms = started.elapsed().as_millis() as u64;
+    fields.insert(
+        "ms".to_string(),
+        json!(started.elapsed().as_millis() as u64),
+    );
 
     match &result {
         Ok(value) => {
-            let mut fields = into_map(summarize(value));
-            fields.insert("op".to_string(), Value::String(op.to_string()));
-            fields.insert("ms".to_string(), json!(ms));
+            fields.extend(into_map(summarize(value)));
             write_event(Level::Info, "boundary ok", now_iso(), fields);
         }
         Err(err) => {
-            let mut fields = Map::new();
-            fields.insert("op".to_string(), Value::String(op.to_string()));
-            fields.insert("ms".to_string(), json!(ms));
             fields.insert("error".to_string(), Value::String(err.clone()));
             write_event(Level::Error, "boundary failed", now_iso(), fields);
         }
@@ -239,31 +262,115 @@ fn write_event(level: Level, message: &str, time: String, fields: Map<String, Va
         return;
     }
 
-    let line = build_line(level, message, &time, fields);
-    if line.is_empty() {
-        return;
-    }
-    let line = format!("{line}\n");
-
-    let mut sink = match logger.sink.lock() {
-        Ok(sink) => sink,
+    let records = match logger.records.lock() {
+        Ok(records) => records,
         Err(poisoned) => poisoned.into_inner(),
     };
-    write_line(&mut sink, &line, level.flush_immediately());
+    write_record(
+        records.as_ref(),
+        &logger.session,
+        level,
+        message,
+        &time,
+        &fields,
+    );
+}
+
+// Inserts one row, or appends the line to the fallback file when there is no
+// database or the insert fails. Runs while the caller holds the records lock, so
+// it must NEVER panic: the std print macros (eprint!/eprintln!) panic on a failed
+// stderr write, which on a no-console GUI build would fire the panic hook on this
+// same thread while the lock is held, re-enter it, and deadlock. All stderr
+// output here therefore goes through non-panicking `write!`/`writeln!` whose
+// Result is deliberately ignored.
+fn write_record(
+    records: Option<&Connection>,
+    session: &Session,
+    level: Level,
+    message: &str,
+    time: &str,
+    fields: &Map<String, Value>,
+) {
+    let inserted = match records {
+        Some(conn) => insert_record(conn, &session.started, level, message, time, fields)
+            .map_err(|error| error.to_string()),
+        None => Err("records database unavailable".to_string()),
+    };
+    let Err(reason) = inserted else {
+        return;
+    };
+
+    let line = build_line(level, message, time, fields.clone());
+    let appended = match &session.root {
+        Some(root) => {
+            append_fallback(root, &session.stamp, &line).map_err(|error| error.to_string())
+        }
+        None => Err("data directory unavailable".to_string()),
+    };
+    if let Err(error) = appended {
+        let _ = writeln!(
+            std::io::stderr(),
+            "[quickdeck] log record not written ({reason}; fallback: {error}): {line}"
+        );
+    }
+}
+
+fn insert_record(
+    conn: &Connection,
+    session: &str,
+    level: Level,
+    message: &str,
+    time: &str,
+    fields: &Map<String, Value>,
+) -> rusqlite::Result<()> {
+    let mut ids: [Option<&str>; 2] = [None, None];
+    let mut rest = Map::new();
+    for (key, value) in fields {
+        match (DOMAIN_IDS.iter().position(|id| id == key), value) {
+            (Some(index), Value::String(id)) => ids[index] = Some(id),
+            _ => {
+                rest.insert(key.clone(), value.clone());
+            }
+        }
+    }
+    conn.execute(
+        "INSERT INTO log_lines (session, time, level, message, pane_id, snapshot_id, fields)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+        params![
+            session,
+            time,
+            level.as_str(),
+            message,
+            ids[0],
+            ids[1],
+            Value::Object(rest).to_string()
+        ],
+    )?;
+    Ok(())
+}
+
+// not recorded: the fallback file is append-mode and never written through the
+// managed-text atomic path (data-backup conventions).
+fn append_fallback(root: &Path, stamp: &str, line: &str) -> std::io::Result<()> {
+    let dir = root.join("logs");
+    fs::create_dir_all(&dir)?;
+    let mut file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(dir.join(format!("{stamp}.log")))?;
+    file.write_all(format!("{line}\n").as_bytes())
 }
 
 // Pure: serialize one JSON line with the envelope first
 // (time, level, message) followed by the free fields. serde_json's
 // preserve_order feature keeps this insertion order in the output.
-fn build_line(
-    level: Level,
-    message: &str,
-    time: &str,
-    fields: Map<String, Value>,
-) -> String {
+fn build_line(level: Level, message: &str, time: &str, fields: Map<String, Value>) -> String {
     let mut obj = Map::new();
     obj.insert("time".to_string(), Value::String(time.to_string()));
-    obj.insert("level".to_string(), Value::String(level.as_str().to_string()));
+    obj.insert(
+        "level".to_string(),
+        Value::String(level.as_str().to_string()),
+    );
     obj.insert("message".to_string(), Value::String(message.to_string()));
     for (key, value) in fields {
         // The envelope keys are authoritative: a free field must never overwrite
@@ -277,57 +384,6 @@ fn build_line(
     }
 
     serde_json::to_string(&Value::Object(obj)).unwrap_or_default()
-}
-
-// Writes one already-serialized line. Runs while the caller holds the sink lock,
-// so it must NEVER panic: the std print macros (eprint!/eprintln!) panic on a
-// failed stderr write, which on a no-console GUI build would fire the panic hook
-// on this same thread while the lock is held, re-enter it, and deadlock. All
-// stderr output here therefore goes through non-panicking `write!`/`writeln!`
-// whose Result is deliberately ignored.
-fn write_line(sink: &mut Sink, line: &str, flush: bool) {
-    let failed = match sink {
-        Sink::File(writer) => {
-            let result = writer
-                .write_all(line.as_bytes())
-                .and_then(|_| if flush { writer.flush() } else { Ok(()) });
-            match result {
-                Ok(()) => false,
-                Err(err) => {
-                    let _ = writeln!(
-                        std::io::stderr(),
-                        "[quickdeck] log write failed, switching to stderr: {err}"
-                    );
-                    true
-                }
-            }
-        }
-        Sink::Stderr => {
-            let _ = write!(std::io::stderr(), "{line}");
-            false
-        }
-    };
-
-    // The file went bad mid-session: write this line to stderr and fall back to
-    // stderr for everything after it.
-    if failed {
-        let _ = write!(std::io::stderr(), "{line}");
-        *sink = Sink::Stderr;
-    }
-}
-
-// Flushes buffered (info) lines. Called on app exit and from the panic hook so
-// the last lines before shutdown or a crash reach disk.
-pub fn flush() {
-    if let Some(logger) = LOGGER.get() {
-        let mut sink = match logger.sink.lock() {
-            Ok(sink) => sink,
-            Err(poisoned) => poisoned.into_inner(),
-        };
-        if let Sink::File(writer) = &mut *sink {
-            let _ = writer.flush();
-        }
-    }
 }
 
 // --- Helpers -------------------------------------------------------------------
@@ -370,13 +426,12 @@ fn install_panic_hook() {
             now_iso(),
             into_map(json!({ "payload": payload, "location": location })),
         );
-        flush();
         previous(info);
     }));
 }
 
 #[cfg(test)]
 // EXCEPTION to tests-folder conventions: the module is private to the crate, and the tests drive
-// the private `Sink`, `Level` and `build_line`.
+// the private `Level`, `build_line` and the record writers.
 #[path = "../tests/unit/logging.rs"]
 mod tests;

@@ -7,7 +7,8 @@
 
 use quickdeck_lib::backup_store::BACKUPS_DB_FILE_NAME;
 use quickdeck_lib::storage::{
-    CONFIG_FILE_NAME, PANES_FILE_NAME, SNAPSHOTS_DB_FILE_NAME, STATE_FILE_NAME, WINDOW_FILE_NAME,
+    CONFIG_FILE_NAME, PANES_FILE_NAME, RECORDS_DB_FILE_NAME, SNAPSHOTS_DB_FILE_NAME,
+    STATE_FILE_NAME, WINDOW_FILE_NAME,
 };
 
 #[test]
@@ -42,6 +43,11 @@ fn snapshot_store_stays_snapshots_sqlite3() {
 fn backup_store_stays_backups_sqlite3() {
     // The write-through backup store's file name, pinned here so it never drifts.
     assert_eq!(BACKUPS_DB_FILE_NAME, "backups.sqlite3");
+}
+
+#[test]
+fn records_stay_records_sqlite3() {
+    assert_eq!(RECORDS_DB_FILE_NAME, "records.sqlite3");
 }
 
 #[test]

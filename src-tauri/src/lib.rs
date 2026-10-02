@@ -155,7 +155,7 @@ fn create_snapshot(
         "create_snapshot",
         params,
         move || storage::create_snapshot(&app, pane_id, pane_title, trigger, content),
-        |result| json!({ "inserted": result.inserted, "id": result.id }),
+        |result| json!({ "inserted": result.inserted, "snapshotId": result.id }),
     )
 }
 
@@ -224,7 +224,7 @@ fn count_snapshots(app: AppHandle) -> Result<u64, String> {
 fn delete_snapshot(app: AppHandle, id: String) -> Result<bool, String> {
     logging::boundary(
         "delete_snapshot",
-        json!({ "id": id.clone() }),
+        json!({ "snapshotId": id.clone() }),
         move || storage::delete_snapshot(&app, id),
         |removed| json!({ "removed": removed }),
     )
@@ -240,8 +240,8 @@ fn delete_all_snapshots(app: AppHandle) -> Result<u64, String> {
     )
 }
 
-// Receives a structured log object from the sandboxed webview and writes it to
-// the session file. The frontend stamps `time`; the Rust core owns the file.
+// Receives a structured log object from the sandboxed webview and records it.
+// The frontend stamps `time`; the Rust core owns the records database.
 #[tauri::command]
 fn log_event(
     level: String,
@@ -354,9 +354,7 @@ pub fn run() {
     // The shutdown line is logged here, Rust-side, rather than from the webview:
     // a forwarded log would be a fire-and-forget IPC racing the window teardown
     // and could be lost on the very clean-exit path it is meant to mark. Log it
-    // exactly once (whichever exit event fires first), then flush buffered (info)
-    // lines on exit — warn/error/debug already flush immediately, and the panic
-    // hook flushes on a crash.
+    // exactly once (whichever exit event fires first).
     let mut shutdown_logged = false;
     app.run(move |app, event| {
         if matches!(event, RunEvent::ExitRequested { .. }) {
@@ -374,7 +372,6 @@ pub fn run() {
             if let Ok(root) = paths::app_data_dir(app) {
                 archive::finish_session(root, &app.state::<archive::ArchiveRun>());
             }
-            logging::flush();
         }
     });
 }

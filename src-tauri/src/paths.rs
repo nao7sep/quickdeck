@@ -16,7 +16,7 @@ const DATA_DIR_ENV_VAR: &str = "QUICKDECK_DATA_DIR";
 // home directory — never the current working directory — so the location the
 // app reads and writes can never depend on how the process was launched.
 //
-// Shared by the storage layer and the session logger so neither hard-codes the
+// Shared by the storage layer and the logger so neither hard-codes the
 // location independently.
 pub fn app_data_dir(app: &AppHandle) -> Result<PathBuf, String> {
     let home = app.path().home_dir().map_err(|e| e.to_string())?;
@@ -171,14 +171,6 @@ fn absolutize(home: &Path, path: PathBuf) -> PathBuf {
     } else {
         home.join(path)
     }
-}
-
-// Resolves (creating if missing) the session-log directory: `<root>/logs`.
-pub fn logs_dir(app: &AppHandle) -> Result<PathBuf, String> {
-    let dir = app_data_dir(app)?.join("logs");
-    fs::create_dir_all(&dir)
-        .map_err(|e| format!("could not create logs dir {}: {e}", dir.display()))?;
-    Ok(dir)
 }
 
 #[cfg(test)]

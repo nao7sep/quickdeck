@@ -31,14 +31,6 @@ fn level_parse_is_liberal_and_case_insensitive() {
 }
 
 #[test]
-fn only_info_is_buffered() {
-    assert!(!Level::Info.flush_immediately());
-    assert!(Level::Warn.flush_immediately());
-    assert!(Level::Error.flush_immediately());
-    assert!(Level::Debug.flush_immediately());
-}
-
-#[test]
 fn build_line_starts_with_envelope_in_order() {
     let line = build_line(
         Level::Info,
@@ -47,9 +39,7 @@ fn build_line_starts_with_envelope_in_order() {
         map(json!({ "op": "load" })),
     );
     assert!(
-        line.starts_with(
-            r#"{"time":"2026-01-01T00:00:00.000Z","level":"info","message":"hello""#
-        ),
+        line.starts_with(r#"{"time":"2026-01-01T00:00:00.000Z","level":"info","message":"hello""#),
         "unexpected line: {line}"
     );
     assert!(line.ends_with(r#""op":"load"}"#), "unexpected line: {line}");
@@ -94,29 +84,115 @@ fn into_map_wraps_non_object_payloads() {
     assert_eq!(into_map(json!([1, 2]))["value"], json!([1, 2]));
 }
 
-#[test]
-fn write_line_appends_lines_to_a_real_file() {
-    use std::io::Read;
-
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("session.log");
-    {
-        let file = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&path)
-            .unwrap();
-        let mut sink = Sink::File(BufWriter::new(file));
-        // First line buffered (info), second flushed immediately (warn);
-        // the flush also pushes the buffered line, so both reach disk.
-        write_line(&mut sink, "{\"a\":1}\n", false);
-        write_line(&mut sink, "{\"b\":2}\n", true);
+fn session(root: Option<&Path>) -> Session {
+    Session {
+        started: "2026-01-01T00:00:00.000Z".to_string(),
+        stamp: "20260101-000000-000-utc".to_string(),
+        root: root.map(Path::to_path_buf),
     }
+}
 
-    let mut contents = String::new();
-    File::open(&path)
+#[test]
+fn write_record_stores_the_session_and_moves_domain_ids_to_their_columns() {
+    let dir = tempfile::tempdir().unwrap();
+    let conn = open_records(&dir.path().join("records.sqlite3")).unwrap();
+    let fields = map(json!({ "paneId": "p1", "snapshotId": "s1", "message": "kept", "count": 2 }));
+    write_record(
+        Some(&conn),
+        &session(Some(dir.path())),
+        Level::Warn,
+        "hello",
+        "2026-01-01T00:00:01.000Z",
+        &fields,
+    );
+    write_record(
+        Some(&conn),
+        &session(Some(dir.path())),
+        Level::Info,
+        "plain",
+        "2026-01-01T00:00:02.000Z",
+        &Map::new(),
+    );
+
+    let rows: Vec<(String, String, String, String, Option<String>, Option<String>, String)> = conn
+        .prepare("SELECT session, time, level, message, pane_id, snapshot_id, fields FROM log_lines ORDER BY id")
         .unwrap()
-        .read_to_string(&mut contents)
+        .query_map([], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?, row.get(6)?))
+        })
+        .unwrap()
+        .collect::<Result<_, _>>()
         .unwrap();
-    assert_eq!(contents, "{\"a\":1}\n{\"b\":2}\n");
+    assert_eq!(rows.len(), 2);
+    let (session_start, time, level, message, pane_id, snapshot_id, fields) = &rows[0];
+    assert_eq!(session_start, "2026-01-01T00:00:00.000Z");
+    assert_eq!(time, "2026-01-01T00:00:01.000Z");
+    assert_eq!(level, "warn");
+    assert_eq!(message, "hello");
+    assert_eq!(pane_id.as_deref(), Some("p1"));
+    assert_eq!(snapshot_id.as_deref(), Some("s1"));
+    assert_eq!(
+        serde_json::from_str::<Value>(fields).unwrap(),
+        json!({ "message": "kept", "count": 2 })
+    );
+    assert_eq!((rows[1].4.as_deref(), rows[1].6.as_str()), (None, "{}"));
+    assert!(!dir.path().join("logs").exists());
+}
+
+#[test]
+fn write_record_falls_back_to_a_text_file_under_logs() {
+    let dir = tempfile::tempdir().unwrap();
+    let fields = map(json!({ "paneId": "p1" }));
+    write_record(
+        None,
+        &session(Some(dir.path())),
+        Level::Info,
+        "one",
+        "2026-01-01T00:00:01.000Z",
+        &fields,
+    );
+    write_record(
+        None,
+        &session(Some(dir.path())),
+        Level::Error,
+        "two",
+        "2026-01-01T00:00:02.000Z",
+        &Map::new(),
+    );
+
+    let contents =
+        std::fs::read_to_string(dir.path().join("logs").join("20260101-000000-000-utc.log"))
+            .unwrap();
+    let lines: Vec<Value> = contents
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    assert_eq!(
+        lines,
+        vec![
+            json!({ "time": "2026-01-01T00:00:01.000Z", "level": "info", "message": "one", "paneId": "p1" }),
+            json!({ "time": "2026-01-01T00:00:02.000Z", "level": "error", "message": "two" }),
+        ]
+    );
+}
+
+#[test]
+fn write_record_falls_back_when_the_insert_fails() {
+    let dir = tempfile::tempdir().unwrap();
+    let conn = rusqlite::Connection::open_in_memory().unwrap();
+    write_record(
+        Some(&conn),
+        &session(Some(dir.path())),
+        Level::Info,
+        "lost table",
+        "2026-01-01T00:00:01.000Z",
+        &Map::new(),
+    );
+    let contents =
+        std::fs::read_to_string(dir.path().join("logs").join("20260101-000000-000-utc.log"))
+            .unwrap();
+    assert!(
+        contents.contains("\"lost table\""),
+        "unexpected fallback: {contents}"
+    );
 }
