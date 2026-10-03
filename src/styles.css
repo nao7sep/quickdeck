@@ -1270,6 +1270,7 @@ input[type="range"]:focus-visible {
 .formGrid input[type="text"],
 .formGrid input[type="number"],
 .formGrid select,
+.recordsSelect,
 .searchBox {
   width: 100%;
   height: var(--control-height);
@@ -1284,6 +1285,7 @@ input[type="range"]:focus-visible {
 .formGrid input[type="text"]:hover,
 .formGrid input[type="number"]:hover,
 .formGrid select:hover,
+.recordsSelect:hover,
 .searchBox:hover {
   border-color: var(--text-muted);
 }
@@ -1293,6 +1295,7 @@ input[type="range"]:focus-visible {
 .formGrid input[type="text"]:focus,
 .formGrid input[type="number"]:focus,
 .formGrid select:focus,
+.recordsSelect:focus,
 .searchBox:focus-within {
   outline: none;
   border-color: var(--focus-ring);
@@ -1304,7 +1307,8 @@ input[type="range"]:focus-visible {
    the content-security policy allows no data: images, and currentColor needs no
    per-theme copy. Only the closed control is ours; the list it opens stays the
    platform's. */
-.formGrid select {
+.formGrid select,
+.recordsSelect {
   appearance: none;
   padding-right: 30px;
   background-image:
@@ -1749,6 +1753,263 @@ kbd {
   font-size: 11px;
   font-weight: 600;
   text-align: center;
+}
+
+/* ── Records Window ──────────────────────────────────────────── */
+
+/* The Records window (records.html): a list pane the user can widen, with the
+   filters above the records, beside the detail pane, which takes the rest.
+   --records-list-width is set inline from the displayed width, and the numbers
+   here mirror src/records/recordsLayout.ts. Lines are the app's own: each pane
+   is framed and banded like the snapshot detail, with --border. */
+.recordsShell {
+  position: relative;
+  display: grid;
+  grid-template-columns: var(--records-list-width, 380px) minmax(420px, 1fr);
+  gap: 16px;
+  width: 100%;
+  height: 100%;
+  padding: 16px;
+  overflow: hidden;
+  background: var(--app-bg);
+}
+
+.recordsPane {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+}
+
+/* The splitter sits in the gap between the panes. */
+.recordsShell > .paneSplitter {
+  top: 16px;
+  bottom: 16px;
+  left: calc(16px + var(--records-list-width, 380px));
+  width: 16px;
+}
+
+.paneSplitter {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: col-resize;
+  touch-action: none;
+  z-index: 1;
+}
+
+.paneSplitterGrip {
+  width: 2px;
+  height: 40px;
+  max-height: 40%;
+  border-radius: 2px;
+  background: var(--border-strong);
+  transition: background var(--motion);
+}
+
+.paneSplitter:hover .paneSplitterGrip {
+  background: var(--accent);
+}
+
+.recordsFilters {
+  display: grid;
+  gap: 8px;
+  flex: 0 0 auto;
+  padding: 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-accent);
+}
+
+.recordsFiltersRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8px;
+}
+
+.recordsListScroll {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 4px;
+  background: var(--surface-muted);
+}
+
+.recordsList {
+  display: grid;
+  gap: 2px;
+}
+
+/* Flat rows, like the snapshot list's: hover and selection are fills, and the
+   focus ring is drawn inside the row, so neither the scrolling pane nor the next
+   row's fill can cover it. */
+.recordsRow {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  padding: 8px 10px;
+  border-radius: var(--radius-item);
+  cursor: pointer;
+  transition: background var(--motion);
+}
+
+.recordsRow:hover {
+  background: var(--surface-hover);
+}
+
+.recordsRow-selected {
+  background: var(--surface-selected);
+}
+
+.recordsRow:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 2px var(--focus-ring);
+}
+
+.recordsRowMeta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.recordsRowTitle {
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.recordsRowText {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* A level reads as its word; error and warning also take their colour. */
+.recordsLevel {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+  color: var(--text-muted);
+}
+
+.recordsLevel-error {
+  color: var(--danger);
+}
+
+.recordsLevel-warn {
+  color: var(--text-strong);
+}
+
+.recordsNote {
+  margin: 0;
+  padding: 8px 10px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.recordsNote.errorText {
+  color: var(--danger);
+}
+
+.recordsDetailPane > .recordsNote {
+  padding: 14px;
+}
+
+.recordsDetailBar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex: 0 0 auto;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-accent);
+}
+
+.recordsDetailTitle {
+  margin: 0;
+  color: var(--text-heading);
+  font-size: 14px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.recordsDetailBar .recordsLevel {
+  flex-shrink: 0;
+  line-height: 20px;
+}
+
+.recordsDetailBody {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  display: grid;
+  align-content: start;
+  gap: 16px;
+  padding: 14px;
+}
+
+.recordsMeta {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 12px 16px;
+  margin: 0;
+}
+
+.recordsMeta dt {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.recordsMeta dd {
+  margin: 2px 0 0;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.recordsMeta code,
+.recordsBlockText {
+  font-family: var(--font-mono);
+}
+
+.recordsBlock {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.recordsBlockLabel {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.recordsBlockText {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-item);
+  background: var(--surface-muted);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 /* ── Toasts ──────────────────────────────────────────────────── */

@@ -23,10 +23,13 @@ const translations = LANGUAGES.filter((language) => language !== "en");
 
 // Keys whose text is the same word in that language as in English.
 const SAME_AS_ENGLISH: Partial<Record<Language, readonly string[]>> = {
-  de: ["common.ok", "status.zen", "menu.zoom", "settings.languageSystem", "settings.themeSystem", "about.version", "menu.snapshots", "snapshots.title"],
-  es: ["status.zen", "menu.zoom", "nativeMenu.zoom"],
+  de: [
+    "common.ok", "status.zen", "menu.zoom", "settings.languageSystem", "settings.themeSystem", "about.version",
+    "menu.snapshots", "snapshots.title", "records.levelInfo", "records.levelDebug", "records.details", "records.snapshot",
+  ],
+  es: ["status.zen", "menu.zoom", "nativeMenu.zoom", "records.levelError"],
   fr: ["common.ok", "status.zen", "menu.zoom", "about.version", "nativeMenu.services"],
-  it: ["common.ok", "status.zen", "menu.zoom", "nativeMenu.file"],
+  it: ["common.ok", "status.zen", "menu.zoom", "nativeMenu.file", "records.levelInfo", "records.levelDebug"],
   ja: ["common.ok", "status.zen"],
   ko: ["status.zen"],
   "pt-BR": ["common.ok", "status.zen", "menu.zoom", "nativeMenu.zoom"],

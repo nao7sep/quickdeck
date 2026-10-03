@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { indexOfId, nextIndex, verticalTablistDirection } from "../../src/utils/compositeNav";
+import { indexOfId, listboxDirection, nextIndex, verticalTablistDirection } from "../../src/utils/compositeNav";
 
 describe("nextIndex", () => {
   it("steps forward and backward one item at a time", () => {
@@ -71,5 +71,28 @@ describe("verticalTablistDirection", () => {
     expect(verticalTablistDirection(" ")).toBeNull();
     expect(verticalTablistDirection("Escape")).toBeNull();
     expect(verticalTablistDirection("a")).toBeNull();
+  });
+});
+
+describe("listbox pages", () => {
+  it("moves a page at a time and stops at the ends", () => {
+    expect(nextIndex("page-next", 2, 30, 8)).toBe(10);
+    expect(nextIndex("page-next", 25, 30, 8)).toBe(29);
+    expect(nextIndex("page-prev", 10, 30, 8)).toBe(2);
+    expect(nextIndex("page-prev", 3, 30, 8)).toBe(0);
+    expect(nextIndex("page-next", -1, 30, 8)).toBe(0);
+    expect(nextIndex("page-next", 0, 0, 8)).toBe(-1);
+  });
+
+  it("maps the listbox keys to directions", () => {
+    expect(listboxDirection("ArrowDown")).toBe("next");
+    expect(listboxDirection("ArrowUp")).toBe("prev");
+    expect(listboxDirection("PageDown")).toBe("page-next");
+    expect(listboxDirection("PageUp")).toBe("page-prev");
+    expect(listboxDirection("Home")).toBe("first");
+    expect(listboxDirection("End")).toBe("last");
+    // A listbox is vertical: the horizontal arrows are not its keys.
+    expect(listboxDirection("ArrowRight")).toBeNull();
+    expect(listboxDirection("Enter")).toBeNull();
   });
 });

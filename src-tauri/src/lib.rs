@@ -6,15 +6,59 @@ mod logging;
 mod menu;
 mod nanoid;
 mod paths;
+pub mod records;
+mod records_window;
 pub mod storage;
 pub mod theme;
 pub mod window_placement;
 
+use std::sync::Mutex;
+
 use i18n::LanguageState;
 use menu::SAFE_QUIT_MENU_ID;
+use records::{RecordDetail, RecordSources, RecordsPage, RecordsQuery};
+use serde::Serialize;
 use serde_json::{json, Map, Value as JsonValue};
 use storage::{LoadedAppData, SnapshotInput, SnapshotListResult, SnapshotWriteResult};
-use tauri::{AppHandle, Manager, RunEvent, State};
+use tauri::{AppHandle, Manager, RunEvent, Runtime, State, Theme, WindowEvent};
+use window_placement::PlacementState;
+
+// The window theme last applied, which a Records window opened later takes too.
+struct WindowTheme(Mutex<Option<Theme>>);
+
+impl WindowTheme {
+    fn get(&self) -> Option<Theme> {
+        *self
+            .0
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    fn set(&self, theme: Option<Theme>) {
+        *self
+            .0
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = theme;
+    }
+}
+
+// Activating the app — a second launch, or the macOS Dock — brings the main
+// window back, whatever the Records window is doing.
+pub(crate) fn bring_main_forward<R: Runtime>(app: &AppHandle<R>) {
+    let Some(window) = app.get_webview_window("main") else {
+        return;
+    };
+    let result = window
+        .unminimize()
+        .and_then(|()| window.show())
+        .and_then(|()| window.set_focus());
+    if let Err(error) = result {
+        logging::warn(
+            "main window could not be brought forward",
+            json!({ "error": error.to_string() }),
+        );
+    }
+}
 
 // File, database and clipboard work runs on a blocking thread, per the
 // PLAYBOOK's "Own the work in flight".
@@ -60,12 +104,24 @@ async fn load_app_data(app: AppHandle) -> Result<LoadedAppData, String> {
     .await
 }
 
+// Applies the saved theme to every open window; a Records window opened later
+// takes it from WindowTheme.
 #[tauri::command]
-fn apply_theme(window: tauri::WebviewWindow, preference: String) -> Result<(), String> {
+fn apply_theme(
+    app: AppHandle,
+    window_theme: State<WindowTheme>,
+    preference: String,
+) -> Result<(), String> {
     logging::boundary(
         "apply_theme",
         json!({ "preference": preference }),
-        || theme::apply(&window, theme::window_theme_for(&preference)),
+        || {
+            let theme = theme::window_theme_for(&preference);
+            window_theme.set(theme);
+            app.webview_windows()
+                .values()
+                .try_for_each(|window| theme::apply(window, theme))
+        },
         |_| json!({}),
     )
 }
@@ -93,9 +149,16 @@ fn apply_language(
                 let menu = menu::build(&app, language).map_err(|error| error.to_string())?;
                 app.set_menu(menu).map_err(|error| error.to_string())?;
             }
-            #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-            let _ = &app;
             state.set_current(language);
+            // The menu has changed, so this call succeeded; a Records window
+            // that missed the change is logged rather than reported as the
+            // menu's failure.
+            if let Err(error) = records_window::follow_language(&app, language) {
+                logging::warn(
+                    "records window language update failed",
+                    json!({ "error": error }),
+                );
+            }
             Ok(())
         },
         |_| json!({}),
@@ -280,6 +343,114 @@ async fn delete_all_snapshots(app: AppHandle) -> Result<u64, String> {
     .await
 }
 
+#[tauri::command]
+async fn open_records_window(
+    app: AppHandle,
+    placements: State<'_, PlacementState>,
+) -> Result<(), String> {
+    let placements = placements.inner().clone();
+    off_main_thread(move || {
+        logging::boundary(
+            "open_records_window",
+            json!({}),
+            || {
+                let window_theme = app.state::<WindowTheme>().get();
+                let language = app.state::<LanguageState>().current();
+                records_window::open(&app, &placements, window_theme, language)
+            },
+            |_| json!({}),
+        )
+    })
+    .await
+}
+
+// What the Records window needs before its first frame: the language it speaks
+// and the list width last chosen.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RecordsWindowSetup {
+    language: &'static str,
+    system_locale: Option<String>,
+    list_width: Option<f64>,
+}
+
+#[tauri::command]
+async fn records_window_setup(app: AppHandle) -> Result<RecordsWindowSetup, String> {
+    off_main_thread(move || {
+        logging::boundary(
+            "records_window_setup",
+            json!({}),
+            || {
+                let language = app.state::<LanguageState>();
+                Ok(RecordsWindowSetup {
+                    language: language.current(),
+                    system_locale: language.system_locale.clone(),
+                    list_width: storage::records_list_width(&app)?,
+                })
+            },
+            |setup| json!({ "language": setup.language, "listWidth": setup.list_width }),
+        )
+    })
+    .await
+}
+
+// Saved only when a splitter drag ends (window conventions).
+#[tauri::command]
+async fn save_records_list_width(app: AppHandle, width: u32) -> Result<(), String> {
+    off_main_thread(move || {
+        logging::boundary(
+            "save_records_list_width",
+            json!({ "width": width }),
+            || storage::save_records_list_width(&app, width),
+            |_| json!({}),
+        )
+    })
+    .await
+}
+
+// The Records window's reads. Unlike every other command they log nothing when
+// they succeed (records.rs says why); a failure is logged once.
+async fn read_records<T: Send + 'static>(
+    app: AppHandle,
+    op: &'static str,
+    read: impl FnOnce(&rusqlite::Connection) -> rusqlite::Result<T> + Send + 'static,
+) -> Result<T, String> {
+    off_main_thread(move || {
+        let file = paths::app_data_dir(&app)?.join(storage::RECORDS_DB_FILE_NAME);
+        records::read_bounded(file, read)
+    })
+    .await
+    .inspect_err(|error| logging::error("records read failed", json!({ "op": op, "error": error })))
+}
+
+#[tauri::command]
+async fn read_records_page(app: AppHandle, query: RecordsQuery) -> Result<RecordsPage, String> {
+    read_records(app, "read_records_page", move |conn| {
+        records::read_page(conn, &query)
+    })
+    .await
+}
+
+#[tauri::command]
+async fn read_record_detail(app: AppHandle, id: i64) -> Result<Option<RecordDetail>, String> {
+    read_records(app, "read_record_detail", move |conn| {
+        records::read_detail(conn, id)
+    })
+    .await
+}
+
+#[tauri::command]
+async fn read_record_sources(app: AppHandle) -> Result<RecordSources, String> {
+    let current_session = logging::session().unwrap_or_default();
+    read_records(app, "read_record_sources", move |conn| {
+        Ok(RecordSources {
+            current_session,
+            sessions: records::read_sessions(conn)?,
+        })
+    })
+    .await
+}
+
 // Receives a structured log object from the sandboxed webview and records it.
 // The frontend stamps `time`; the Rust core owns the records database.
 #[tauri::command]
@@ -297,6 +468,7 @@ pub fn run() {
     let placement_state = window_placement::new_state();
     let event_placement_state = placement_state.clone();
     let setup_placement_state = placement_state.clone();
+    let managed_placement_state = placement_state.clone();
     // The interface language is settled before Tauri builds the app: macOS fixes
     // AppKit's language when the application object is created.
     let language = LanguageState::detect(
@@ -308,10 +480,15 @@ pub fn run() {
     i18n::align_appkit(language.current());
     let app = tauri::Builder::default()
         .manage(language)
+        .manage(managed_placement_state)
         .plugin(instance_owner::init())
         .plugin(tauri_plugin_opener::init())
         .on_window_event(move |window, event| {
             window_placement::on_window_event(window, event, &event_placement_state);
+            // The Records window never keeps the app running on its own.
+            if window.label() == "main" && matches!(event, WindowEvent::Destroyed) {
+                records_window::close_with_main(window.app_handle(), &event_placement_state);
+            }
             // Under System the OS appearance can change while the app runs; keep
             // the backing behind the page in step. (macOS reports only OS
             // changes here, which is why apply_theme sets the background itself.)
@@ -343,22 +520,22 @@ pub fn run() {
         .setup(move |app| {
             let version = app.package_info().version.to_string();
             logging::init(app.handle(), &version);
+            let records_app = app.handle().clone();
+            logging::on_stored(move || records_window::notify_changed(&records_app));
+            // The saved theme is applied before the window is shown so the first
+            // frame and title bar already match it; the frontend re-applies it on
+            // every Save.
+            let saved_theme = paths::app_data_dir(app.handle()).ok().and_then(|dir| {
+                theme::read_saved_window_theme(&dir.join(storage::CONFIG_FILE_NAME))
+            });
+            app.manage(WindowTheme(Mutex::new(saved_theme)));
+            window_placement::load(app.handle(), &setup_placement_state);
             let main_window = app.get_webview_window("main");
             if let Some(window) = main_window.as_ref() {
-                // The saved theme is applied before the window is shown so the
-                // first frame and title bar already match it; the frontend
-                // re-applies it on every Save.
-                let saved_theme = paths::app_data_dir(app.handle()).ok().and_then(|dir| {
-                    theme::read_saved_window_theme(&dir.join(storage::CONFIG_FILE_NAME))
-                });
                 if let Err(error) = theme::apply(window, saved_theme) {
                     logging::warn("apply saved window theme failed", json!({ "error": error }));
                 }
-                window_placement::restore(
-                    app.handle(),
-                    &window.as_ref().window(),
-                    &setup_placement_state,
-                );
+                window_placement::restore(&window.as_ref().window(), &setup_placement_state);
             }
             #[cfg(any(target_os = "macos", target_os = "windows"))]
             {
@@ -375,6 +552,12 @@ pub fn run() {
             apply_language,
             apply_theme,
             load_app_data,
+            open_records_window,
+            records_window_setup,
+            save_records_list_width,
+            read_records_page,
+            read_record_detail,
+            read_record_sources,
             save_config,
             save_state,
             save_panes,
@@ -398,9 +581,15 @@ pub fn run() {
     let mut shutdown_logged = false;
     app.run(move |app, event| {
         if matches!(event, RunEvent::ExitRequested { .. }) {
-            if let Some(window) = app.get_webview_window("main") {
-                window_placement::capture(&window.as_ref().window(), &placement_state);
+            for label in window_placement::DURABLE_WINDOWS {
+                if let Some(window) = app.get_webview_window(label) {
+                    window_placement::capture(&window.as_ref().window(), &placement_state);
+                }
             }
+        }
+        #[cfg(target_os = "macos")]
+        if let RunEvent::Reopen { .. } = event {
+            bring_main_forward(app);
         }
         let ending = matches!(event, RunEvent::ExitRequested { .. } | RunEvent::Exit);
         if ending && !shutdown_logged {

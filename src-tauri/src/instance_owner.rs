@@ -100,10 +100,7 @@ fn listen<R: Runtime>(listener: TcpListener, app: tauri::AppHandle<R>) {
             Ok((mut stream, _)) => {
                 let mut request = [0u8; 8];
                 if stream.read(&mut request).is_ok() && request.starts_with(b"activate") {
-                    if let Some(window) = app.get_webview_window("main") {
-                        let _ = window.show();
-                        let _ = window.set_focus();
-                    }
+                    crate::bring_main_forward(&app);
                 }
             }
             Err(err) if err.kind() == std::io::ErrorKind::WouldBlock => {

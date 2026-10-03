@@ -1,10 +1,11 @@
-export type NavDirection = "next" | "prev" | "first" | "last";
+export type NavDirection = "next" | "prev" | "first" | "last" | "page-next" | "page-prev";
 
 /**
  * The roving-navigation index math shared by the app's in-app composite layers
- * (the Menu and the zen-mode PaneSwitcher tablist). Given a direction, the
- * current item index, and the item count, returns the index a directional key
- * should move to.
+ * (the Menu, the zen-mode PaneSwitcher tablist, and the Records window's
+ * listbox). Given a direction, the current item index, and the item count,
+ * returns the index a directional key should move to; a page moves `pageStep`
+ * items, about one viewport.
  *
  * Stops at the ends (no wrapping). When nothing is current yet (index `-1`),
  * "next" enters at the first item and "prev" at the last. Returns `-1` for an
@@ -12,9 +13,13 @@ export type NavDirection = "next" | "prev" | "first" | "last";
  * Up/Down, the vertical tablist uses Up/Down and Left/Right) and keeps the DOM
  * focus movement itself, which is verified by manual QA.
  */
-export function nextIndex(direction: NavDirection, current: number, length: number): number {
+export function nextIndex(direction: NavDirection, current: number, length: number, pageStep = 1): number {
   if (length === 0) return -1;
   switch (direction) {
+    case "page-next":
+      return current < 0 ? 0 : Math.min(current + pageStep, length - 1);
+    case "page-prev":
+      return current < 0 ? 0 : Math.max(current - pageStep, 0);
     case "next":
       return current < 0 ? 0 : Math.min(current + 1, length - 1);
     case "prev":
@@ -44,6 +49,30 @@ export function verticalTablistDirection(key: string): NavDirection | null {
     case "ArrowUp":
     case "ArrowLeft":
       return "prev";
+    case "Home":
+      return "first";
+    case "End":
+      return "last";
+    default:
+      return null;
+  }
+}
+
+/**
+ * Maps a keyboard key to a navigation direction for a listbox
+ * (composite-control-conventions, Listbox): Up/Down by one, PageUp/PageDown by
+ * about one viewport, Home/End to the ends. Returns null for any other key.
+ */
+export function listboxDirection(key: string): NavDirection | null {
+  switch (key) {
+    case "ArrowDown":
+      return "next";
+    case "ArrowUp":
+      return "prev";
+    case "PageDown":
+      return "page-next";
+    case "PageUp":
+      return "page-prev";
     case "Home":
       return "first";
     case "End":

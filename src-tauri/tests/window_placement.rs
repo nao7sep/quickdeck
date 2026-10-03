@@ -1,6 +1,8 @@
 use quickdeck_lib::window_placement::{
-    placement_after_close, ClosingState, NormalRectangle, Placement,
+    placement_after_close, placements_from, ClosingState, NormalRectangle, Placement,
+    DURABLE_WINDOWS,
 };
+use serde_json::json;
 
 fn rectangle(x: i32, y: i32, width: u32, height: u32) -> NormalRectangle {
     NormalRectangle {
@@ -71,4 +73,38 @@ fn minimized_or_fullscreen_close_retains_the_whole_record() {
         placement_after_close(Some(previous), ClosingState::Transient, true),
         Some(previous)
     );
+}
+
+#[test]
+fn window_json_holds_one_placement_per_durable_window() {
+    assert_eq!(DURABLE_WINDOWS, ["main", "records"]);
+    let placements = placements_from(Some(json!({
+        "main": { "normal": { "x": 10, "y": 20, "width": 800, "height": 600 }, "maximized": true },
+        "records": { "normal": { "x": -900, "y": 40, "width": 1240, "height": 820 }, "maximized": false },
+    })));
+    assert_eq!(
+        placements.get("main"),
+        Some(&Placement {
+            normal: rectangle(10, 20, 800, 600),
+            maximized: true
+        })
+    );
+    assert_eq!(
+        placements.get("records"),
+        Some(&Placement {
+            normal: rectangle(-900, 40, 1240, 820),
+            maximized: false
+        })
+    );
+}
+
+#[test]
+fn a_window_json_of_another_shape_is_discarded_as_a_unit() {
+    // The single record window.json held before the Records window existed.
+    let single =
+        json!({ "normal": { "x": 10, "y": 20, "width": 800, "height": 600 }, "maximized": false });
+    assert!(placements_from(Some(single)).is_empty());
+    let damaged = json!({ "main": { "normal": { "x": 10 } } });
+    assert!(placements_from(Some(damaged)).is_empty());
+    assert!(placements_from(None).is_empty());
 }

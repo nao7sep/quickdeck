@@ -3,7 +3,8 @@
 //! to. The Rust core owns the database; the webview forwards structured log
 //! objects via the `log_event` command (see `lib.rs`). Rows are written on the
 //! logger's own thread, and `flush` waits for those already sent. A failed write
-//! goes to `logs/<session stamp>.log` as one JSON line.
+//! goes to `logs/<session stamp>.log` as one JSON line. The schema and the reads
+//! the Records window makes live in `records.rs`.
 
 use std::{
     fs::{self, OpenOptions},
@@ -18,23 +19,7 @@ use rusqlite::{params, Connection};
 use serde_json::{json, Map, Value};
 use tauri::AppHandle;
 
-use crate::{paths, storage::RECORDS_DB_FILE_NAME};
-
-// `fields` holds the free fields as given, minus the domain ids, which have their
-// own columns.
-const SCHEMA: &str = "
-CREATE TABLE IF NOT EXISTS log_lines (
-  id          INTEGER PRIMARY KEY,
-  session     TEXT NOT NULL,
-  time        TEXT NOT NULL,
-  level       TEXT NOT NULL,
-  message     TEXT NOT NULL,
-  pane_id     TEXT,
-  snapshot_id TEXT,
-  fields      TEXT NOT NULL
-);
-CREATE INDEX IF NOT EXISTS log_lines_session ON log_lines (session, id);
-";
+use crate::{paths, records, storage::RECORDS_DB_FILE_NAME};
 
 // The free fields that name a domain object, and the column each one fills.
 const DOMAIN_IDS: [&str; 2] = ["paneId", "snapshotId"];
@@ -103,6 +88,23 @@ struct Logger {
 
 static LOGGER: OnceLock<Logger> = OnceLock::new();
 
+// Called on the writer thread after each row the database stored; a line that
+// went to the fallback file is not in the database, so it calls nothing.
+type StoredListener = Box<dyn Fn() + Send + Sync>;
+static STORED: OnceLock<StoredListener> = OnceLock::new();
+
+/// Registers what runs after each stored row (the Records window's signal). Safe
+/// to call once; later calls are ignored.
+pub fn on_stored(listener: impl Fn() + Send + Sync + 'static) {
+    let _ = STORED.set(Box::new(listener));
+}
+
+fn notify_stored() {
+    if let Some(listener) = STORED.get() {
+        listener();
+    }
+}
+
 // Installs the panic hook, starts the writer thread, which opens the records
 // database, and writes the startup line. Safe to call once; later calls are
 // ignored. Never fails the app: without the database or the thread every line
@@ -136,7 +138,7 @@ pub fn init(app: &AppHandle, version: &str) {
     let file = root.map(|root| root.join(RECORDS_DB_FILE_NAME));
     let spawned = std::thread::Builder::new()
         .name("records".to_string())
-        .spawn(move || run_writer(file, session, lines));
+        .spawn(move || run_writer(file, session, lines, notify_stored));
     if let Err(error) = spawned {
         warn(
             "records writer unavailable",
@@ -157,8 +159,14 @@ pub fn init(app: &AppHandle, version: &str) {
 }
 
 // The writer thread: owns the records database for the rest of the process and
-// writes each line in the order it was sent.
-fn run_writer(file: Result<PathBuf, String>, session: Session, lines: mpsc::Receiver<Message>) {
+// writes each line in the order it was sent, calling `stored` after each row the
+// database took.
+fn run_writer(
+    file: Result<PathBuf, String>,
+    session: Session,
+    lines: mpsc::Receiver<Message>,
+    stored: impl Fn(),
+) {
     let records = file.and_then(|file| open_records(&file).map_err(|error| error.to_string()));
     let records = match records {
         Ok(conn) => Some(conn),
@@ -181,7 +189,11 @@ fn run_writer(file: Result<PathBuf, String>, session: Session, lines: mpsc::Rece
                 message,
                 time,
                 fields,
-            } => write_record(records.as_ref(), &session, level, &message, &time, &fields),
+            } => {
+                if write_record(records.as_ref(), &session, level, &message, &time, &fields) {
+                    stored();
+                }
+            }
             Message::Flush(done) => {
                 let _ = done.send(());
             }
@@ -218,7 +230,7 @@ fn open_records(file: &Path) -> rusqlite::Result<Connection> {
     conn.pragma_update(None, "journal_mode", "WAL")?;
     conn.pragma_update(None, "synchronous", "NORMAL")?;
     conn.pragma_update(None, "busy_timeout", 5000)?;
-    conn.execute_batch(SCHEMA)?;
+    conn.execute_batch(records::SCHEMA)?;
     Ok(conn)
 }
 
@@ -271,6 +283,16 @@ pub fn log_forwarded(
 // message racing the window teardown.
 pub fn log_shutdown() {
     write_event(Level::Info, "shutdown", now_iso(), Map::new());
+}
+
+// This launch's session, as every row of it carries.
+pub fn session() -> Option<String> {
+    LOGGER.get().map(|logger| logger.session.started.clone())
+}
+
+// A single Rust-side error, for a failure that has no boundary of its own.
+pub fn error(message: &str, fields: Value) {
+    write_event(Level::Error, message, now_iso(), into_map(fields));
 }
 
 // A single Rust-side warning. `fields` is any JSON object (a non-object payload
@@ -350,7 +372,8 @@ fn write_event(level: Level, message: &str, time: String, fields: Map<String, Va
 }
 
 // Inserts one row, or appends the line to the fallback file when there is no
-// database or the insert fails. It must NEVER panic: the std print macros
+// database or the insert fails; true when the row reached the database. It must
+// NEVER panic: the std print macros
 // (eprint!/eprintln!) panic on a failed stderr write, which on a no-console GUI
 // build would fire the panic hook, which logs and flushes, on the writer thread
 // itself. All stderr output here therefore goes through non-panicking
@@ -362,14 +385,14 @@ fn write_record(
     message: &str,
     time: &str,
     fields: &Map<String, Value>,
-) {
+) -> bool {
     let inserted = match records {
         Some(conn) => insert_record(conn, &session.started, level, message, time, fields)
             .map_err(|error| error.to_string()),
         None => Err("records database unavailable".to_string()),
     };
     let Err(reason) = inserted else {
-        return;
+        return true;
     };
 
     let line = build_line(level, message, time, fields.clone());
@@ -385,6 +408,7 @@ fn write_record(
             "[quickdeck] log record not written ({reason}; fallback: {error}): {line}"
         );
     }
+    false
 }
 
 fn insert_record(

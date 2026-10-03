@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
@@ -30,4 +31,14 @@ export default defineConfig({
     },
   },
   envPrefix: ["VITE_", "TAURI_"],
+  // Two pages: the main window, and the Records window the Rust core opens
+  // (src-tauri/src/records_window.rs).
+  build: {
+    rolldownOptions: {
+      input: {
+        main: fileURLToPath(new URL("./index.html", import.meta.url)),
+        records: fileURLToPath(new URL("./records.html", import.meta.url)),
+      },
+    },
+  },
 });

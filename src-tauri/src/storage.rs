@@ -2,6 +2,7 @@ use std::{
     fs::{self, File},
     io::Write,
     path::{Path, PathBuf},
+    sync::Mutex,
 };
 
 use chrono::{SecondsFormat, Utc};
@@ -44,6 +45,13 @@ pub const PANES_FILE_NAME: &str = "panes.json";
 pub const ARCHIVED_STORES: &[(&str, &str)] = &[(SNAPSHOTS_DB_FILE_NAME, SNAPSHOTS_DB_FILE_NAME)];
 pub const SNAPSHOTS_DB_FILE_NAME: &str = "snapshots.sqlite3";
 pub const RECORDS_DB_FILE_NAME: &str = "records.sqlite3";
+
+// The Records window's list width, which state.json holds beside the main
+// window's view state. The main window writes the file whole without knowing it,
+// so every state.json write is a read-modify-write under STATE_LOCK that carries
+// it over (window conventions: the width is saved only when a drag ends).
+pub const RECORDS_LIST_WIDTH_KEY: &str = "recordsListWidth";
+static STATE_LOCK: Mutex<()> = Mutex::new(());
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -170,10 +178,69 @@ pub fn write_config(data_dir: &Path, config: &JsonValue) -> Result<(), String> {
 }
 
 pub fn save_state(app: &AppHandle, state: JsonValue) -> Result<(), String> {
-    // not recorded: state.json is pure view/session state (active pane, zoom) —
-    // volatile state, kept out of the backup history (data-backup conventions).
-    let data_dir = app_data_dir(app)?;
-    atomic_write_json_unrecorded(&data_dir.join(STATE_FILE_NAME), &state)
+    save_state_in(&app_data_dir(app)?, state)
+}
+
+fn save_state_in(data_dir: &Path, mut state: JsonValue) -> Result<(), String> {
+    // not recorded: state.json is pure view/session state (active pane, zoom, the
+    // Records list width) — volatile state, kept out of the backup history
+    // (data-backup conventions).
+    let path = data_dir.join(STATE_FILE_NAME);
+    let _guard = STATE_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let carried =
+        read_state_object(&path).and_then(|stored| stored.get(RECORDS_LIST_WIDTH_KEY).cloned());
+    if let (Some(width), Some(object)) = (carried, state.as_object_mut()) {
+        object.entry(RECORDS_LIST_WIDTH_KEY).or_insert(width);
+    }
+    atomic_write_json_unrecorded(&path, &state)
+}
+
+pub fn records_list_width(app: &AppHandle) -> Result<Option<f64>, String> {
+    records_list_width_in(&app_data_dir(app)?)
+}
+
+fn records_list_width_in(data_dir: &Path) -> Result<Option<f64>, String> {
+    let _guard = STATE_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    Ok(
+        read_state_object(&data_dir.join(STATE_FILE_NAME)).and_then(|stored| {
+            stored
+                .get(RECORDS_LIST_WIDTH_KEY)
+                .and_then(JsonValue::as_f64)
+        }),
+    )
+}
+
+pub fn save_records_list_width(app: &AppHandle, width: u32) -> Result<(), String> {
+    save_records_list_width_in(&app_data_dir(app)?, width)
+}
+
+fn save_records_list_width_in(data_dir: &Path, width: u32) -> Result<(), String> {
+    let path = data_dir.join(STATE_FILE_NAME);
+    let _guard = STATE_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    // An unreadable file is left for the launch's recovery to set aside rather
+    // than overwritten here.
+    let mut state = match read_json_optional(&path)? {
+        None => serde_json::Map::new(),
+        Some(JsonValue::Object(object)) => object,
+        Some(_) => return Err(format!("{} is not a JSON object", path.display())),
+    };
+    state.insert(RECORDS_LIST_WIDTH_KEY.to_string(), JsonValue::from(width));
+    atomic_write_json_unrecorded(&path, &JsonValue::Object(state))
+}
+
+// state.json as an object, or None when it is missing or unreadable; its
+// recovery stays with the launch's load path.
+fn read_state_object(path: &Path) -> Option<serde_json::Map<String, JsonValue>> {
+    match read_json_optional(path) {
+        Ok(Some(JsonValue::Object(object))) => Some(object),
+        _ => None,
+    }
 }
 
 pub fn load_window_state(app: &AppHandle) -> Result<Option<JsonValue>, String> {
@@ -698,7 +765,7 @@ fn hash_content(content: &str) -> String {
         .collect()
 }
 
-fn escape_like(term: &str) -> String {
+pub(crate) fn escape_like(term: &str) -> String {
     term.replace('\\', "\\\\")
         .replace('%', "\\%")
         .replace('_', "\\_")

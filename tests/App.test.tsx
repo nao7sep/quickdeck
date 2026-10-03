@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
   isMinimized: vi.fn(() => Promise.resolve(false)),
   currentMonitor: vi.fn(() => Promise.resolve(null)),
   logWarn: vi.fn(),
+  openRecordsWindow: vi.fn<() => Promise<void>>(() => Promise.resolve()),
 }));
 
 vi.mock("../src/state/AppStateContext", () => ({
@@ -46,6 +47,9 @@ vi.mock("../src/services/windowTheme", () => ({
 }));
 vi.mock("../src/services/persistence", () => ({
   applyLanguage: mocks.applyLanguage,
+}));
+vi.mock("../src/services/records", () => ({
+  openRecordsWindow: mocks.openRecordsWindow,
 }));
 vi.mock("../src/services/logger", () => ({
   logError: vi.fn(),
@@ -316,5 +320,51 @@ describe("App window-chrome results", () => {
     await act(async () => root?.render(<App />));
     await flushEffects();
     expect(document.body.textContent).not.toContain("Always on top could not be updated");
+  });
+});
+
+describe("App Records menu item", () => {
+  async function chooseRecords() {
+    await act(async () => document.querySelector<HTMLButtonElement>(".statusMenuButton")!.click());
+    const item = Array.from(document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')).find(
+      (button) => button.textContent === "Records",
+    );
+    expect(item).toBeDefined();
+    await act(async () => item!.click());
+    await flushEffects();
+  }
+
+  it("opens the Records window from the app menu", async () => {
+    const state = { ...createAppState(), showToast: vi.fn() };
+    mocks.appState = state;
+    mocks.openRecordsWindow.mockReset();
+    mocks.openRecordsWindow.mockResolvedValue();
+    const container = document.createElement("div");
+    document.body.append(container);
+    root = createRoot(container);
+    await act(async () => root?.render(<App />));
+    await flushEffects();
+
+    await chooseRecords();
+
+    expect(mocks.openRecordsWindow).toHaveBeenCalledOnce();
+    expect(state.showToast).not.toHaveBeenCalled();
+  });
+
+  it("says so when the Records window cannot be opened", async () => {
+    const state = { ...createAppState(), showToast: vi.fn() };
+    mocks.appState = state;
+    mocks.openRecordsWindow.mockReset();
+    mocks.openRecordsWindow.mockRejectedValue(new Error("no window"));
+    const container = document.createElement("div");
+    document.body.append(container);
+    root = createRoot(container);
+    await act(async () => root?.render(<App />));
+    await flushEffects();
+
+    await chooseRecords();
+
+    expect(state.showToast).toHaveBeenCalledWith("records-window", "error", { key: "toast.recordsFailed" });
+    expect(mocks.logWarn).toHaveBeenCalled();
   });
 });

@@ -1,0 +1,10 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "records",
+  "description": "Records window permissions",
+  "windows": ["records"],
+  "permissions": [
+    "core:default",
+    "core:window:allow-set-min-size"
+  ]
+}

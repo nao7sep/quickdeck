@@ -213,7 +213,8 @@ fn the_writer_thread_writes_lines_in_order_before_answering_a_flush() {
     let (writer, lines) = mpsc::channel();
     let thread_session = session(Some(dir.path()));
     let thread_file = file.clone();
-    let thread = std::thread::spawn(move || run_writer(Ok(thread_file), thread_session, lines));
+    let thread =
+        std::thread::spawn(move || run_writer(Ok(thread_file), thread_session, lines, || {}));
     for message in ["first", "second"] {
         writer
             .send(Message::Line {
@@ -254,11 +255,16 @@ fn the_writer_thread_falls_back_when_the_database_cannot_open() {
         })
         .unwrap();
     drop(writer);
+    let stored = std::cell::Cell::new(0);
     run_writer(
         Err("no data directory".to_string()),
         session(Some(dir.path())),
         lines,
+        || stored.set(stored.get() + 1),
     );
+    // A line that went to the fallback file is not in the database, so the
+    // Records window is not told about it.
+    assert_eq!(stored.get(), 0);
 
     let contents =
         std::fs::read_to_string(dir.path().join("logs").join("20260101-000000-000-utc.log"))
@@ -271,4 +277,53 @@ fn the_writer_thread_falls_back_when_the_database_cannot_open() {
         messages,
         [json!("records database unavailable"), json!("kept")]
     );
+}
+
+#[test]
+fn the_writer_thread_signals_each_row_the_database_stored() {
+    let dir = tempfile::tempdir().unwrap();
+    let (writer, lines) = mpsc::channel();
+    for message in ["first", "second"] {
+        writer
+            .send(Message::Line {
+                level: Level::Info,
+                message: message.to_string(),
+                time: "2026-01-01T00:00:01.000Z".to_string(),
+                fields: Map::new(),
+            })
+            .unwrap();
+    }
+    drop(writer);
+    let stored = std::cell::Cell::new(0);
+    run_writer(
+        Ok(dir.path().join("records.sqlite3")),
+        session(Some(dir.path())),
+        lines,
+        || stored.set(stored.get() + 1),
+    );
+    assert_eq!(stored.get(), 2);
+}
+
+#[test]
+fn write_record_says_whether_the_row_reached_the_database() {
+    let dir = tempfile::tempdir().unwrap();
+    let conn = open_records(&dir.path().join("records.sqlite3")).unwrap();
+    let session = session(Some(dir.path()));
+    let time = "2026-01-01T00:00:01.000Z";
+    assert!(write_record(
+        Some(&conn),
+        &session,
+        Level::Info,
+        "kept",
+        time,
+        &Map::new()
+    ));
+    assert!(!write_record(
+        None,
+        &session,
+        Level::Info,
+        "fallback",
+        time,
+        &Map::new()
+    ));
 }

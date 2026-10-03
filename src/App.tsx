@@ -13,6 +13,7 @@ import {
   Menu as MenuIcon,
   Minus,
   Plus,
+  ScrollText,
   Settings,
 } from "lucide-react";
 import { AboutModal } from "./components/AboutModal";
@@ -28,6 +29,7 @@ import { ToastViewport } from "./components/ToastViewport";
 import { matchesShortcut } from "./shortcuts";
 import { applyWindowTheme } from "./services/windowTheme";
 import { applyLanguage } from "./services/persistence";
+import { openRecordsWindow } from "./services/records";
 import { useI18n } from "./i18n/I18nContext";
 import type { MessageKey } from "./i18n/catalogues";
 import { message } from "./i18n/translate";
@@ -110,6 +112,15 @@ export function App() {
   const openMenuModal = useCallback((modal: OpenModal) => {
     setOpenModal(modal);
   }, []);
+
+  // The Records window is its own native window, opened (or brought forward) by
+  // the Rust core; only a failure to do so is shown here.
+  const openRecords = useCallback(() => {
+    void openRecordsWindow().catch((error) => {
+      logWarn("open records window failed", { error: serializeError(error) });
+      showToast("records-window", "error", message("toast.recordsFailed"));
+    });
+  }, [showToast]);
 
   const toggleTopmost = useCallback(() => {
     updateSettings({ ...settings, topmost: !settings.topmost });
@@ -716,6 +727,10 @@ export function App() {
             <MenuItem onSelect={() => openMenuModal("snapshots")}>
               <History size={16} />
               {t("menu.snapshots")}
+            </MenuItem>
+            <MenuItem onSelect={openRecords}>
+              <ScrollText size={16} />
+              {t("menu.records")}
             </MenuItem>
             <MenuItem onSelect={() => openMenuModal("about")}>
               <Info size={16} />

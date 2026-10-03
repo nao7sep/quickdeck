@@ -913,3 +913,48 @@ fn a_config_whose_sets_are_all_back_at_their_built_ins_stays_as_an_empty_object(
     );
     crate::backup_store::close_backup_store();
 }
+
+#[test]
+fn a_state_write_carries_the_records_list_width_the_main_window_does_not_know() {
+    let dir = tempfile::tempdir().unwrap();
+    save_records_list_width_in(dir.path(), 420).unwrap();
+    assert_eq!(records_list_width_in(dir.path()).unwrap(), Some(420.0));
+
+    save_state_in(
+        dir.path(),
+        serde_json::json!({ "version": 1, "activePaneId": "p1", "zoomLevel": 1.1 }),
+    )
+    .unwrap();
+    let stored: JsonValue =
+        serde_json::from_str(&fs::read_to_string(dir.path().join(STATE_FILE_NAME)).unwrap())
+            .unwrap();
+    assert_eq!(
+        stored,
+        serde_json::json!({ "version": 1, "activePaneId": "p1", "zoomLevel": 1.1, "recordsListWidth": 420 })
+    );
+
+    save_records_list_width_in(dir.path(), 380).unwrap();
+    let stored: JsonValue =
+        serde_json::from_str(&fs::read_to_string(dir.path().join(STATE_FILE_NAME)).unwrap())
+            .unwrap();
+    assert_eq!(stored["activePaneId"], serde_json::json!("p1"));
+    assert_eq!(records_list_width_in(dir.path()).unwrap(), Some(380.0));
+}
+
+#[test]
+fn the_records_list_width_is_absent_until_a_drag_saves_one() {
+    let dir = tempfile::tempdir().unwrap();
+    assert_eq!(records_list_width_in(dir.path()).unwrap(), None);
+    save_state_in(dir.path(), serde_json::json!({ "version": 1 })).unwrap();
+    assert_eq!(records_list_width_in(dir.path()).unwrap(), None);
+}
+
+#[test]
+fn a_width_save_leaves_an_unreadable_state_file_for_the_launch_to_recover() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join(STATE_FILE_NAME);
+    fs::write(&path, "{ not json").unwrap();
+    assert!(save_records_list_width_in(dir.path(), 400).is_err());
+    assert_eq!(fs::read_to_string(&path).unwrap(), "{ not json");
+    assert_eq!(records_list_width_in(dir.path()).unwrap(), None);
+}

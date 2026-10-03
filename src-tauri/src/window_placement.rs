@@ -1,4 +1,5 @@
 use std::{
+    collections::BTreeMap,
     sync::{
         mpsc::{self, RecvTimeoutError},
         Arc, Mutex,
@@ -7,12 +8,17 @@ use std::{
 };
 
 use serde::{Deserialize, Serialize};
+use serde_json::Value as JsonValue;
 use tauri::{AppHandle, PhysicalPosition, PhysicalSize, Window, WindowEvent, Wry};
 
 use crate::{logging, storage};
 
 // How long exit waits for window.json before going on without it.
 const SAVE_WAIT: Duration = Duration::from_secs(2);
+
+/// The durable windows, by label: each keeps its own placement in window.json,
+/// which holds one record per label (window conventions, Placement).
+pub const DURABLE_WINDOWS: [&str; 2] = ["main", "records"];
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -55,10 +61,21 @@ pub fn placement_after_close(
     }
 }
 
-pub(crate) type PlacementState = Arc<Mutex<Option<Placement>>>;
+pub type Placements = BTreeMap<String, Placement>;
+
+/// The placements window.json holds. A file that is not one record per label,
+/// such as the single record window.json held before the Records window
+/// existed, is discarded as a unit.
+pub fn placements_from(value: Option<JsonValue>) -> Placements {
+    value
+        .and_then(|value| serde_json::from_value::<Placements>(value).ok())
+        .unwrap_or_default()
+}
+
+pub(crate) type PlacementState = Arc<Mutex<Placements>>;
 
 pub(crate) fn new_state() -> PlacementState {
-    Arc::new(Mutex::new(None))
+    Arc::new(Mutex::new(Placements::new()))
 }
 
 fn current_normal_rectangle(window: &Window<Wry>) -> tauri::Result<NormalRectangle> {
@@ -91,9 +108,16 @@ fn is_usable(window: &Window<Wry>, rectangle: NormalRectangle) -> tauri::Result<
     }))
 }
 
-fn replace_state(state: &PlacementState, placement: Option<Placement>) {
+fn replace_state(state: &PlacementState, label: &str, placement: Option<Placement>) {
     match state.lock() {
-        Ok(mut current) => *current = placement,
+        Ok(mut current) => match placement {
+            Some(placement) => {
+                current.insert(label.to_string(), placement);
+            }
+            None => {
+                current.remove(label);
+            }
+        },
         Err(error) => logging::warn(
             "window placement lock is unavailable",
             serde_json::json!({ "error": error.to_string() }),
@@ -101,24 +125,42 @@ fn replace_state(state: &PlacementState, placement: Option<Placement>) {
     }
 }
 
-pub(crate) fn restore(app: &AppHandle, window: &Window<Wry>, state: &PlacementState) {
+// Reads window.json once, in setup, on the main thread: the main window's
+// placement must be applied before it is first shown (window conventions), and
+// the Records window, opened later, takes its own from what was read here.
+pub(crate) fn load(app: &AppHandle, state: &PlacementState) {
+    let saved = match storage::load_window_state(app) {
+        Ok(value) => placements_from(value),
+        Err(error) => {
+            logging::warn(
+                "window placement could not be loaded",
+                serde_json::json!({ "error": error }),
+            );
+            Placements::new()
+        }
+    };
+    match state.lock() {
+        Ok(mut current) => *current = saved,
+        Err(error) => logging::warn(
+            "window placement lock is unavailable",
+            serde_json::json!({ "error": error.to_string() }),
+        ),
+    }
+}
+
+// Applies the window's saved placement while it is still hidden.
+pub(crate) fn restore(window: &Window<Wry>, state: &PlacementState) {
+    let label = window.label().to_string();
     let fallback = current_normal_rectangle(window)
         .ok()
         .map(|normal| Placement {
             normal,
             maximized: false,
         });
-    let saved = match storage::load_window_state(app) {
-        Ok(Some(value)) => serde_json::from_value::<Placement>(value).ok(),
-        Ok(None) => None,
-        Err(error) => {
-            logging::warn(
-                "window placement could not be loaded",
-                serde_json::json!({ "error": error }),
-            );
-            None
-        }
-    };
+    let saved = state
+        .lock()
+        .ok()
+        .and_then(|current| current.get(&label).copied());
 
     let usable = saved.and_then(|placement| match is_usable(window, placement.normal) {
         Ok(true) => Some(placement),
@@ -166,7 +208,7 @@ pub(crate) fn restore(app: &AppHandle, window: &Window<Wry>, state: &PlacementSt
             }
         }
     }
-    replace_state(state, restored);
+    replace_state(state, &label, restored);
 }
 
 pub(crate) fn capture(window: &Window<Wry>, state: &PlacementState) {
@@ -182,9 +224,14 @@ pub(crate) fn capture(window: &Window<Wry>, state: &PlacementState) {
 
     match closing {
         Ok(closing) => {
-            let previous = state.lock().ok().and_then(|current| *current);
+            let label = window.label();
+            let previous = state
+                .lock()
+                .ok()
+                .and_then(|current| current.get(label).copied());
             replace_state(
                 state,
+                label,
                 placement_after_close(previous, closing, cfg!(target_os = "windows")),
             );
         }
@@ -196,24 +243,29 @@ pub(crate) fn capture(window: &Window<Wry>, state: &PlacementState) {
 }
 
 pub(crate) fn on_window_event(window: &Window<Wry>, event: &WindowEvent, state: &PlacementState) {
-    if window.label() == "main" && matches!(event, WindowEvent::CloseRequested { .. }) {
+    if DURABLE_WINDOWS.contains(&window.label())
+        && matches!(event, WindowEvent::CloseRequested { .. })
+    {
         capture(window, state);
     }
 }
 
-// `restore` reads window.json in setup, on the main thread, because the
-// placement must be applied before the window is first shown (window
-// conventions). The exit write runs on its own thread so a stalled data volume
+// The exit write runs on its own thread so a stalled data volume
 // cannot hold the quit for longer than `SAVE_WAIT` (PLAYBOOK, "Bound every
 // external wait").
 pub(crate) fn save(app: &AppHandle, state: &PlacementState) {
-    let Some(placement) = state.lock().ok().and_then(|current| *current) else {
+    let Some(placements) = state
+        .lock()
+        .ok()
+        .map(|current| current.clone())
+        .filter(|current| !current.is_empty())
+    else {
         return;
     };
     let app = app.clone();
     let (done, finished) = mpsc::channel();
     std::thread::spawn(move || {
-        match serde_json::to_value(placement) {
+        match serde_json::to_value(placements) {
             Ok(value) => {
                 if let Err(error) = storage::save_window_state(&app, value) {
                     logging::warn(

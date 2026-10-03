@@ -11,6 +11,7 @@ Write in several plain-text panes side by side, and bring back earlier text from
 - An interface in English, Japanese, Chinese, Korean, Spanish, Portuguese, French, German, Italian, and Russian that follows the computer's language by default
 - Light and dark themes that follow the system by default, persistent zoom (50–500%), and configurable UI and editor fonts
 - Fully keyboard-navigable menus and modals
+- A Records window that shows QuickDeck's own log, newest first and updating live, filtered by level, launch, or search
 
 ## Download
 
