@@ -323,6 +323,27 @@ describe("App window-chrome results", () => {
   });
 });
 
+describe("App menu zoom row", () => {
+  it("leads with an icon and its label like the items, and is not an item itself", async () => {
+    mocks.appState = { ...createAppState(), showToast: vi.fn() };
+    const container = document.createElement("div");
+    document.body.append(container);
+    root = createRoot(container);
+    await act(async () => root?.render(<App />));
+    await flushEffects();
+    await act(async () => document.querySelector<HTMLButtonElement>(".statusMenuButton")!.click());
+
+    const row = document.querySelector<HTMLElement>(".menuZoomRow")!;
+    const [icon, label, controls] = Array.from(row.children);
+    expect(icon.tagName.toLowerCase()).toBe("svg");
+    expect(icon.getAttribute("width")).toBe("16");
+    expect(label.textContent).toBe("Zoom");
+    expect(controls.className).toBe("menuZoomControls");
+    expect(row.closest('[role="menuitem"]')).toBeNull();
+    expect(row.querySelector('[role="menuitem"]')).toBeNull();
+  });
+});
+
 describe("App Records menu item", () => {
   async function chooseRecords() {
     await act(async () => document.querySelector<HTMLButtonElement>(".statusMenuButton")!.click());

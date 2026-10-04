@@ -15,6 +15,7 @@ import {
   Plus,
   ScrollText,
   Settings,
+  ZoomIn,
 } from "lucide-react";
 import { AboutModal } from "./components/AboutModal";
 import { SnapshotsModal } from "./components/SnapshotsModal";
@@ -688,6 +689,7 @@ export function App() {
                 its buttons are tabIndex=-1 and are driven by pointer plus the
                 global zoom shortcuts, not promoted into menu items. */}
             <div className="menuZoomRow">
+              <ZoomIn size={16} />
               <span>{t("menu.zoom")}</span>
               <div className="menuZoomControls">
                 <button

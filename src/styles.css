@@ -695,17 +695,23 @@ input[type="range"]:focus-visible {
     0 4px 12px rgba(30, 27, 75, 0.1);
 }
 
-.menuPanel button {
+/* One row anatomy for the menu items and the zoom row: the icon, then the label
+   in one column, at one inset. */
+.menuPanel button,
+.menuZoomRow {
   display: inline-flex;
   align-items: center;
   gap: 10px;
   min-height: 38px;
   padding: 8px 12px;
+  color: var(--text);
+  font-weight: 500;
+}
+
+.menuPanel button {
   border: 0;
   border-radius: var(--radius-item);
   background: transparent;
-  color: var(--text);
-  font-weight: 500;
   text-align: left;
   white-space: nowrap;
   overflow: hidden;
@@ -741,17 +747,12 @@ input[type="range"]:focus-visible {
 }
 
 .menuZoomRow {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  padding: 4px 12px;
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--text-strong);
+  white-space: nowrap;
 }
 
+/* The stepper ends the row, at the rows' own inset. */
 .menuZoomControls {
+  margin-inline-start: auto;
   display: flex;
   align-items: center;
   border: 1px solid var(--border);
