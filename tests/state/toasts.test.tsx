@@ -151,4 +151,18 @@ describe("operational toast ownership", () => {
 
     expect(latestState!.toasts.map((toast) => toast.owner)).toEqual(["operation:b"]);
   });
+
+  it("clears one owner's result and leaves another owner's", async () => {
+    await renderState();
+
+    await act(async () => {
+      latestState!.showToast("operation:a", "error", message("toast.recordsFailed"));
+      latestState!.showToast("operation:b", "error", message("toast.closeFailed"));
+    });
+    await act(async () => {
+      latestState!.clearToast("operation:a");
+    });
+
+    expect(latestState!.toasts.map((toast) => toast.owner)).toEqual(["operation:b"]);
+  });
 });

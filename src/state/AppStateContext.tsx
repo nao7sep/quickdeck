@@ -95,6 +95,8 @@ type AppStateContextValue = {
   snapshotAllPanes: (trigger: SnapshotTrigger) => Promise<void>;
   showToast: (owner: string, kind: ToastKind, message: Message) => void;
   dismissToast: (toastId: string) => void;
+  // A later success of the same operation clears its outstanding result.
+  clearToast: (owner: string) => void;
   showBlockingError: (title: Message, message: Message) => void;
   dismissBlockingError: () => void;
 };
@@ -166,6 +168,10 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
 
   const dismissToast = useCallback((toastId: string) => {
     setToasts((current) => current.filter((toast) => toast.id !== toastId));
+  }, []);
+
+  const clearToast = useCallback((owner: string) => {
+    setToasts((current) => current.filter((toast) => toast.owner !== owner));
   }, []);
 
   const showBlockingError = useCallback((title: Message, text: Message) => {
@@ -598,6 +604,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       snapshotAllPanes,
       showToast,
       dismissToast,
+      clearToast,
       showBlockingError,
       dismissBlockingError,
     }),
@@ -606,6 +613,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       activePaneId,
       addPane,
       blockingError,
+      clearToast,
       commitPaneTitle,
       dataDir,
       deletePane,

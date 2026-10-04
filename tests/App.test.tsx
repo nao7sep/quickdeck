@@ -134,6 +134,7 @@ function createAppState() {
     recordSnapshot: noop,
     toasts: [],
     dismissToast: noop,
+    clearToast: noop,
   };
 }
 
@@ -387,5 +388,25 @@ describe("App Records menu item", () => {
 
     expect(state.showToast).toHaveBeenCalledWith("records-window", "error", { key: "toast.recordsFailed" });
     expect(mocks.logWarn).toHaveBeenCalled();
+  });
+
+  it("clears the failure once a later open succeeds", async () => {
+    const state = { ...createAppState(), showToast: vi.fn(), clearToast: vi.fn() };
+    mocks.appState = state;
+    mocks.openRecordsWindow.mockReset();
+    mocks.openRecordsWindow.mockRejectedValueOnce(new Error("no window")).mockResolvedValueOnce();
+    const container = document.createElement("div");
+    document.body.append(container);
+    root = createRoot(container);
+    await act(async () => root?.render(<App />));
+    await flushEffects();
+
+    await chooseRecords();
+    expect(state.showToast).toHaveBeenCalledWith("records-window", "error", { key: "toast.recordsFailed" });
+    expect(state.clearToast).not.toHaveBeenCalled();
+
+    await chooseRecords();
+    expect(state.clearToast).toHaveBeenCalledExactlyOnceWith("records-window");
+    expect(state.showToast).toHaveBeenCalledOnce();
   });
 });

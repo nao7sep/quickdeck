@@ -78,6 +78,7 @@ export function App() {
     saveNow,
     showBlockingError,
     showToast,
+    clearToast,
     snapshotAllPanes,
     snapshotCount,
     snapshotJustSavedAt,
@@ -115,13 +116,15 @@ export function App() {
   }, []);
 
   // The Records window is its own native window, opened (or brought forward) by
-  // the Rust core; only a failure to do so is shown here.
+  // the Rust core; only a failure to do so is shown here, until an open succeeds.
   const openRecords = useCallback(() => {
-    void openRecordsWindow().catch((error) => {
-      logWarn("open records window failed", { error: serializeError(error) });
-      showToast("records-window", "error", message("toast.recordsFailed"));
-    });
-  }, [showToast]);
+    void openRecordsWindow()
+      .then(() => clearToast("records-window"))
+      .catch((error) => {
+        logWarn("open records window failed", { error: serializeError(error) });
+        showToast("records-window", "error", message("toast.recordsFailed"));
+      });
+  }, [clearToast, showToast]);
 
   const toggleTopmost = useCallback(() => {
     updateSettings({ ...settings, topmost: !settings.topmost });
