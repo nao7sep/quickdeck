@@ -169,6 +169,23 @@ fn clean_exit_archives_and_clears_the_marker_and_unclean_launch_recovers_once() 
 }
 
 #[test]
+fn a_data_folder_deleted_while_the_app_runs_is_not_recreated_by_the_exit_archive() {
+    let parent = tempfile::tempdir().unwrap();
+    let root = parent.path().join("data");
+    fs::create_dir(&root).unwrap();
+    database(&root);
+    let launch = start_session(root.clone()).launch;
+    assert!(launch.join(Duration::from_secs(5)));
+    assert!(root.join("backups/.running").exists());
+
+    fs::remove_dir_all(&root).unwrap();
+    assert!(!archive_stores(&root).unwrap());
+    finish_session(root.clone(), &launch);
+
+    assert!(!root.exists());
+}
+
+#[test]
 fn a_wait_past_its_bound_gives_up_while_the_run_goes_on() {
     let (release, stalled) = mpsc::channel::<()>();
     let run = ArchiveRun::spawn(move || {

@@ -130,11 +130,13 @@ pub fn finish_session(root: PathBuf, launch: &ArchiveRun) {
         if let Err(error) = archive_stores(&root) {
             crate::logging::warn("archive exit failed", json!({ "error": error }));
         }
-        if let Err(error) = fs::remove_file(root.join("backups/.running")) {
-            crate::logging::warn(
+        // A marker already gone, with its data folder, needs no cleanup.
+        match fs::remove_file(root.join("backups/.running")) {
+            Err(error) if error.kind() != io::ErrorKind::NotFound => crate::logging::warn(
                 "archive marker cleanup failed",
                 json!({ "error": error.to_string() }),
-            );
+            ),
+            _ => {}
         }
     });
     if !run.join(WAIT) {
@@ -235,6 +237,15 @@ fn read_manifest(path: &Path) -> Result<Manifest, String> {
 }
 
 pub fn archive_stores(root: &Path) -> Result<bool, String> {
+    // A data folder deleted while the app runs stays deleted: creating
+    // `backups/` would bring it back as an empty folder.
+    if !root.try_exists().map_err(error)? {
+        crate::logging::warn(
+            "archive skipped",
+            json!({ "path": root, "reason": "the data folder no longer exists" }),
+        );
+        return Ok(false);
+    }
     let directory = root.join("backups");
     fs::create_dir_all(&directory).map_err(error)?;
     let lock_path = directory.join(".lock");
