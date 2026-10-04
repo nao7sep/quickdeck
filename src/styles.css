@@ -784,7 +784,9 @@ input[type="range"]:focus-visible {
   opacity: var(--disabled-opacity);
 }
 
-.menuZoomLabel {
+/* Scoped to the panel so the label outranks `.menuPanel button` when it is the
+   reset button (any zoom but 100%). */
+.menuPanel .menuZoomLabel {
   width: 44px;
   height: 26px;
   min-height: 26px;
