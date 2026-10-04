@@ -210,6 +210,16 @@ describe("RecordsWindow", () => {
     expect(options()[0]!.getAttribute("aria-selected")).toBe("true");
   });
 
+  it("leaves out the Details block when the record holds no other fields", async () => {
+    mocks.readRecordDetail.mockResolvedValue({ ...failureDetail, fields: "{}" });
+    await mount();
+    await act(async () => options()[0]!.click());
+
+    expect(document.querySelector(".recordsDetailTitle")?.textContent).toBe("boundary failed");
+    expect(document.querySelector(".recordsDetailBody")!.textContent).toContain("pane-1");
+    expect(document.querySelector(".recordsBlock")).toBeNull();
+  });
+
   it("moves the selection with the arrow keys", async () => {
     await mount();
     await act(async () => options()[0]!.focus());

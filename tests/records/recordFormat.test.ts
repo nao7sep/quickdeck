@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   cursorAfter,
   formatStoredTime,
+  isEmptyStoredValue,
   knownLevel,
   mergeNewestPage,
   prettyJson,
@@ -16,6 +17,15 @@ describe("record format", () => {
   it("indents stored JSON and shows other text as it is", () => {
     expect(prettyJson('{"op":"save","ms":3}')).toBe('{\n  "op": "save",\n  "ms": 3\n}');
     expect(prettyJson("not json")).toBe("not json");
+  });
+
+  it("calls a stored value empty only when nothing is in it", () => {
+    for (const empty of ["{}", "null", "[]", '""', '"  \\n "', "", "  \n", " { } "]) {
+      expect(isEmptyStoredValue(empty), empty).toBe(true);
+    }
+    for (const filled of ['{"ms":3}', "[0]", '"x"', "0", "false", "not json"]) {
+      expect(isEmptyStoredValue(filled), filled).toBe(false);
+    }
   });
 
   it("names the four levels and leaves any other as stored", () => {

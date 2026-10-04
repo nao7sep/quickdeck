@@ -30,6 +30,7 @@ import { indexOfId, listboxDirection, nextIndex } from "../utils/compositeNav";
 import {
   cursorAfter,
   formatStoredTime,
+  isEmptyStoredValue,
   knownLevel,
   LEVEL_FILTER_LABELS,
   LEVEL_LABELS,
@@ -503,10 +504,12 @@ function RecordDetailView({
             </div>
           ))}
         </dl>
-        <section className="recordsBlock">
-          <h3 className="recordsBlockLabel">{t("records.details")}</h3>
-          <pre className="recordsBlockText">{prettyJson(record.fields)}</pre>
-        </section>
+        {isEmptyStoredValue(record.fields) ? null : (
+          <section className="recordsBlock">
+            <h3 className="recordsBlockLabel">{t("records.details")}</h3>
+            <pre className="recordsBlockText">{prettyJson(record.fields)}</pre>
+          </section>
+        )}
       </div>
     </>
   );

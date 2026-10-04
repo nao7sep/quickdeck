@@ -17,6 +17,23 @@ export function prettyJson(text: string): string {
   }
 }
 
+// A stored value with nothing in it: blank text, or JSON that is null, an empty
+// object or array, or a string of only whitespace. Its block is left out.
+export function isEmptyStoredValue(text: string): boolean {
+  if (text.trim() === "") return true;
+  let value: unknown;
+  try {
+    value = JSON.parse(text);
+  } catch {
+    return false;
+  }
+  if (value === null) return true;
+  if (typeof value === "string") return value.trim() === "";
+  if (Array.isArray(value)) return value.length === 0;
+  if (typeof value === "object") return Object.keys(value).length === 0;
+  return false;
+}
+
 export const LEVEL_LABELS: Record<RecordLevel, MessageKey> = {
   error: "records.levelError",
   warn: "records.levelWarn",
