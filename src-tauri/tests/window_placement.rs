@@ -1,6 +1,6 @@
 use quickdeck_lib::window_placement::{
-    placement_after_close, placements_from, ClosingState, NormalRectangle, Placement,
-    DURABLE_WINDOWS,
+    new_state, placement_after_close, placements_from, save, ClosingState, NormalRectangle,
+    Placement, DURABLE_WINDOWS,
 };
 use serde_json::json;
 
@@ -107,4 +107,21 @@ fn a_window_json_of_another_shape_is_discarded_as_a_unit() {
     let damaged = json!({ "main": { "normal": { "x": 10 } } });
     assert!(placements_from(Some(damaged)).is_empty());
     assert!(placements_from(None).is_empty());
+}
+
+#[test]
+fn the_exit_save_writes_window_json_into_the_launch_root() {
+    let root = tempfile::tempdir().unwrap();
+    let state = new_state();
+    let placement = Placement {
+        normal: rectangle(10, 20, 800, 600),
+        maximized: false,
+    };
+    state.lock().unwrap().insert("main".into(), placement);
+
+    save(root.path(), &state);
+
+    let written = std::fs::read_to_string(root.path().join("window.json")).unwrap();
+    let placements = placements_from(Some(serde_json::from_str(&written).unwrap()));
+    assert_eq!(placements.get("main"), Some(&placement));
 }

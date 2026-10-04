@@ -248,10 +248,9 @@ pub fn load_window_state(app: &AppHandle) -> Result<Option<JsonValue>, String> {
     read_rebuildable_store(&data_dir.join(WINDOW_FILE_NAME)).map(|(value, _)| value)
 }
 
-pub fn save_window_state(app: &AppHandle, state: JsonValue) -> Result<(), String> {
+pub fn save_window_state(data_dir: &Path, state: JsonValue) -> Result<(), String> {
     // not recorded: window.json is pure window geometry — volatile state, kept out
     // of the backup history (data-backup conventions).
-    let data_dir = app_data_dir(app)?;
     atomic_write_json_unrecorded(&data_dir.join(WINDOW_FILE_NAME), &state)
 }
 

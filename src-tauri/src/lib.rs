@@ -597,8 +597,8 @@ pub fn run() {
             logging::log_shutdown();
         }
         if matches!(event, RunEvent::Exit) {
-            window_placement::save(app, &placement_state);
             let session = app.state::<archive::ArchiveSession>();
+            window_placement::save(&session.root, &placement_state);
             archive::finish_session(session.root.clone(), &session.launch);
             logging::flush();
         }

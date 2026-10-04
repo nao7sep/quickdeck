@@ -1,6 +1,7 @@
 use quickdeck_lib::archive::{
     archive_stores, finish_session, prepare_session, start_session, thinned, ArchiveRun,
 };
+use quickdeck_lib::window_placement::{self, NormalRectangle, Placement};
 use rusqlite::Connection;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -169,7 +170,7 @@ fn clean_exit_archives_and_clears_the_marker_and_unclean_launch_recovers_once() 
 }
 
 #[test]
-fn a_data_folder_deleted_while_the_app_runs_is_not_recreated_by_the_exit_archive() {
+fn a_data_folder_deleted_while_the_app_runs_stays_gone_after_the_exit_sequence() {
     let parent = tempfile::tempdir().unwrap();
     let root = parent.path().join("data");
     fs::create_dir(&root).unwrap();
@@ -178,8 +179,24 @@ fn a_data_folder_deleted_while_the_app_runs_is_not_recreated_by_the_exit_archive
     assert!(launch.join(Duration::from_secs(5)));
     assert!(root.join("backups/.running").exists());
 
+    let placements = window_placement::new_state();
+    placements.lock().unwrap().insert(
+        "main".into(),
+        Placement {
+            normal: NormalRectangle {
+                x: 10,
+                y: 20,
+                width: 800,
+                height: 600,
+            },
+            maximized: false,
+        },
+    );
+
     fs::remove_dir_all(&root).unwrap();
     assert!(!archive_stores(&root).unwrap());
+    // The exit sequence: the window save, then the archive.
+    window_placement::save(&root, &placements);
     finish_session(root.clone(), &launch);
 
     assert!(!root.exists());

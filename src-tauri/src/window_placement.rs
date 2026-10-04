@@ -1,5 +1,6 @@
 use std::{
     collections::BTreeMap,
+    path::Path,
     sync::{
         mpsc::{self, RecvTimeoutError},
         Arc, Mutex,
@@ -72,9 +73,9 @@ pub fn placements_from(value: Option<JsonValue>) -> Placements {
         .unwrap_or_default()
 }
 
-pub(crate) type PlacementState = Arc<Mutex<Placements>>;
+pub type PlacementState = Arc<Mutex<Placements>>;
 
-pub(crate) fn new_state() -> PlacementState {
+pub fn new_state() -> PlacementState {
     Arc::new(Mutex::new(Placements::new()))
 }
 
@@ -252,8 +253,9 @@ pub(crate) fn on_window_event(window: &Window<Wry>, event: &WindowEvent, state: 
 
 // The exit write runs on its own thread so a stalled data volume
 // cannot hold the quit for longer than `SAVE_WAIT` (PLAYBOOK, "Bound every
-// external wait").
-pub(crate) fn save(app: &AppHandle, state: &PlacementState) {
+// external wait"). It writes into the root resolved at launch, and a data
+// folder deleted while the app runs stays deleted.
+pub fn save(root: &Path, state: &PlacementState) {
     let Some(placements) = state
         .lock()
         .ok()
@@ -262,23 +264,10 @@ pub(crate) fn save(app: &AppHandle, state: &PlacementState) {
     else {
         return;
     };
-    let app = app.clone();
+    let root = root.to_owned();
     let (done, finished) = mpsc::channel();
     std::thread::spawn(move || {
-        match serde_json::to_value(placements) {
-            Ok(value) => {
-                if let Err(error) = storage::save_window_state(&app, value) {
-                    logging::warn(
-                        "window placement could not be saved",
-                        serde_json::json!({ "error": error }),
-                    );
-                }
-            }
-            Err(error) => logging::warn(
-                "window placement could not be serialized",
-                serde_json::json!({ "error": error.to_string() }),
-            ),
-        }
+        write_placements(&root, placements);
         let _ = done.send(());
     });
     if let Err(RecvTimeoutError::Timeout) = finished.recv_timeout(SAVE_WAIT) {
@@ -286,5 +275,37 @@ pub(crate) fn save(app: &AppHandle, state: &PlacementState) {
             "window placement save wait expired",
             serde_json::json!({ "seconds": SAVE_WAIT.as_secs() }),
         );
+    }
+}
+
+fn write_placements(root: &Path, placements: Placements) {
+    match root.try_exists() {
+        Ok(true) => {}
+        Ok(false) => {
+            return logging::warn(
+                "window placement save skipped",
+                serde_json::json!({ "path": root, "reason": "the data folder no longer exists" }),
+            )
+        }
+        Err(error) => {
+            return logging::warn(
+                "window placement could not be saved",
+                serde_json::json!({ "error": error.to_string() }),
+            )
+        }
+    }
+    match serde_json::to_value(placements) {
+        Ok(value) => {
+            if let Err(error) = storage::save_window_state(root, value) {
+                logging::warn(
+                    "window placement could not be saved",
+                    serde_json::json!({ "error": error }),
+                );
+            }
+        }
+        Err(error) => logging::warn(
+            "window placement could not be serialized",
+            serde_json::json!({ "error": error.to_string() }),
+        ),
     }
 }
