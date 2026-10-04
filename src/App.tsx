@@ -675,6 +675,14 @@ export function App() {
               <Settings size={16} />
               {t("menu.settings")}
             </MenuItem>
+            <MenuItem onSelect={() => openMenuModal("snapshots")}>
+              <History size={16} />
+              {t("menu.snapshots")}
+            </MenuItem>
+            <MenuItem onSelect={openRecords}>
+              <ScrollText size={16} />
+              {t("menu.records")}
+            </MenuItem>
             <div className="menuDivider" />
             {/* A contained zoom stepper, skipped by the menu's arrow navigation:
                 its buttons are tabIndex=-1 and are driven by pointer plus the
@@ -723,14 +731,6 @@ export function App() {
             <MenuItem onSelect={() => openMenuModal("shortcuts")}>
               <Keyboard size={16} />
               {t("menu.shortcuts")}
-            </MenuItem>
-            <MenuItem onSelect={() => openMenuModal("snapshots")}>
-              <History size={16} />
-              {t("menu.snapshots")}
-            </MenuItem>
-            <MenuItem onSelect={openRecords}>
-              <ScrollText size={16} />
-              {t("menu.records")}
             </MenuItem>
             <MenuItem onSelect={() => openMenuModal("about")}>
               <Info size={16} />
