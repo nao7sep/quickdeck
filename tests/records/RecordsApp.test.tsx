@@ -79,11 +79,17 @@ async function mount() {
   await act(async () => root?.render(<RecordsApp />));
 }
 
-// A catalogue arrives through a dynamic import, which takes more than a tick.
-async function settle() {
-  for (let attempt = 0; attempt < 5; attempt++) {
-    await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
-  }
+// A catalogue arrives through a dynamic import, whose first transform can take
+// over a second while the whole suite runs, so the page is let run until the
+// text appears, within the test's own time limit.
+async function settleUntilText(text: string) {
+  await vi.waitFor(
+    async () => {
+      await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
+      expect(document.body.textContent).toContain(text);
+    },
+    { timeout: 4000 },
+  );
 }
 
 const listWidth = () =>
@@ -97,8 +103,7 @@ describe("RecordsApp", () => {
     expect(document.body.textContent).toBe("");
 
     await act(async () => resolve({ language: "ja", systemLocale: "ja-JP", listWidth: 500 }));
-    await settle();
-    expect(document.body.textContent).toContain("すべての起動");
+    await settleUntilText("すべての起動");
     expect(listWidth()).toBe("500px");
     expect(document.documentElement.lang).toBe("ja");
   });
@@ -118,8 +123,7 @@ describe("RecordsApp", () => {
     expect(document.body.textContent).toContain("All launches");
 
     await act(async () => mocks.languageChanged!("de"));
-    await settle();
-    expect(document.body.textContent).toContain("Alle Starts");
+    await settleUntilText("Alle Starts");
   });
 
   it("opens in English at the default width when its setup cannot be read", async () => {
