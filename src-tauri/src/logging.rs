@@ -19,7 +19,11 @@ use rusqlite::{params, Connection};
 use serde_json::{json, Map, Value};
 use tauri::AppHandle;
 
-use crate::{format_version, paths, records, storage::RECORDS_DB_FILE_NAME};
+use crate::{
+    format_version::{self, SqliteFormat},
+    paths, records,
+    storage::RECORDS_DB_FILE_NAME,
+};
 
 // The free fields that name a domain object, and the column each one fills.
 const DOMAIN_IDS: [&str; 2] = ["paneId", "snapshotId"];
@@ -222,27 +226,31 @@ pub fn flush() {
 
 // not recorded: records.sqlite3 is written only here, never through the
 // managed-text atomic path, and is not archived (data-backup and data-lifecycle
-// conventions). A store in a newer format is left untouched, and every line
-// takes the fallback.
+// conventions). A store in a newer format, or without its format marker, is left
+// untouched, and every line takes the fallback.
 fn open_records(file: &Path) -> Result<Connection, String> {
     let to_string = |error: rusqlite::Error| error.to_string();
     let conn = Connection::open(file).map_err(to_string)?;
     conn.pragma_update(None, "busy_timeout", 5000)
         .map_err(to_string)?;
-    if let Some(recorded) =
-        format_version::newer_sqlite(&conn, format_version::RECORDS).map_err(to_string)?
-    {
-        return Err(format_version::newer_message(
-            RECORDS_DB_FILE_NAME,
-            recorded,
-        ));
+    match format_version::check_sqlite(&conn, RECORDS_DB_FILE_NAME, format_version::RECORDS)? {
+        SqliteFormat::Newer(recorded) => {
+            return Err(format_version::newer_message(
+                RECORDS_DB_FILE_NAME,
+                recorded,
+            ))
+        }
+        SqliteFormat::New => conn
+            .pragma_update(None, "journal_mode", "WAL")
+            .and_then(|_| {
+                format_version::create_sqlite(&conn, records::SCHEMA, format_version::RECORDS)
+            })
+            .map_err(to_string)?,
+        SqliteFormat::Readable => {}
     }
     // Each row commits on its own; NORMAL under WAL keeps that from syncing the
     // disk every time, and a crashed process still loses nothing.
-    conn.pragma_update(None, "journal_mode", "WAL")
-        .and_then(|_| conn.pragma_update(None, "synchronous", "NORMAL"))
-        .and_then(|_| conn.execute_batch(records::SCHEMA))
-        .and_then(|_| format_version::mark_sqlite(&conn, format_version::RECORDS))
+    conn.pragma_update(None, "synchronous", "NORMAL")
         .map_err(to_string)?;
     Ok(conn)
 }

@@ -202,3 +202,21 @@ fn a_new_store_records_its_format_version() {
         .unwrap();
     assert_eq!(version, i64::from(format_version::BACKUPS));
 }
+
+#[test]
+#[serial(backup_store)]
+fn a_store_without_its_marker_is_left_untouched_and_recording_is_disabled() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = fresh_store(dir.path());
+    Connection::open(&store)
+        .unwrap()
+        .execute_batch(SCHEMA)
+        .unwrap();
+    let before = std::fs::read(&store).unwrap();
+
+    record(&store, &dir.path().join("config.json"), b"{}");
+
+    assert_eq!(std::fs::read(&store).unwrap(), before);
+    assert!(matches!(*STORE.lock().unwrap(), StoreState::Disabled));
+    close_backup_store();
+}

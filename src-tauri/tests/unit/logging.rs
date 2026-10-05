@@ -352,3 +352,18 @@ fn a_records_database_from_a_newer_build_is_left_untouched() {
     assert!(refused.contains("records.sqlite3"), "{refused}");
     assert_eq!(fs::read(&file).unwrap(), before);
 }
+
+#[test]
+fn a_records_database_without_its_marker_is_left_untouched() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("records.sqlite3");
+    Connection::open(&file)
+        .unwrap()
+        .execute_batch(records::SCHEMA)
+        .unwrap();
+    let before = fs::read(&file).unwrap();
+
+    let refused = open_records(&file).err().unwrap();
+    assert!(refused.contains("records.sqlite3"), "{refused}");
+    assert_eq!(fs::read(&file).unwrap(), before);
+}

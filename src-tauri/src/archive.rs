@@ -242,7 +242,9 @@ fn read_manifest(path: &Path) -> Result<Manifest, String> {
         .map_err(error)?;
     let value = serde_json::from_slice(&bytes).map_err(error)?;
     match format_version::read_json(value, format_version::ARCHIVE_MANIFEST)? {
-        JsonFormat::Readable(value) => serde_json::from_value(value).map_err(error),
+        JsonFormat::Readable(fields) => {
+            serde_json::from_value(serde_json::Value::Object(fields)).map_err(error)
+        }
         JsonFormat::Newer(recorded) => Err(format_version::newer_message(MANIFEST_NAME, recorded)),
     }
 }

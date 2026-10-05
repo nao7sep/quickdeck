@@ -1,6 +1,14 @@
 use super::*;
 use serial_test::serial;
 
+// A JSON object's fields, as a readable store holds them.
+fn fields(value: JsonValue) -> serde_json::Map<String, JsonValue> {
+    match value {
+        JsonValue::Object(fields) => fields,
+        other => panic!("not an object: {other}"),
+    }
+}
+
 fn mem_db() -> Connection {
     let conn = Connection::open_in_memory().expect("open in-memory db");
     init_schema(&conn).expect("init schema");
@@ -553,7 +561,7 @@ fn write_then_read_json_roundtrips() {
     atomic_write_json(dir.path(), &path, &value, format_version::CONFIG).unwrap();
     assert_eq!(
         read_json_store(&path, format_version::CONFIG).unwrap(),
-        JsonRead::Readable(value)
+        JsonRead::Readable(fields(value))
     );
 
     // No stray temp file remains beside the finished target — the rename left
@@ -650,7 +658,7 @@ fn a_write_that_changes_nothing_leaves_the_file_and_the_backups_alone() {
     assert_ne!(fs::metadata(&path).unwrap().modified().unwrap(), old);
     assert_eq!(
         read_json_store(&path, format_version::PANES).unwrap(),
-        JsonRead::Readable(changed)
+        JsonRead::Readable(fields(changed))
     );
     assert_eq!(backup_rows(dir.path(), &path), 2);
 
@@ -684,7 +692,7 @@ fn unrecorded_write_lands_on_disk_but_not_in_the_backup_store() {
 
     assert_eq!(
         read_json_store(&path, format_version::STATE).unwrap(),
-        JsonRead::Readable(value)
+        JsonRead::Readable(fields(value))
     );
     assert!(
         !dir.path()
@@ -856,9 +864,12 @@ fn rebuildable_store_passes_valid_and_missing_through() {
         read_rebuildable_store(&path, format_version::CONFIG).unwrap(),
         Rebuildable::default()
     );
-    fs::write(&path, br#"{"dark":true}"#).unwrap();
+    fs::write(&path, br#"{"formatVersion":1,"dark":true}"#).unwrap();
     let loaded = read_rebuildable_store(&path, format_version::CONFIG).unwrap();
-    assert_eq!(loaded.value, Some(serde_json::json!({"dark": true})));
+    assert_eq!(
+        loaded.value,
+        Some(fields(serde_json::json!({"dark": true})))
+    );
     assert_eq!(loaded.quarantined_to, None);
     assert!(path.exists(), "a valid store stays in place");
 }
@@ -870,14 +881,17 @@ fn config_quarantines_non_objects_without_seeding_a_replacement() {
         let path = dir.path().join(CONFIG_FILE_NAME);
         fs::write(&path, bytes).unwrap();
 
-        let loaded = read_config_store(&path).unwrap();
+        let loaded = read_rebuildable_store(&path, format_version::CONFIG).unwrap();
         assert_eq!(loaded.value, None);
         assert_eq!(
             fs::read(loaded.quarantined_to.unwrap()).unwrap(),
             bytes.as_bytes()
         );
         assert!(!path.exists(), "recovery must not write built-ins");
-        assert_eq!(read_config_store(&path).unwrap(), Rebuildable::default());
+        assert_eq!(
+            read_rebuildable_store(&path, format_version::CONFIG).unwrap(),
+            Rebuildable::default()
+        );
     }
 }
 
@@ -885,13 +899,13 @@ fn config_quarantines_non_objects_without_seeding_a_replacement() {
 fn config_keeps_an_object_with_an_invalid_individual_set_in_place() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join(CONFIG_FILE_NAME);
-    let bytes = br#"{"zen":"wrong shape","topmost":true}"#;
+    let bytes = br#"{"formatVersion":1,"zen":"wrong shape","topmost":true}"#;
     fs::write(&path, bytes).unwrap();
 
-    let loaded = read_config_store(&path).unwrap();
+    let loaded = read_rebuildable_store(&path, format_version::CONFIG).unwrap();
     assert_eq!(
         loaded.value.unwrap(),
-        serde_json::json!({"zen": "wrong shape", "topmost": true})
+        fields(serde_json::json!({"zen": "wrong shape", "topmost": true}))
     );
     assert_eq!(loaded.quarantined_to, None);
     assert_eq!(fs::read(&path).unwrap(), bytes);
@@ -991,14 +1005,26 @@ fn recorded_json_stores_write_their_format_version_too() {
 }
 
 #[test]
-fn a_json_store_without_a_marker_reads_as_format_1() {
+fn a_json_store_without_its_marker_is_unreadable() {
     let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join(PANES_FILE_NAME);
-    fs::write(&path, br#"{"panes":[]}"#).unwrap();
+    let panes = dir.path().join(PANES_FILE_NAME);
+    fs::write(&panes, br#"{"panes":[]}"#).unwrap();
+    assert!(matches!(
+        read_json_store(&panes, format_version::PANES).unwrap(),
+        JsonRead::Corrupt(_)
+    ));
+    assert_eq!(fs::read(&panes).unwrap(), br#"{"panes":[]}"#);
+
+    // A rebuildable store takes its unreadable branch: set aside, then built-ins.
+    let state = dir.path().join(STATE_FILE_NAME);
+    fs::write(&state, br#"{"zoomLevel":1}"#).unwrap();
+    let loaded = read_rebuildable_store(&state, format_version::STATE).unwrap();
+    assert_eq!(loaded.value, None);
     assert_eq!(
-        read_json_store(&path, 1).unwrap(),
-        JsonRead::Readable(serde_json::json!({ "panes": [] }))
+        fs::read(loaded.quarantined_to.unwrap()).unwrap(),
+        br#"{"zoomLevel":1}"#
     );
+    assert!(!state.exists());
 }
 
 #[test]
@@ -1036,11 +1062,7 @@ fn a_newer_rebuildable_store_is_left_exactly_in_place_and_reported() {
         fs::write(&path, NEWER).unwrap();
         let old = backdate(&path);
 
-        let loaded = if name == CONFIG_FILE_NAME {
-            read_config_store(&path).unwrap()
-        } else {
-            read_rebuildable_store(&path, version).unwrap()
-        };
+        let loaded = read_rebuildable_store(&path, version).unwrap();
         assert_eq!(
             loaded,
             Rebuildable {
@@ -1119,15 +1141,12 @@ fn no_write_replaces_a_json_store_in_a_newer_format() {
 }
 
 #[test]
-fn launch_reads_of_config_skip_a_newer_or_corrupt_file() {
+fn launch_reads_of_config_skip_a_newer_unmarked_or_corrupt_file() {
     assert_eq!(
         launch_config(r#"{"formatVersion":1,"theme":"dark"}"#),
-        Some(serde_json::json!({ "theme": "dark" }))
+        Some(fields(serde_json::json!({ "theme": "dark" })))
     );
-    assert_eq!(
-        launch_config(r#"{"theme":"dark"}"#),
-        Some(serde_json::json!({ "theme": "dark" }))
-    );
+    assert_eq!(launch_config(r#"{"theme":"dark"}"#), None);
     assert_eq!(launch_config(r#"{"formatVersion":2,"theme":"dark"}"#), None);
     assert_eq!(
         launch_config(r#"{"formatVersion":"x","theme":"dark"}"#),
@@ -1185,6 +1204,22 @@ fn a_newer_snapshot_store_is_left_untouched_and_refused() {
     assert_eq!(tables, 0, "no schema was written into it");
 }
 
+#[test]
+fn a_snapshot_store_without_its_marker_is_unreadable_and_left_untouched() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join(SNAPSHOTS_DB_FILE_NAME);
+    Connection::open(&path)
+        .unwrap()
+        .execute_batch("create table snapshots (id text primary key);")
+        .unwrap();
+    let before = fs::read(&path).unwrap();
+
+    let refused = open_snapshot_store(dir.path()).err().unwrap();
+    assert!(refused.contains(SNAPSHOTS_DB_FILE_NAME), "{refused}");
+    assert_eq!(fs::read(&path).unwrap(), before);
+    assert_eq!(snapshot_user_version(&path), 0);
+}
+
 fn count_rows(conn: &Connection) -> i64 {
     conn.query_row("select count(*) from snapshots", [], |row| row.get(0))
         .unwrap()
@@ -1207,7 +1242,11 @@ fn a_config_write_stores_exactly_the_given_known_sets() {
         on_disk(&path),
         serde_json::json!({"formatVersion": 1, "zen": true})
     );
-    fs::write(&path, r#"{"zen":true,"version":1,"dark":true}"#).unwrap();
+    fs::write(
+        &path,
+        r#"{"formatVersion":1,"zen":true,"version":1,"dark":true}"#,
+    )
+    .unwrap();
     save_config(
         root.path(),
         serde_json::json!({"topmost": true, "retired": 1}),
@@ -1234,7 +1273,7 @@ fn a_config_write_without_sets_and_without_a_file_writes_nothing() {
 fn a_config_write_equal_to_the_file_leaves_its_bytes_alone() {
     let root = tempfile::tempdir().unwrap();
     let path = root.path().join(CONFIG_FILE_NAME);
-    let bytes = "{ \"topmost\": true,\n\"zen\": true }";
+    let bytes = "{ \"formatVersion\": 1, \"topmost\": true,\n\"zen\": true }";
     fs::write(&path, bytes).unwrap();
     assert_eq!(
         config_to_write(

@@ -50,12 +50,23 @@ fn preference_normalizes_like_the_frontend() {
 #[test]
 fn saved_preference_reads_the_language_field() {
     assert_eq!(
-        saved_preference(r#"{"language":"de","theme":"dark"}"#),
+        saved_preference(r#"{"formatVersion":1,"language":"de","theme":"dark"}"#),
         Some("de")
     );
-    assert_eq!(saved_preference(r#"{"language":"system"}"#), None);
-    assert_eq!(saved_preference(r#"{"language":7}"#), None);
-    assert_eq!(saved_preference(r#"{"theme":"dark"}"#), None);
+    assert_eq!(
+        saved_preference(r#"{"formatVersion":1,"language":"system"}"#),
+        None
+    );
+    assert_eq!(
+        saved_preference(r#"{"formatVersion":1,"language":7}"#),
+        None
+    );
+    assert_eq!(
+        saved_preference(r#"{"formatVersion":1,"theme":"dark"}"#),
+        None
+    );
+    // A config.json without its marker is not read: System.
+    assert_eq!(saved_preference(r#"{"language":"de"}"#), None);
     assert_eq!(saved_preference("not json"), None);
     // A config.json from a newer build is not read: System.
     assert_eq!(

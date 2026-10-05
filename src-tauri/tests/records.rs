@@ -1,3 +1,4 @@
+use quickdeck_lib::format_version::RECORDS;
 use quickdeck_lib::records::{
     read_bounded, read_detail, read_page, read_sessions, Cursor, LevelFilter, RecordsQuery,
     PAGE_SIZE, SCHEMA,
@@ -277,6 +278,7 @@ fn a_bounded_read_opens_the_file_read_only_and_reports_a_missing_database() {
     {
         let conn = Connection::open(&file).unwrap();
         conn.execute_batch(SCHEMA).unwrap();
+        conn.pragma_update(None, "user_version", RECORDS).unwrap();
         insert(
             &conn,
             LAUNCH,
@@ -311,4 +313,17 @@ fn a_records_database_from_a_newer_build_is_not_read() {
     let refused = read_bounded(file, read_sessions).err().unwrap();
     assert!(refused.contains("records.sqlite3"), "{refused}");
     assert!(refused.contains("newer"), "{refused}");
+}
+
+#[test]
+fn a_records_database_without_its_marker_is_not_read() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("records.sqlite3");
+    Connection::open(&file)
+        .unwrap()
+        .execute_batch(SCHEMA)
+        .unwrap();
+
+    let refused = read_bounded(file, read_sessions).err().unwrap();
+    assert!(refused.contains("no format version"), "{refused}");
 }

@@ -15,7 +15,7 @@ use serde_json::Value as JsonValue;
 use sha2::{Digest, Sha256};
 use tauri::AppHandle;
 
-use crate::format_version::{self, JsonFormat};
+use crate::format_version::{self, JsonFormat, SqliteFormat};
 use crate::paths::app_data_dir;
 
 // The managed files the data directory holds, each named in exactly one place so
@@ -132,7 +132,7 @@ pub fn load_app_data(app: &AppHandle) -> Result<LoadedAppData, String> {
     // work product and halts — its error rides in the result so the other
     // stores still load and the halt surface can offer a reset.
     let config_path = data_dir.join(CONFIG_FILE_NAME);
-    let config = read_config_store(&config_path)?;
+    let config = read_rebuildable_store(&config_path, format_version::CONFIG)?;
     // state.json contains only the active pane and zoom. Preserve and log corrupt
     // bytes, or a newer format, but do not surface a dialog for disposable view
     // state.
@@ -142,7 +142,7 @@ pub fn load_app_data(app: &AppHandle) -> Result<LoadedAppData, String> {
     let (panes, panes_error, panes_newer) =
         match read_json_store(&panes_path, format_version::PANES) {
             Ok(JsonRead::Absent) => (None, None, None),
-            Ok(JsonRead::Readable(value)) => (Some(value), None, None),
+            Ok(JsonRead::Readable(fields)) => (Some(JsonValue::Object(fields)), None, None),
             Ok(JsonRead::Newer(recorded)) => (None, None, Some(recorded)),
             Ok(JsonRead::Corrupt(message)) | Err(message) => (None, Some(message), None),
         };
@@ -162,10 +162,10 @@ pub fn load_app_data(app: &AppHandle) -> Result<LoadedAppData, String> {
     }
 
     Ok(LoadedAppData {
-        config: config.value,
+        config: config.value.map(JsonValue::Object),
         config_quarantined_to: config.quarantined_to,
         config_newer: config.newer,
-        state: state.value,
+        state: state.value.map(JsonValue::Object),
         panes,
         panes_error,
         panes_newer,
@@ -192,15 +192,14 @@ pub fn config_to_write(data_dir: &Path, sets: JsonValue) -> Result<Option<JsonVa
         "snapshotSearchPageSize",
         "editorFont",
     ];
-    let loaded = read_config_store(&data_dir.join(CONFIG_FILE_NAME))?.value;
+    let current = read_rebuildable_store(&data_dir.join(CONFIG_FILE_NAME), format_version::CONFIG)?
+        .value
+        .unwrap_or_default();
     let mut stored = sets
         .as_object()
         .ok_or("config sets are not an object")?
         .clone();
     stored.retain(|key, _| KEYS.contains(&key.as_str()));
-    let current = loaded
-        .and_then(|value| value.as_object().cloned())
-        .unwrap_or_default();
     Ok((current != stored).then_some(JsonValue::Object(stored)))
 }
 
@@ -265,8 +264,7 @@ fn save_records_list_width_in(data_dir: &Path, width: u32) -> Result<(), String>
     // than overwritten here; a newer one is never overwritten by the write below.
     let mut state = match read_json_store(&path, format_version::STATE)? {
         JsonRead::Absent | JsonRead::Newer(_) => serde_json::Map::new(),
-        JsonRead::Readable(JsonValue::Object(object)) => object,
-        JsonRead::Readable(_) => return Err(format!("{} is not a JSON object", path.display())),
+        JsonRead::Readable(fields) => fields,
         JsonRead::Corrupt(reason) => return Err(reason),
     };
     state.insert(RECORDS_LIST_WIDTH_KEY.to_string(), JsonValue::from(width));
@@ -277,7 +275,7 @@ fn save_records_list_width_in(data_dir: &Path, width: u32) -> Result<(), String>
 // recovery stays with the launch's load path.
 fn read_state_object(path: &Path) -> Option<serde_json::Map<String, JsonValue>> {
     match read_json_store(path, format_version::STATE) {
-        Ok(JsonRead::Readable(JsonValue::Object(object))) => Some(object),
+        Ok(JsonRead::Readable(fields)) => Some(fields),
         _ => None,
     }
 }
@@ -288,7 +286,7 @@ pub fn load_window_state(app: &AppHandle) -> Result<Option<JsonValue>, String> {
     if let Some(recorded) = loaded.newer {
         report_newer(&path, recorded);
     }
-    Ok(loaded.value)
+    Ok(loaded.value.map(JsonValue::Object))
 }
 
 pub fn save_window_state(data_dir: &Path, state: JsonValue) -> Result<(), String> {
@@ -578,11 +576,12 @@ fn delete_all_snapshots_with_connection(conn: &Connection) -> Result<u64, String
 #[derive(Debug, PartialEq)]
 enum JsonRead {
     Absent,
-    Readable(JsonValue),
+    Readable(serde_json::Map<String, JsonValue>),
     // Recorded in this newer format: intact data this build cannot read, which
     // is reported and left exactly in place (store-recovery conventions).
     Newer(u32),
-    // Bytes that do not parse, or a format marker that is not a positive integer.
+    // Bytes that do not parse, or a format marker that is missing or not a
+    // positive integer.
     Corrupt(String),
 }
 
@@ -632,7 +631,7 @@ fn quarantine_name(path: &Path) -> PathBuf {
 // the newer format a file was left in place at. At most one is set.
 #[derive(Debug, Default, PartialEq)]
 struct Rebuildable {
-    value: Option<JsonValue>,
+    value: Option<serde_json::Map<String, JsonValue>>,
     quarantined_to: Option<String>,
     newer: Option<u32>,
 }
@@ -640,7 +639,8 @@ struct Rebuildable {
 // Reads a REBUILDABLE store (config, view state): missing → nothing; readable →
 // its value; newer → left in place and reported as newer, so launch proceeds
 // with built-ins; present-but-corrupt (unreadable bytes, unparseable JSON — a
-// bytes parse, so UTF-8 garbage counts — or a bad format marker) → quarantine
+// bytes parse, so UTF-8 garbage counts — or a missing or bad format marker,
+// which every non-object lacks) → quarantine
 // aside and return the `.invalid` path so the caller reports it, then built-ins.
 // The quarantine rename runs OUTSIDE the parse-failure
 // handling: its own failure propagates as a load error rather than falling
@@ -650,8 +650,8 @@ struct Rebuildable {
 fn read_rebuildable_store(path: &Path, version: u32) -> Result<Rebuildable, String> {
     Ok(match read_json_store(path, version)? {
         JsonRead::Absent => Rebuildable::default(),
-        JsonRead::Readable(value) => Rebuildable {
-            value: Some(value),
+        JsonRead::Readable(fields) => Rebuildable {
+            value: Some(fields),
             ..Rebuildable::default()
         },
         JsonRead::Newer(recorded) => Rebuildable {
@@ -662,27 +662,13 @@ fn read_rebuildable_store(path: &Path, version: u32) -> Result<Rebuildable, Stri
     })
 }
 
-// A settings file is an object of sets. Invalid individual sets are handled by
-// the frontend; a non-object file takes the whole-store recovery branch here.
-fn read_config_store(path: &Path) -> Result<Rebuildable, String> {
-    let loaded = read_rebuildable_store(path, format_version::CONFIG)?;
-    if loaded
-        .value
-        .as_ref()
-        .is_some_and(|value| !value.is_object())
-    {
-        return quarantine_rebuildable_store(path, "config is not a JSON object");
-    }
-    Ok(loaded)
-}
-
 /// config.json's settings for the reads made before the load path runs (the
 /// menu language, the window theme): None for a file that does not parse or
 /// is in a newer format, as the load path will report it.
-pub fn launch_config(text: &str) -> Option<JsonValue> {
+pub fn launch_config(text: &str) -> Option<serde_json::Map<String, JsonValue>> {
     let value = serde_json::from_str(text).ok()?;
     match format_version::read_json(value, format_version::CONFIG).ok()? {
-        JsonFormat::Readable(value) => Some(value),
+        JsonFormat::Readable(fields) => Some(fields),
         JsonFormat::Newer(_) => None,
     }
 }
@@ -868,14 +854,11 @@ fn open_snapshot_store(data_dir: &Path) -> Result<SnapshotStore, String> {
     // instead of waiting, exactly as backup_store::open_store's comment explains.
     conn.pragma_update(None, "busy_timeout", 5000)
         .map_err(to_string_error)?;
-    // The format check comes before the schema, which writes.
-    if let Some(recorded) =
-        format_version::newer_sqlite(&conn, format_version::SNAPSHOTS).map_err(to_string_error)?
-    {
-        return Ok(SnapshotStore::Newer(recorded));
+    match format_version::check_sqlite(&conn, SNAPSHOTS_DB_FILE_NAME, format_version::SNAPSHOTS)? {
+        SqliteFormat::Newer(recorded) => return Ok(SnapshotStore::Newer(recorded)),
+        SqliteFormat::New => init_schema(&conn)?,
+        SqliteFormat::Readable => {}
     }
-    init_schema(&conn)?;
-    format_version::mark_sqlite(&conn, format_version::SNAPSHOTS).map_err(to_string_error)?;
     Ok(SnapshotStore::Ready(conn))
 }
 
@@ -889,9 +872,12 @@ fn open_snapshot_store(data_dir: &Path) -> Result<SnapshotStore, String> {
 // Repeating a copy of a pane's latest text writes nothing, so only text the pane
 // did not just hold adds a row.
 fn init_schema(conn: &Connection) -> Result<(), String> {
-    conn.execute_batch(
-        "
-        pragma journal_mode = wal;
+    conn.pragma_update(None, "journal_mode", "WAL")
+        .and_then(|_| format_version::create_sqlite(conn, SCHEMA, format_version::SNAPSHOTS))
+        .map_err(to_string_error)
+}
+
+const SCHEMA: &str = "
         create table if not exists snapshots (
           id text primary key,
           pane_id text not null,
@@ -905,10 +891,7 @@ fn init_schema(conn: &Connection) -> Result<(), String> {
           on snapshots(pane_id, created_at_utc desc);
         create index if not exists snapshots_time
           on snapshots(created_at_utc desc);
-        ",
-    )
-    .map_err(to_string_error)
-}
+        ";
 
 fn hash_content(content: &str) -> String {
     let mut hasher = Sha256::new();

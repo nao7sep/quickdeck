@@ -27,7 +27,7 @@ use std::sync::Mutex;
 
 use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
 
-use crate::format_version;
+use crate::format_version::{self, SqliteFormat};
 use serde_json::json;
 use sha2::{Digest, Sha256};
 
@@ -111,24 +111,23 @@ fn open_store(file: &Path) -> Result<Connection, ()> {
     Ok(conn)
 }
 
-/// The format check, before anything that writes, then WAL, the schema and the
-/// format marker.
+/// The format check, before anything that writes; a new store then gets WAL, its
+/// schema and its format marker.
 fn prepare_store(conn: &Connection) -> Result<(), String> {
     let to_string = |error: rusqlite::Error| error.to_string();
     conn.pragma_update(None, "busy_timeout", 5000)
         .map_err(to_string)?;
-    if let Some(recorded) =
-        format_version::newer_sqlite(conn, format_version::BACKUPS).map_err(to_string)?
-    {
-        return Err(format_version::newer_message(
+    match format_version::check_sqlite(conn, BACKUPS_DB_FILE_NAME, format_version::BACKUPS)? {
+        SqliteFormat::Newer(recorded) => Err(format_version::newer_message(
             BACKUPS_DB_FILE_NAME,
             recorded,
-        ));
+        )),
+        SqliteFormat::New => conn
+            .pragma_update(None, "journal_mode", "WAL")
+            .and_then(|_| format_version::create_sqlite(conn, SCHEMA, format_version::BACKUPS))
+            .map_err(to_string),
+        SqliteFormat::Readable => Ok(()),
     }
-    conn.pragma_update(None, "journal_mode", "WAL")
-        .and_then(|_| conn.execute_batch(SCHEMA))
-        .and_then(|_| format_version::mark_sqlite(conn, format_version::BACKUPS))
-        .map_err(to_string)
 }
 
 /// Logs the one open/disable warn line. Naming the file and the reason is enough

@@ -130,6 +130,6 @@ fn the_exit_save_writes_window_json_into_the_launch_root() {
     else {
         panic!("window.json reads in this build's format");
     };
-    let placements = placements_from(Some(written));
+    let placements = placements_from(Some(serde_json::Value::Object(written)));
     assert_eq!(placements.get("main"), Some(&placement));
 }
