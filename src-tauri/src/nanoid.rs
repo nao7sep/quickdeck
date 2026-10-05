@@ -2,8 +2,8 @@
 // standard 64-character URL-safe alphabet (`A-Za-z0-9_-`), matching what the
 // frontend's `nanoid` package (see `nanoid()` in src/state/AppStateContext.tsx)
 // produces by default. This is a hand-rolled equivalent for the Rust core,
-// which has no `nanoid` crate of its own — see storage.rs's `temp_path_for`
-// for the one place that consumes it today.
+// which has no `nanoid` crate of its own — storage.rs consumes it for
+// atomic-write temp names and snapshot ids.
 //
 // 64 divides 256 evenly, so masking each random byte down to its low 6 bits
 // (`byte & 0x3F`) lands on every alphabet index with exactly equal
