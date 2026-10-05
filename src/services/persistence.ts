@@ -3,9 +3,9 @@ import { invoke, isTauri } from "@tauri-apps/api/core";
 import type { Pane, SnapshotTrigger } from "../types";
 
 // Pure view/session state — its own store (state.json), quarantined-then-reset
-// on corruption because every field is rebuildable by use.
+// on corruption because every field is rebuildable by use. The Rust core records
+// and checks every store's format version, so no file type here carries one.
 export type StateFile = {
-  version: 1;
   activePaneId: string;
   // The webview zoom — a view adjustment, so it is state, never config
   // (persisted-store-separation conventions).
@@ -15,7 +15,6 @@ export type StateFile = {
 // The panes' text and identity — the user's work product, its own store
 // (panes.json) that HALTS on corruption rather than quarantining.
 export type PanesFile = {
-  version: 1;
   panes: Pane[];
 };
 
@@ -24,11 +23,19 @@ export type LoadedAppData = {
   // Where a corrupt config.json was set aside; retained for diagnostics while
   // the app presents authored recovery copy.
   configQuarantinedTo: string | null;
+  // The format a config.json from a newer build records: the file is left in
+  // place and the app runs on built-in settings, which the core never saves
+  // over it.
+  configNewer: number | null;
   state: StateFile | null;
   panes: PanesFile | null;
   // Set when panes.json is present but unreadable: the pane surface halts
   // (file left in place) while config and state still load.
   panesError: string | null;
+  // The formats a panes.json or snapshots.sqlite3 from a newer build records:
+  // each halts with the file left in place, offering no reset.
+  panesNewer: number | null;
+  snapshotsNewer: number | null;
   dataDir: string;
   // Whether developer-only debug logging is on (resolved by the Rust core).
   debugEnabled: boolean;
@@ -72,7 +79,6 @@ export function buildStateFile(
   zoomLevel: number,
 ): StateFile {
   return {
-    version: 1,
     activePaneId,
     zoomLevel,
   };
@@ -80,7 +86,6 @@ export function buildStateFile(
 
 export function buildPanesFile(panes: Pane[]): PanesFile {
   return {
-    version: 1,
     panes,
   };
 }
@@ -90,9 +95,12 @@ export async function loadAppData(): Promise<LoadedAppData> {
     return {
       config: null,
       configQuarantinedTo: null,
+      configNewer: null,
       state: null,
       panes: null,
       panesError: null,
+      panesNewer: null,
+      snapshotsNewer: null,
       dataDir: "Browser preview",
       debugEnabled: import.meta.env.DEV,
       systemLanguage: "en",

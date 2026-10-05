@@ -222,13 +222,17 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      // Check the version before this build's shape. A newer schema may be
-      // intentionally different and must never be offered the corrupt-file reset.
-      const panesVersion = (data.panes as { version?: unknown } | null)?.version;
-      if (typeof panesVersion === "number" && panesVersion > 1) {
-        logError("panes.json is from a newer build", { version: panesVersion });
+      // A store from a newer build is intact data this build cannot read: the
+      // core left it in place and logged it, and it is never offered the
+      // corrupt-file reset (store-recovery conventions).
+      const newer = data.panesNewer !== null
+        ? message("load.panesNewer", { version: data.panesNewer })
+        : data.snapshotsNewer !== null
+          ? message("load.snapshotsNewer", { version: data.snapshotsNewer })
+          : null;
+      if (newer !== null) {
         setLoadErrorIsCorruptPanes(false);
-        setLoadError(message("load.panesNewer", { version: panesVersion }));
+        setLoadError(newer);
         setLoadStatus("failed");
         return;
       }
@@ -259,6 +263,9 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
 
       if (data.configQuarantinedTo !== null) {
         showBlockingError(message("settingsReset.title"), message("settingsReset.body"));
+      }
+      if (data.configNewer !== null) {
+        showBlockingError(message("settingsNewer.title"), message("settingsNewer.body"));
       }
 
       try {

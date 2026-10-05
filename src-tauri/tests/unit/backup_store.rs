@@ -170,3 +170,35 @@ fn record_is_best_effort_when_the_store_cannot_be_opened() {
     record(&good_store, &target, b"content");
     assert_eq!(row_count(&good_store, &target), 1);
 }
+
+#[test]
+#[serial(backup_store)]
+fn a_store_from_a_newer_build_is_left_untouched_and_recording_is_disabled() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = fresh_store(dir.path());
+    Connection::open(&store)
+        .unwrap()
+        .execute_batch("pragma user_version = 2;")
+        .unwrap();
+    let before = std::fs::read(&store).unwrap();
+
+    record(&store, &dir.path().join("config.json"), b"{}");
+
+    assert_eq!(std::fs::read(&store).unwrap(), before);
+    assert!(matches!(*STORE.lock().unwrap(), StoreState::Disabled));
+    close_backup_store();
+}
+
+#[test]
+#[serial(backup_store)]
+fn a_new_store_records_its_format_version() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = fresh_store(dir.path());
+    record(&store, &dir.path().join("config.json"), b"{}");
+    close_backup_store();
+    let version: i64 = Connection::open(&store)
+        .unwrap()
+        .pragma_query_value(None, "user_version", |row| row.get(0))
+        .unwrap();
+    assert_eq!(version, i64::from(format_version::BACKUPS));
+}

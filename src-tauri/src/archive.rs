@@ -19,8 +19,13 @@ use std::{
 };
 use zip::{write::SimpleFileOptions, CompressionMethod, ZipArchive, ZipWriter};
 
+use crate::format_version::{self, JsonFormat};
+
 /// An archive's file name: its run time, per the timestamp-conventions.
 const ARCHIVE_NAME_FORMAT: &str = "%Y%m%d-%H%M%S-utc.zip";
+
+/// The entry that says what the archive holds, beside the stores.
+const MANIFEST_NAME: &str = "manifest.json";
 
 /// How long launch and exit wait for an archive run before going on without it.
 const WAIT: Duration = Duration::from_secs(5);
@@ -225,15 +230,21 @@ fn archives(directory: &Path) -> Result<Vec<PathBuf>, String> {
     Ok(paths)
 }
 
+// A manifest in a newer format is one this build cannot compare with, so the
+// run writes a new archive beside the one that holds it.
 fn read_manifest(path: &Path) -> Result<Manifest, String> {
     let mut archive = ZipArchive::new(File::open(path).map_err(error)?).map_err(error)?;
     let mut bytes = Vec::new();
     archive
-        .by_name("manifest.json")
+        .by_name(MANIFEST_NAME)
         .map_err(error)?
         .read_to_end(&mut bytes)
         .map_err(error)?;
-    serde_json::from_slice(&bytes).map_err(error)
+    let value = serde_json::from_slice(&bytes).map_err(error)?;
+    match format_version::read_json(value, format_version::ARCHIVE_MANIFEST)? {
+        JsonFormat::Readable(value) => serde_json::from_value(value).map_err(error),
+        JsonFormat::Newer(recorded) => Err(format_version::newer_message(MANIFEST_NAME, recorded)),
+    }
 }
 
 pub fn archive_stores(root: &Path) -> Result<bool, String> {
@@ -334,7 +345,11 @@ pub fn archive_stores(root: &Path) -> Result<bool, String> {
         zip.start_file(*name, options).map_err(error)?;
         io::copy(&mut File::open(path).map_err(error)?, &mut zip).map_err(error)?;
     }
-    zip.start_file("manifest.json", options).map_err(error)?;
+    let manifest = format_version::stamp_json(
+        &serde_json::to_value(&manifest).map_err(error)?,
+        format_version::ARCHIVE_MANIFEST,
+    )?;
+    zip.start_file(MANIFEST_NAME, options).map_err(error)?;
     zip.write_all(&serde_json::to_vec_pretty(&manifest).map_err(error)?)
         .map_err(error)?;
     zip.finish().map_err(error)?.sync_all().map_err(error)?;

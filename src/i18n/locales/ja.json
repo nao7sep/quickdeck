@@ -150,6 +150,8 @@
 
   "settingsReset.title": "設定ファイルがリセットされました",
   "settingsReset.body": "設定ファイルを読み込めなかったため、QuickDeck はそのファイルを保管し、既定の設定で起動しました。保管したコピーの場所はログに記録されています。ペインのテキストには影響ありません。",
+  "settingsNewer.title": "新しいバージョンで書かれた設定ファイル",
+  "settingsNewer.body": "設定ファイル（config.json）は新しいバージョンの QuickDeck で書かれているため、元の場所にそのまま残しています。QuickDeck は既定の設定を使用しており、設定の変更は保存されません。保存した設定を使うには QuickDeck をアップデートしてください。",
 
   "load.title": "QuickDeck は保存データを準備できませんでした",
   "load.hint": "既存のデータを守るため、この状態の QuickDeck は変更を保存しません。ファイルはアプリのデータフォルダ（既定では {dataDir}、{envVar} が設定されていればその場所）にあります。アプリを終了し、該当するファイルを修復するか移動してから、もう一度起動してください。",
@@ -160,6 +162,7 @@
   "load.panesUnreadable": "ペインのテキストファイル（panes.json）を読み込めなかったため、元の場所にそのまま残しています。データフォルダが利用でき、QuickDeck がアクセスできることを確認してから、もう一度お試しください。診断情報はログにあります。",
   "load.panesDamaged": "ペインのテキストファイル（panes.json）が壊れているため、元の場所にそのまま残しています。診断情報はログにあります。",
   "load.panesNewer": "ペインのテキストファイル（panes.json）は新しいバージョンの QuickDeck（形式 {version}）で書かれているため、元の場所にそのまま残しています。開くには QuickDeck をアップデートしてください。",
+  "load.snapshotsNewer": "スナップショットの保存ファイル（snapshots.sqlite3）は新しいバージョンの QuickDeck（形式 {version}）で書かれているため、元の場所にそのまま残しています。開くには QuickDeck をアップデートしてください。",
   "load.setAsideFailed": "壊れたペインファイルを退避できませんでした。既存のファイルは変更されていません。",
 
   "crash.title": "QuickDeck はこのウインドウを表示し続けられませんでした",

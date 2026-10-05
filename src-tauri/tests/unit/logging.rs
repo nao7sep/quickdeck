@@ -327,3 +327,28 @@ fn write_record_says_whether_the_row_reached_the_database() {
         &Map::new()
     ));
 }
+
+#[test]
+fn a_new_records_database_records_its_format_version() {
+    let dir = tempfile::tempdir().unwrap();
+    let conn = open_records(&dir.path().join("records.sqlite3")).unwrap();
+    let version: i64 = conn
+        .pragma_query_value(None, "user_version", |row| row.get(0))
+        .unwrap();
+    assert_eq!(version, i64::from(format_version::RECORDS));
+}
+
+#[test]
+fn a_records_database_from_a_newer_build_is_left_untouched() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("records.sqlite3");
+    Connection::open(&file)
+        .unwrap()
+        .execute_batch("pragma user_version = 2;")
+        .unwrap();
+    let before = fs::read(&file).unwrap();
+
+    let refused = open_records(&file).err().unwrap();
+    assert!(refused.contains("records.sqlite3"), "{refused}");
+    assert_eq!(fs::read(&file).unwrap(), before);
+}

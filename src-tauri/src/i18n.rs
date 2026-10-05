@@ -61,9 +61,10 @@ pub fn normalize_preference(value: Option<&str>) -> Option<&'static str> {
     LANGUAGES.iter().copied().find(|tag| *tag == value)
 }
 
-/// The preference saved in a config.json body; anything unparseable is System.
+/// The preference saved in a config.json body; anything unparseable, or a file
+/// in a newer format, is System.
 pub fn saved_preference(config: &str) -> Option<&'static str> {
-    let value: JsonValue = serde_json::from_str(config).ok()?;
+    let value = crate::storage::launch_config(config)?;
     normalize_preference(value.get("language")?.as_str())
 }
 

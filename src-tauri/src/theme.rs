@@ -6,7 +6,6 @@
 
 use std::path::Path;
 
-use serde_json::Value as JsonValue;
 use tauri::window::Color;
 use tauri::{Theme, WebviewWindow};
 
@@ -22,10 +21,10 @@ pub fn window_theme_for(preference: &str) -> Option<Theme> {
     }
 }
 
-/// The window theme saved in a config.json body; anything unparseable follows
-/// the OS.
+/// The window theme saved in a config.json body; anything unparseable, or a
+/// file in a newer format, follows the OS.
 pub fn saved_window_theme(config: &str) -> Option<Theme> {
-    let value: JsonValue = serde_json::from_str(config).ok()?;
+    let value = crate::storage::launch_config(config)?;
     window_theme_for(value.get("theme")?.as_str()?)
 }
 

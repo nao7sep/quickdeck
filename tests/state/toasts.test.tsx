@@ -26,9 +26,12 @@ function loadedAppData(): LoadedAppData {
   return {
     config: null,
     configQuarantinedTo: null,
+    configNewer: null,
     state: null,
     panes: null,
     panesError: null,
+    panesNewer: null,
+    snapshotsNewer: null,
     dataDir: "/private/tmp/quickdeck-toast-test",
     debugEnabled: false,
     systemLanguage: "en",

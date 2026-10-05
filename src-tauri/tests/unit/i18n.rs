@@ -57,6 +57,11 @@ fn saved_preference_reads_the_language_field() {
     assert_eq!(saved_preference(r#"{"language":7}"#), None);
     assert_eq!(saved_preference(r#"{"theme":"dark"}"#), None);
     assert_eq!(saved_preference("not json"), None);
+    // A config.json from a newer build is not read: System.
+    assert_eq!(
+        saved_preference(r#"{"formatVersion":2,"language":"de"}"#),
+        None
+    );
 }
 
 #[test]

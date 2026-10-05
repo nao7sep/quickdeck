@@ -26,6 +26,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
+
+use crate::format_version;
 use serde_json::json;
 use sha2::{Digest, Sha256};
 
@@ -83,7 +85,9 @@ static STORE: Mutex<StoreState> = Mutex::new(StoreState::Uninitialized);
 /// WAL is what lets the tolerated two-instance case (two quickdeck windows writing
 /// at once) serialize safely without a cross-process lock. `busy_timeout = 5000`
 /// makes a contended write wait up to five seconds for SQLite's write lock instead
-/// of immediately failing with `SQLITE_BUSY` and dropping that record.
+/// of immediately failing with `SQLITE_BUSY` and dropping that record. A store in
+/// a newer format is left untouched, its one warn naming it, like any other
+/// failed open.
 fn open_store(file: &Path) -> Result<Connection, ()> {
     // The first writer under the root does the `mkdir -p` (storage-path convention);
     // the store may be the first thing written on a fresh root.
@@ -100,15 +104,31 @@ fn open_store(file: &Path) -> Result<Connection, ()> {
             return Err(());
         }
     };
-    if let Err(error) = conn
-        .pragma_update(None, "journal_mode", "WAL")
-        .and_then(|_| conn.pragma_update(None, "busy_timeout", 5000))
-        .and_then(|_| conn.execute_batch(SCHEMA))
-    {
-        warn_once(file, &error.to_string());
+    if let Err(reason) = prepare_store(&conn) {
+        warn_once(file, &reason);
         return Err(());
     }
     Ok(conn)
+}
+
+/// The format check, before anything that writes, then WAL, the schema and the
+/// format marker.
+fn prepare_store(conn: &Connection) -> Result<(), String> {
+    let to_string = |error: rusqlite::Error| error.to_string();
+    conn.pragma_update(None, "busy_timeout", 5000)
+        .map_err(to_string)?;
+    if let Some(recorded) =
+        format_version::newer_sqlite(conn, format_version::BACKUPS).map_err(to_string)?
+    {
+        return Err(format_version::newer_message(
+            BACKUPS_DB_FILE_NAME,
+            recorded,
+        ));
+    }
+    conn.pragma_update(None, "journal_mode", "WAL")
+        .and_then(|_| conn.execute_batch(SCHEMA))
+        .and_then(|_| format_version::mark_sqlite(conn, format_version::BACKUPS))
+        .map_err(to_string)
 }
 
 /// Logs the one open/disable warn line. Naming the file and the reason is enough

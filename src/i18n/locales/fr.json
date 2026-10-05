@@ -150,6 +150,8 @@
 
   "settingsReset.title": "Un fichier de réglages a été réinitialisé",
   "settingsReset.body": "Un fichier de réglages était illisible\u00a0: QuickDeck l’a conservé et a démarré avec les valeurs par défaut. L’emplacement de la copie conservée est consigné dans le journal. Le texte de vos volets n’a pas été modifié.",
+  "settingsNewer.title": "Réglages d’une version plus récente",
+  "settingsNewer.body": "Votre fichier de réglages (config.json) a été écrit par une version plus récente de QuickDeck et a été laissé exactement à sa place. QuickDeck utilise les réglages par défaut, et les modifications apportées aux réglages ne seront pas enregistrées. Mettez QuickDeck à jour pour utiliser vos réglages enregistrés.",
 
   "load.title": "QuickDeck n’a pas pu préparer les données enregistrées",
   "load.hint": "Pour protéger vos données, QuickDeck n’enregistre aucune modification dans cet état. Vos fichiers se trouvent dans le dossier de données de l’app ({dataDir} par défaut, ou {envVar} si cette variable est définie). Quittez l’app, réparez ou déplacez le fichier concerné, puis relancez-la.",
@@ -160,6 +162,7 @@
   "load.panesUnreadable": "Le fichier texte de vos volets (panes.json) n’a pas pu être lu et a été laissé exactement à sa place. Vérifiez que le dossier de données est disponible et que QuickDeck y a accès, puis réessayez. Les détails de diagnostic se trouvent dans le journal.",
   "load.panesDamaged": "Le fichier texte de vos volets (panes.json) est endommagé et a été laissé exactement à sa place. Les détails de diagnostic se trouvent dans le journal.",
   "load.panesNewer": "Le fichier texte de vos volets (panes.json) a été écrit par une version plus récente de QuickDeck (format {version}) et a été laissé exactement à sa place. Mettez QuickDeck à jour pour l’ouvrir.",
+  "load.snapshotsNewer": "Le fichier de vos instantanés (snapshots.sqlite3) a été écrit par une version plus récente de QuickDeck (format {version}) et a été laissé exactement à sa place. Mettez QuickDeck à jour pour l’ouvrir.",
   "load.setAsideFailed": "Le fichier de volets endommagé n’a pas pu être mis de côté. Vos fichiers existants n’ont pas été modifiés.",
 
   "crash.title": "QuickDeck n’a pas pu garder cette fenêtre ouverte",

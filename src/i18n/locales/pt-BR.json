@@ -150,6 +150,8 @@
 
   "settingsReset.title": "Um arquivo de configurações foi redefinido",
   "settingsReset.body": "Não foi possível ler um arquivo de configurações, então o QuickDeck o preservou e começou com os valores padrão. O local da cópia preservada está registrado no log. O texto dos seus painéis não foi alterado.",
+  "settingsNewer.title": "Configurações de uma versão mais recente",
+  "settingsNewer.body": "O seu arquivo de configurações (config.json) foi gravado por uma versão mais recente do QuickDeck e foi deixado exatamente onde estava. O QuickDeck está usando as configurações padrão, e as alterações nas configurações não serão salvas. Atualize o QuickDeck para usar as configurações salvas.",
 
   "load.title": "O QuickDeck não conseguiu preparar os dados salvos",
   "load.hint": "Para proteger seus dados, o QuickDeck não salva alterações neste estado. Seus arquivos ficam na pasta de dados do app ({dataDir} por padrão, ou {envVar}, se estiver definida). Saia do app, repare ou mova o arquivo afetado e abra o app novamente.",
@@ -160,6 +162,7 @@
   "load.panesUnreadable": "Não foi possível ler o arquivo de texto dos seus painéis (panes.json), e ele foi deixado exatamente onde estava. Verifique se a pasta de dados está disponível e se o QuickDeck tem acesso a ela, depois tente novamente. Os detalhes de diagnóstico estão no log.",
   "load.panesDamaged": "O arquivo de texto dos seus painéis (panes.json) está danificado e foi deixado exatamente onde estava. Os detalhes de diagnóstico estão no log.",
   "load.panesNewer": "O arquivo de texto dos seus painéis (panes.json) foi gravado por uma versão mais recente do QuickDeck (formato {version}) e foi deixado exatamente onde estava. Atualize o QuickDeck para abri-lo.",
+  "load.snapshotsNewer": "O arquivo dos seus instantâneos (snapshots.sqlite3) foi gravado por uma versão mais recente do QuickDeck (formato {version}) e foi deixado exatamente onde estava. Atualize o QuickDeck para abri-lo.",
   "load.setAsideFailed": "Não foi possível deixar de lado o arquivo de painéis danificado. Seus arquivos não foram alterados.",
 
   "crash.title": "O QuickDeck não conseguiu manter esta janela aberta",

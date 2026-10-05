@@ -150,6 +150,8 @@
 
   "settingsReset.title": "设置文件已重置",
   "settingsReset.body": "一个设置文件无法读取，因此 QuickDeck 保留了该文件，并使用默认设置启动。保留副本的位置已记录在日志中。你的窗格文本未受影响。",
+  "settingsNewer.title": "设置文件来自较新版本",
+  "settingsNewer.body": "你的设置文件（config.json）由较新版本的 QuickDeck 写入，已原样留在原处。QuickDeck 目前使用默认设置，对设置所做的更改不会被保存。请更新 QuickDeck 以使用你保存的设置。",
 
   "load.title": "QuickDeck 无法准备已保存的数据",
   "load.hint": "为保护你现有的数据，QuickDeck 在此状态下不会保存更改。你的文件位于应用的数据文件夹中（默认为 {dataDir}，如设置了 {envVar} 则为其所指位置）。请退出应用，修复或移走有问题的文件，然后重新启动。",
@@ -160,6 +162,7 @@
   "load.panesUnreadable": "无法读取你的窗格文本文件（panes.json），该文件已原样留在原处。请确认数据文件夹可用且 QuickDeck 有权访问，然后重试。诊断详情记录在日志中。",
   "load.panesDamaged": "你的窗格文本文件（panes.json）已损坏，该文件已原样留在原处。诊断详情记录在日志中。",
   "load.panesNewer": "你的窗格文本文件（panes.json）由较新版本的 QuickDeck（格式 {version}）写入，已原样留在原处。请更新 QuickDeck 后再打开。",
+  "load.snapshotsNewer": "你的快照存储文件（snapshots.sqlite3）由较新版本的 QuickDeck（格式 {version}）写入，已原样留在原处。请更新 QuickDeck 后再打开。",
   "load.setAsideFailed": "无法将损坏的窗格文件移到一旁。你现有的文件没有被更改。",
 
   "crash.title": "QuickDeck 无法让此窗口保持打开",

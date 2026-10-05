@@ -150,6 +150,8 @@
 
   "settingsReset.title": "Se restableció un archivo de configuración",
   "settingsReset.body": "No se podía leer un archivo de configuración, así que QuickDeck lo conservó y empezó con los valores predeterminados para ese archivo. La ubicación de la copia conservada figura en el registro. El texto de tus paneles está intacto.",
+  "settingsNewer.title": "Configuración de una versión más reciente",
+  "settingsNewer.body": "Tu archivo de configuración (config.json) lo escribió una versión más reciente de QuickDeck y se dejó exactamente donde estaba. QuickDeck está usando la configuración predeterminada, y los cambios en la configuración no se guardarán. Actualiza QuickDeck para usar tu configuración guardada.",
 
   "load.title": "QuickDeck no pudo preparar los datos guardados",
   "load.hint": "Para proteger tus datos, QuickDeck no guarda cambios en este estado. Tus archivos están en la carpeta de datos de la app ({dataDir} de forma predeterminada, o {envVar} si está definida). Sal de la app, repara o mueve el archivo afectado y vuelve a abrirla.",
@@ -160,6 +162,7 @@
   "load.panesUnreadable": "No se pudo leer el archivo de texto de tus paneles (panes.json) y se dejó exactamente donde estaba. Verifica que la carpeta de datos esté disponible y que QuickDeck tenga acceso, y vuelve a intentarlo. Los detalles de diagnóstico están en el registro.",
   "load.panesDamaged": "El archivo de texto de tus paneles (panes.json) está dañado y se dejó exactamente donde estaba. Los detalles de diagnóstico están en el registro.",
   "load.panesNewer": "El archivo de texto de tus paneles (panes.json) lo escribió una versión más reciente de QuickDeck (formato {version}) y se dejó exactamente donde estaba. Actualiza QuickDeck para abrirlo.",
+  "load.snapshotsNewer": "El almacén de tus instantáneas (snapshots.sqlite3) lo escribió una versión más reciente de QuickDeck (formato {version}) y se dejó exactamente donde estaba. Actualiza QuickDeck para abrirlo.",
   "load.setAsideFailed": "No se pudo apartar el archivo de paneles dañado. Tus archivos no se modificaron.",
 
   "crash.title": "QuickDeck no pudo mantener abierta esta ventana",

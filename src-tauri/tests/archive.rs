@@ -1,18 +1,19 @@
 use quickdeck_lib::archive::{
     archive_stores, finish_session, prepare_session, start_session, thinned, ArchiveRun,
 };
+use quickdeck_lib::format_version::ARCHIVE_MANIFEST;
 use quickdeck_lib::window_placement::{self, NormalRectangle, Placement};
 use rusqlite::Connection;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::{
     fs::{self, File},
-    io::Read,
+    io::{Read, Write},
     path::Path,
     sync::mpsc,
     time::Duration,
 };
-use zip::{CompressionMethod, ZipArchive};
+use zip::{write::SimpleFileOptions, CompressionMethod, ZipArchive, ZipWriter};
 
 fn database(root: &Path) -> Connection {
     let connection = Connection::open(root.join("snapshots.sqlite3")).unwrap();
@@ -56,6 +57,7 @@ fn copies_live_wal_bytes_consistently_hashes_them_and_deduplicates() {
         .read_to_string(&mut manifest)
         .unwrap();
     let manifest: Value = serde_json::from_str(&manifest).unwrap();
+    assert_eq!(manifest["formatVersion"], ARCHIVE_MANIFEST);
     let hash: String = Sha256::digest(&bytes)
         .iter()
         .map(|byte| format!("{byte:02x}"))
@@ -327,4 +329,45 @@ fn archives_live_directly_in_backups_and_an_older_archives_folder_is_left_alone(
     for name in ["20200101-000000-utc.zip", ".running", ".lock"] {
         assert!(older.join(name).exists(), "{name}");
     }
+}
+
+#[test]
+fn a_manifest_from_a_newer_build_is_not_compared_and_its_archive_is_left_alone() {
+    let root = tempfile::tempdir().unwrap();
+    database(root.path());
+    assert!(archive_stores(root.path()).unwrap());
+    let first = zips(root.path()).remove(0);
+    // The same archive as a newer build would have written it: equal entries
+    // under a manifest in a newer format.
+    let newer = root.path().join("backups/20200101-000000-utc.zip");
+    {
+        let mut source = ZipArchive::new(File::open(&first).unwrap()).unwrap();
+        let mut manifest: Value =
+            serde_json::from_reader(source.by_name("manifest.json").unwrap()).unwrap();
+        manifest["formatVersion"] = Value::from(ARCHIVE_MANIFEST + 1);
+        let mut store = Vec::new();
+        source
+            .by_name("snapshots.sqlite3")
+            .unwrap()
+            .read_to_end(&mut store)
+            .unwrap();
+        let mut zip = ZipWriter::new(File::create(&newer).unwrap());
+        zip.start_file("snapshots.sqlite3", SimpleFileOptions::default())
+            .unwrap();
+        zip.write_all(&store).unwrap();
+        zip.start_file("manifest.json", SimpleFileOptions::default())
+            .unwrap();
+        zip.write_all(&serde_json::to_vec(&manifest).unwrap())
+            .unwrap();
+        zip.finish().unwrap();
+    }
+    fs::remove_file(&first).unwrap();
+    let kept = fs::read(&newer).unwrap();
+
+    assert!(
+        archive_stores(root.path()).unwrap(),
+        "a manifest this build cannot read is no match"
+    );
+    assert_eq!(zips(root.path()).len(), 2);
+    assert_eq!(fs::read(&newer).unwrap(), kept);
 }

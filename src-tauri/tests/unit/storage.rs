@@ -285,8 +285,11 @@ fn concurrent_writes_of_the_same_copy_store_it_once_without_failing() {
             let data_dir = dir.path().to_path_buf();
             let start = start.clone();
             std::thread::spawn(move || {
-                let mut conn = open_snapshot_db(&data_dir)?;
+                // Every writer reaches the barrier, so a failed open fails the
+                // test rather than leaving the others waiting.
+                let opened = open_snapshot_db(&data_dir);
                 start.wait();
+                let mut conn = opened?;
                 let transaction = begin_snapshot_write(&mut conn)?;
                 let result = create_snapshot_with_connection(&transaction, input("p1", "same"))?;
                 transaction.commit().map_err(to_string_error)?;
@@ -599,9 +602,11 @@ fn write_then_read_json_roundtrips() {
     let path = dir.path().join("config.json");
     let value = serde_json::json!({ "zoomLevel": 1.2, "zen": true });
 
-    atomic_write_json(dir.path(), &path, &value).unwrap();
-    let read_back = read_json_optional(&path).unwrap();
-    assert_eq!(read_back, Some(value));
+    atomic_write_json(dir.path(), &path, &value, format_version::CONFIG).unwrap();
+    assert_eq!(
+        read_json_store(&path, format_version::CONFIG).unwrap(),
+        JsonRead::Readable(value)
+    );
 
     // No stray temp file remains beside the finished target — the rename left
     // exactly one managed file, named exactly "config.json" (the backup store's
@@ -629,7 +634,7 @@ fn atomic_write_records_byte_identical_bytes_through_the_choke_point() {
     let path = dir.path().join("config.json");
     let value = serde_json::json!({ "zoomLevel": 1.2, "zen": true });
 
-    atomic_write_json(dir.path(), &path, &value).unwrap();
+    atomic_write_json(dir.path(), &path, &value, format_version::CONFIG).unwrap();
 
     let on_disk = fs::read(&path).unwrap();
     let store = dir.path().join(crate::backup_store::BACKUPS_DB_FILE_NAME);
@@ -684,18 +689,21 @@ fn a_write_that_changes_nothing_leaves_the_file_and_the_backups_alone() {
 
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join(PANES_FILE_NAME);
-    let value = serde_json::json!({ "version": 1, "panes": [] });
+    let value = serde_json::json!({ "panes": [] });
 
-    atomic_write_json(dir.path(), &path, &value).unwrap();
+    atomic_write_json(dir.path(), &path, &value, format_version::PANES).unwrap();
     let old = backdate(&path);
-    atomic_write_json(dir.path(), &path, &value).unwrap();
+    atomic_write_json(dir.path(), &path, &value, format_version::PANES).unwrap();
     assert_eq!(fs::metadata(&path).unwrap().modified().unwrap(), old);
     assert_eq!(backup_rows(dir.path(), &path), 1);
 
-    let changed = serde_json::json!({ "version": 1, "panes": [{ "id": "p1" }] });
-    atomic_write_json(dir.path(), &path, &changed).unwrap();
+    let changed = serde_json::json!({ "panes": [{ "id": "p1" }] });
+    atomic_write_json(dir.path(), &path, &changed, format_version::PANES).unwrap();
     assert_ne!(fs::metadata(&path).unwrap().modified().unwrap(), old);
-    assert_eq!(read_json_optional(&path).unwrap(), Some(changed));
+    assert_eq!(
+        read_json_store(&path, format_version::PANES).unwrap(),
+        JsonRead::Readable(changed)
+    );
     assert_eq!(backup_rows(dir.path(), &path), 2);
 
     crate::backup_store::close_backup_store();
@@ -705,7 +713,7 @@ fn a_write_that_changes_nothing_leaves_the_file_and_the_backups_alone() {
 fn a_state_save_that_changes_nothing_leaves_the_file_alone() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join(STATE_FILE_NAME);
-    let state = serde_json::json!({ "version": 1, "activePaneId": "p1", "zoomLevel": 1.1 });
+    let state = serde_json::json!({ "activePaneId": "p1", "zoomLevel": 1.1 });
     save_records_list_width_in(dir.path(), 420).unwrap();
     save_state_in(dir.path(), state.clone()).unwrap();
     let old = backdate(&path);
@@ -722,11 +730,14 @@ fn unrecorded_write_lands_on_disk_but_not_in_the_backup_store() {
 
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("state.json");
-    let value = serde_json::json!({ "version": 1 });
+    let value = serde_json::json!({ "activePaneId": "p1" });
 
-    atomic_write_json_unrecorded(&path, &value).unwrap();
+    atomic_write_json_unrecorded(&path, &value, format_version::STATE).unwrap();
 
-    assert_eq!(read_json_optional(&path).unwrap(), Some(value));
+    assert_eq!(
+        read_json_store(&path, format_version::STATE).unwrap(),
+        JsonRead::Readable(value)
+    );
     assert!(
         !dir.path()
             .join(crate::backup_store::BACKUPS_DB_FILE_NAME)
@@ -748,7 +759,12 @@ fn failed_rename_cleans_up_the_temp_file() {
     let path = dir.path().join("config.json");
     fs::create_dir(&path).unwrap();
 
-    let result = atomic_write_json(dir.path(), &path, &serde_json::json!({ "a": 1 }));
+    let result = atomic_write_json(
+        dir.path(),
+        &path,
+        &serde_json::json!({ "a": 1 }),
+        format_version::CONFIG,
+    );
     assert!(result.is_err());
 
     // The failed write must not leave its temp file behind.
@@ -826,11 +842,18 @@ fn a_write_leaves_another_writers_in_flight_temp_alone() {
         dir.path(),
         &dir.path().join("config.json"),
         &serde_json::json!({ "a": 1 }),
+        format_version::CONFIG,
     )
     .unwrap();
     let failing = dir.path().join("state.json");
     fs::create_dir(&failing).unwrap();
-    assert!(atomic_write_json(dir.path(), &failing, &serde_json::json!({ "a": 1 })).is_err());
+    assert!(atomic_write_json(
+        dir.path(),
+        &failing,
+        &serde_json::json!({ "a": 1 }),
+        format_version::STATE
+    )
+    .is_err());
 
     assert_eq!(fs::read(&other).unwrap(), b"in flight");
     let temps: Vec<_> = fs::read_dir(dir.path())
@@ -853,9 +876,9 @@ fn rebuildable_store_quarantines_corrupt_and_continues() {
     let path = dir.path().join("config.json");
     fs::write(&path, b"{ corrupt bytes").unwrap();
 
-    let (value, quarantined_to) = read_rebuildable_store(&path).unwrap();
-    assert_eq!(value, None);
-    let quarantined_to = quarantined_to.expect("quarantine path reported");
+    let loaded = read_rebuildable_store(&path, format_version::CONFIG).unwrap();
+    assert_eq!(loaded.value, None);
+    let quarantined_to = loaded.quarantined_to.expect("quarantine path reported");
     assert!(quarantined_to.ends_with("-utc.invalid"), "{quarantined_to}");
 
     // The original was renamed aside with its exact bytes, never reset.
@@ -871,9 +894,9 @@ fn rebuildable_store_quarantines_non_utf8_too() {
     let path = dir.path().join("state.json");
     fs::write(&path, [0xff, 0xfe, 0x00, 0x01]).unwrap();
 
-    let (value, quarantined_to) = read_rebuildable_store(&path).unwrap();
-    assert_eq!(value, None);
-    assert!(quarantined_to.is_some());
+    let loaded = read_rebuildable_store(&path, format_version::STATE).unwrap();
+    assert_eq!(loaded.value, None);
+    assert!(loaded.quarantined_to.is_some());
     assert!(!path.exists());
 }
 
@@ -881,11 +904,14 @@ fn rebuildable_store_quarantines_non_utf8_too() {
 fn rebuildable_store_passes_valid_and_missing_through() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("config.json");
-    assert_eq!(read_rebuildable_store(&path).unwrap(), (None, None));
+    assert_eq!(
+        read_rebuildable_store(&path, format_version::CONFIG).unwrap(),
+        Rebuildable::default()
+    );
     fs::write(&path, br#"{"dark":true}"#).unwrap();
-    let (value, quarantined_to) = read_rebuildable_store(&path).unwrap();
-    assert_eq!(value, Some(serde_json::json!({"dark": true})));
-    assert_eq!(quarantined_to, None);
+    let loaded = read_rebuildable_store(&path, format_version::CONFIG).unwrap();
+    assert_eq!(loaded.value, Some(serde_json::json!({"dark": true})));
+    assert_eq!(loaded.quarantined_to, None);
     assert!(path.exists(), "a valid store stays in place");
 }
 
@@ -896,11 +922,14 @@ fn config_quarantines_non_objects_without_seeding_a_replacement() {
         let path = dir.path().join(CONFIG_FILE_NAME);
         fs::write(&path, bytes).unwrap();
 
-        let (value, quarantined_to) = read_config_store(&path).unwrap();
-        assert_eq!(value, None);
-        assert_eq!(fs::read(quarantined_to.unwrap()).unwrap(), bytes.as_bytes());
+        let loaded = read_config_store(&path).unwrap();
+        assert_eq!(loaded.value, None);
+        assert_eq!(
+            fs::read(loaded.quarantined_to.unwrap()).unwrap(),
+            bytes.as_bytes()
+        );
         assert!(!path.exists(), "recovery must not write built-ins");
-        assert_eq!(read_config_store(&path).unwrap(), (None, None));
+        assert_eq!(read_config_store(&path).unwrap(), Rebuildable::default());
     }
 }
 
@@ -911,12 +940,12 @@ fn config_keeps_an_object_with_an_invalid_individual_set_in_place() {
     let bytes = br#"{"zen":"wrong shape","topmost":true}"#;
     fs::write(&path, bytes).unwrap();
 
-    let (value, quarantined_to) = read_config_store(&path).unwrap();
+    let loaded = read_config_store(&path).unwrap();
     assert_eq!(
-        value.unwrap(),
+        loaded.value.unwrap(),
         serde_json::json!({"zen": "wrong shape", "topmost": true})
     );
-    assert_eq!(quarantined_to, None);
+    assert_eq!(loaded.quarantined_to, None);
     assert_eq!(fs::read(&path).unwrap(), bytes);
 }
 
@@ -938,37 +967,274 @@ fn a_config_write_quarantines_a_non_object_before_saving_the_sets() {
         .unwrap();
     assert_eq!(fs::read(quarantined).unwrap(), b"[1,2,3]");
     assert_eq!(
-        read_json_optional(&path).unwrap().unwrap(),
-        serde_json::json!({"zen": true})
+        on_disk(&path),
+        serde_json::json!({"formatVersion": 1, "zen": true})
     );
     crate::backup_store::close_backup_store();
 }
 
 #[test]
 fn corrupt_panes_store_halts_and_is_left_in_place() {
-    // panes.json carries the user's text: the halting reader errors and the
+    // panes.json carries the user's text: the load reports it unreadable and the
     // file is left exactly where it is (storage-path conventions).
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("panes.json");
     fs::write(&path, b"{ corrupt bytes").unwrap();
 
-    assert!(read_json_optional(&path).is_err());
+    assert!(matches!(
+        read_json_store(&path, format_version::PANES).unwrap(),
+        JsonRead::Corrupt(_)
+    ));
     assert_eq!(fs::read(&path).unwrap(), b"{ corrupt bytes");
 }
 
 #[test]
-fn read_missing_file_returns_none() {
+fn read_missing_file_is_absent() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("does-not-exist.json");
-    assert_eq!(read_json_optional(&path).unwrap(), None);
+    assert_eq!(
+        read_json_store(&path, format_version::PANES).unwrap(),
+        JsonRead::Absent
+    );
+}
+
+// The file's JSON exactly as stored, format marker included.
+fn on_disk(path: &Path) -> JsonValue {
+    serde_json::from_slice(&fs::read(path).unwrap()).unwrap()
 }
 
 #[test]
-fn read_malformed_json_returns_err() {
+fn every_json_store_writes_its_format_version_as_its_first_key() {
     let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("broken.json");
-    fs::write(&path, "{ not valid json").unwrap();
-    assert!(read_json_optional(&path).is_err());
+    save_state_in(dir.path(), serde_json::json!({ "activePaneId": "p1" })).unwrap();
+    save_window_state(dir.path(), serde_json::json!({ "main": {} })).unwrap();
+    for (name, version) in [
+        (STATE_FILE_NAME, format_version::STATE),
+        (WINDOW_FILE_NAME, format_version::WINDOW),
+    ] {
+        let text = fs::read_to_string(dir.path().join(name)).unwrap();
+        assert!(
+            text.starts_with(&format!("{{\n  \"formatVersion\": {version},\n")),
+            "{name}: {text}"
+        );
+    }
+}
+
+#[test]
+#[serial(backup_store)]
+fn recorded_json_stores_write_their_format_version_too() {
+    crate::backup_store::close_backup_store();
+    let dir = tempfile::tempdir().unwrap();
+    save_config(dir.path(), serde_json::json!({ "zen": true })).unwrap();
+    let panes = dir.path().join(PANES_FILE_NAME);
+    atomic_write_json(
+        dir.path(),
+        &panes,
+        &serde_json::json!({ "panes": [] }),
+        format_version::PANES,
+    )
+    .unwrap();
+    assert_eq!(
+        on_disk(&dir.path().join(CONFIG_FILE_NAME))["formatVersion"],
+        format_version::CONFIG
+    );
+    assert_eq!(on_disk(&panes)["formatVersion"], format_version::PANES);
+    crate::backup_store::close_backup_store();
+}
+
+#[test]
+fn a_json_store_without_a_marker_reads_as_format_1() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join(PANES_FILE_NAME);
+    fs::write(&path, br#"{"panes":[]}"#).unwrap();
+    assert_eq!(
+        read_json_store(&path, 1).unwrap(),
+        JsonRead::Readable(serde_json::json!({ "panes": [] }))
+    );
+}
+
+#[test]
+fn a_bad_format_marker_is_corrupt_and_a_rebuildable_store_sets_it_aside() {
+    for marker in ["\"1\"", "0", "-1", "1.5", "null"] {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(STATE_FILE_NAME);
+        let bytes = format!(r#"{{"formatVersion":{marker},"zoomLevel":1}}"#);
+        fs::write(&path, &bytes).unwrap();
+        assert!(matches!(
+            read_json_store(&path, format_version::STATE).unwrap(),
+            JsonRead::Corrupt(_)
+        ));
+
+        let loaded = read_rebuildable_store(&path, format_version::STATE).unwrap();
+        assert_eq!(loaded.value, None);
+        assert_eq!(
+            fs::read_to_string(loaded.quarantined_to.unwrap()).unwrap(),
+            bytes
+        );
+    }
+}
+
+const NEWER: &str = r#"{"formatVersion":2,"shape":"unknown to this build"}"#;
+
+#[test]
+fn a_newer_rebuildable_store_is_left_exactly_in_place_and_reported() {
+    for (name, version) in [
+        (CONFIG_FILE_NAME, format_version::CONFIG),
+        (STATE_FILE_NAME, format_version::STATE),
+        (WINDOW_FILE_NAME, format_version::WINDOW),
+    ] {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(name);
+        fs::write(&path, NEWER).unwrap();
+        let old = backdate(&path);
+
+        let loaded = if name == CONFIG_FILE_NAME {
+            read_config_store(&path).unwrap()
+        } else {
+            read_rebuildable_store(&path, version).unwrap()
+        };
+        assert_eq!(
+            loaded,
+            Rebuildable {
+                newer: Some(2),
+                ..Rebuildable::default()
+            },
+            "{name}"
+        );
+        assert_eq!(fs::read_to_string(&path).unwrap(), NEWER);
+        assert_eq!(fs::metadata(&path).unwrap().modified().unwrap(), old);
+        assert_eq!(
+            fs::read_dir(dir.path()).unwrap().count(),
+            1,
+            "nothing set aside"
+        );
+    }
+}
+
+#[test]
+fn a_newer_panes_store_reads_as_newer() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join(PANES_FILE_NAME);
+    fs::write(&path, NEWER).unwrap();
+    assert_eq!(
+        read_json_store(&path, format_version::PANES).unwrap(),
+        JsonRead::Newer(2)
+    );
+}
+
+#[test]
+#[serial(backup_store)]
+fn no_write_replaces_a_json_store_in_a_newer_format() {
+    crate::backup_store::close_backup_store();
+    let dir = tempfile::tempdir().unwrap();
+    for name in [
+        CONFIG_FILE_NAME,
+        STATE_FILE_NAME,
+        WINDOW_FILE_NAME,
+        PANES_FILE_NAME,
+    ] {
+        fs::write(dir.path().join(name), NEWER).unwrap();
+    }
+
+    save_config(dir.path(), serde_json::json!({ "zen": true })).unwrap();
+    save_state_in(dir.path(), serde_json::json!({ "activePaneId": "p1" })).unwrap();
+    save_records_list_width_in(dir.path(), 400).unwrap();
+    save_window_state(dir.path(), serde_json::json!({ "main": {} })).unwrap();
+    atomic_write_json(
+        dir.path(),
+        &dir.path().join(PANES_FILE_NAME),
+        &serde_json::json!({ "panes": [] }),
+        format_version::PANES,
+    )
+    .unwrap();
+
+    for name in [
+        CONFIG_FILE_NAME,
+        STATE_FILE_NAME,
+        WINDOW_FILE_NAME,
+        PANES_FILE_NAME,
+    ] {
+        assert_eq!(
+            fs::read_to_string(dir.path().join(name)).unwrap(),
+            NEWER,
+            "{name}"
+        );
+    }
+    assert!(
+        !dir.path()
+            .join(crate::backup_store::BACKUPS_DB_FILE_NAME)
+            .exists(),
+        "a skipped write records nothing"
+    );
+    assert_eq!(records_list_width_in(dir.path()).unwrap(), None);
+    crate::backup_store::close_backup_store();
+}
+
+#[test]
+fn launch_reads_of_config_skip_a_newer_or_corrupt_file() {
+    assert_eq!(
+        launch_config(r#"{"formatVersion":1,"theme":"dark"}"#),
+        Some(serde_json::json!({ "theme": "dark" }))
+    );
+    assert_eq!(
+        launch_config(r#"{"theme":"dark"}"#),
+        Some(serde_json::json!({ "theme": "dark" }))
+    );
+    assert_eq!(launch_config(r#"{"formatVersion":2,"theme":"dark"}"#), None);
+    assert_eq!(
+        launch_config(r#"{"formatVersion":"x","theme":"dark"}"#),
+        None
+    );
+    assert_eq!(launch_config("{ not json"), None);
+}
+
+fn snapshot_user_version(path: &Path) -> i64 {
+    Connection::open(path)
+        .unwrap()
+        .pragma_query_value(None, "user_version", |row| row.get(0))
+        .unwrap()
+}
+
+#[test]
+fn a_new_snapshot_store_records_its_format_version() {
+    let dir = tempfile::tempdir().unwrap();
+    assert!(matches!(
+        open_snapshot_store(dir.path()).unwrap(),
+        SnapshotStore::Ready(_)
+    ));
+    assert_eq!(
+        snapshot_user_version(&dir.path().join(SNAPSHOTS_DB_FILE_NAME)),
+        i64::from(format_version::SNAPSHOTS)
+    );
+}
+
+#[test]
+fn a_newer_snapshot_store_is_left_untouched_and_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join(SNAPSHOTS_DB_FILE_NAME);
+    {
+        let conn = Connection::open(&path).unwrap();
+        conn.execute_batch("create table future (x); pragma user_version = 2;")
+            .unwrap();
+    }
+    let before = fs::read(&path).unwrap();
+
+    assert!(matches!(
+        open_snapshot_store(dir.path()).unwrap(),
+        SnapshotStore::Newer(2)
+    ));
+    let refused = open_snapshot_db(dir.path()).err().unwrap();
+    assert!(refused.contains(SNAPSHOTS_DB_FILE_NAME), "{refused}");
+    assert_eq!(fs::read(&path).unwrap(), before);
+    let tables: i64 = Connection::open(&path)
+        .unwrap()
+        .query_row(
+            "select count(*) from sqlite_master where name = 'snapshots'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(tables, 0, "no schema was written into it");
 }
 
 fn count_rows(conn: &Connection) -> i64 {
@@ -990,8 +1256,8 @@ fn a_config_write_stores_exactly_the_given_known_sets() {
     let path = root.path().join(CONFIG_FILE_NAME);
     save_config(root.path(), serde_json::json!({"zen": true})).unwrap();
     assert_eq!(
-        read_json_optional(&path).unwrap().unwrap(),
-        serde_json::json!({"zen": true})
+        on_disk(&path),
+        serde_json::json!({"formatVersion": 1, "zen": true})
     );
     fs::write(&path, r#"{"zen":true,"version":1,"dark":true}"#).unwrap();
     save_config(
@@ -1000,8 +1266,8 @@ fn a_config_write_stores_exactly_the_given_known_sets() {
     )
     .unwrap();
     assert_eq!(
-        read_json_optional(&path).unwrap().unwrap(),
-        serde_json::json!({"topmost": true})
+        on_disk(&path),
+        serde_json::json!({"formatVersion": 1, "topmost": true})
     );
     crate::backup_store::close_backup_store();
 }
@@ -1036,15 +1302,12 @@ fn a_config_write_equal_to_the_file_leaves_its_bytes_alone() {
 
 #[test]
 #[serial(backup_store)]
-fn a_config_whose_sets_are_all_back_at_their_built_ins_stays_as_an_empty_object() {
+fn a_config_whose_sets_are_all_back_at_their_built_ins_keeps_only_its_format_marker() {
     let root = tempfile::tempdir().unwrap();
     let path = root.path().join(CONFIG_FILE_NAME);
     save_config(root.path(), serde_json::json!({"zen": true})).unwrap();
     save_config(root.path(), serde_json::json!({})).unwrap();
-    assert_eq!(
-        read_json_optional(&path).unwrap().unwrap(),
-        serde_json::json!({})
-    );
+    assert_eq!(on_disk(&path), serde_json::json!({"formatVersion": 1}));
     crate::backup_store::close_backup_store();
 }
 
@@ -1056,15 +1319,12 @@ fn a_state_write_carries_the_records_list_width_the_main_window_does_not_know() 
 
     save_state_in(
         dir.path(),
-        serde_json::json!({ "version": 1, "activePaneId": "p1", "zoomLevel": 1.1 }),
+        serde_json::json!({ "activePaneId": "p1", "zoomLevel": 1.1 }),
     )
     .unwrap();
-    let stored: JsonValue =
-        serde_json::from_str(&fs::read_to_string(dir.path().join(STATE_FILE_NAME)).unwrap())
-            .unwrap();
     assert_eq!(
-        stored,
-        serde_json::json!({ "version": 1, "activePaneId": "p1", "zoomLevel": 1.1, "recordsListWidth": 420 })
+        on_disk(&dir.path().join(STATE_FILE_NAME)),
+        serde_json::json!({ "formatVersion": 1, "activePaneId": "p1", "zoomLevel": 1.1, "recordsListWidth": 420 })
     );
 
     save_records_list_width_in(dir.path(), 380).unwrap();
@@ -1079,7 +1339,7 @@ fn a_state_write_carries_the_records_list_width_the_main_window_does_not_know() 
 fn the_records_list_width_is_absent_until_a_drag_saves_one() {
     let dir = tempfile::tempdir().unwrap();
     assert_eq!(records_list_width_in(dir.path()).unwrap(), None);
-    save_state_in(dir.path(), serde_json::json!({ "version": 1 })).unwrap();
+    save_state_in(dir.path(), serde_json::json!({ "activePaneId": "p1" })).unwrap();
     assert_eq!(records_list_width_in(dir.path()).unwrap(), None);
 }
 

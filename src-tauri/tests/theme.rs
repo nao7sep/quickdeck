@@ -65,3 +65,15 @@ fn each_theme_has_its_own_window_background() {
         Color(0xec, 0xed, 0xf5, 0xff)
     );
 }
+
+#[test]
+fn a_config_from_a_newer_build_follows_the_os() {
+    assert_eq!(
+        saved_window_theme(r#"{"formatVersion":1,"theme":"dark"}"#),
+        Some(Theme::Dark)
+    );
+    assert_eq!(
+        saved_window_theme(r#"{"formatVersion":2,"theme":"dark"}"#),
+        None
+    );
+}

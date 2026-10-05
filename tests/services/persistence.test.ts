@@ -30,9 +30,8 @@ describe("persistence write queues", () => {
       return Promise.resolve();
     });
 
-    const panesA = { version: 1 as const, panes: [] };
+    const panesA = { panes: [] };
     const panesB = {
-      version: 1 as const,
       panes: [{ id: "p1", title: "", content: "b", headerColor: "", backgroundColor: "" }],
     };
 
@@ -59,8 +58,8 @@ describe("persistence write queues", () => {
     invokeMock.mockClear();
     invokeMock.mockResolvedValue(undefined);
 
-    const configA = { version: 1 } as unknown as Parameters<typeof saveConfig>[0];
-    const configB = { version: 2 } as unknown as Parameters<typeof saveConfig>[0];
+    const configA = { zen: true };
+    const configB = { zen: false };
 
     await Promise.all([saveConfig(configA), saveConfig(configB)]);
 
@@ -74,8 +73,8 @@ describe("persistence write queues", () => {
     invokeMock.mockRejectedValueOnce(new Error("disk full"));
     invokeMock.mockResolvedValueOnce(undefined);
 
-    const stateA = { version: 1 as const, activePaneId: "p1", zoomLevel: 100 };
-    const stateB = { version: 1 as const, activePaneId: "p2", zoomLevel: 100 };
+    const stateA = { activePaneId: "p1", zoomLevel: 100 };
+    const stateB = { activePaneId: "p2", zoomLevel: 100 };
 
     await expect(saveState(stateA)).rejects.toThrow("disk full");
     await expect(saveState(stateB)).resolves.toBeUndefined();
@@ -83,13 +82,14 @@ describe("persistence write queues", () => {
 });
 
 // The files hold only what the app reads, so a save of unchanged panes or view
-// state sends the same bytes and the core skips the write.
+// state sends the same bytes and the core skips the write. The core adds each
+// file's format version, so the frontend sends none.
 describe("persisted file shapes", () => {
   it("builds the same panes and state files from the same input", async () => {
     const { buildPanesFile, buildStateFile } = await import("../../src/services/persistence");
     const panes = [{ id: "p1", title: "t", content: "c", headerColor: "", backgroundColor: "" }];
 
-    expect(buildPanesFile(panes)).toEqual({ version: 1, panes });
-    expect(buildStateFile("p1", 110)).toEqual({ version: 1, activePaneId: "p1", zoomLevel: 110 });
+    expect(buildPanesFile(panes)).toEqual({ panes });
+    expect(buildStateFile("p1", 110)).toEqual({ activePaneId: "p1", zoomLevel: 110 });
   });
 });

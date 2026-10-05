@@ -16,6 +16,8 @@ use std::{
 use rusqlite::{params_from_iter, types::Value, Connection, OpenFlags, OptionalExtension, Row};
 use serde::{Deserialize, Serialize};
 
+use crate::{format_version, storage::RECORDS_DB_FILE_NAME};
+
 // `fields` holds the free fields as given, minus the domain ids, which have their
 // own columns. The (time, id) index serves the Records window's newest-first pages.
 pub const SCHEMA: &str = "
@@ -220,14 +222,23 @@ pub fn read_detail(conn: &Connection, id: i64) -> rusqlite::Result<Option<Record
 }
 
 // A connection of its own for each read, read-only, beside the writer's: WAL lets
-// it read every row already committed while the writer goes on.
-fn open(file: &Path) -> rusqlite::Result<Connection> {
+// it read every row already committed while the writer goes on. A store in a
+// newer format is not read.
+fn open(file: &Path) -> Result<Connection, String> {
+    let to_string = |error: rusqlite::Error| error.to_string();
     let conn = Connection::open_with_flags(
         file,
         OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
-    )?;
-    conn.busy_timeout(BUSY_WAIT)?;
-    Ok(conn)
+    )
+    .map_err(to_string)?;
+    conn.busy_timeout(BUSY_WAIT).map_err(to_string)?;
+    match format_version::newer_sqlite(&conn, format_version::RECORDS).map_err(to_string)? {
+        Some(recorded) => Err(format_version::newer_message(
+            RECORDS_DB_FILE_NAME,
+            recorded,
+        )),
+        None => Ok(conn),
+    }
 }
 
 /// Runs one read on its own thread and waits for it at most `READ_WAIT`.
@@ -239,9 +250,8 @@ pub fn read_bounded<T: Send + 'static>(
     std::thread::Builder::new()
         .name("records-read".to_string())
         .spawn(move || {
-            let outcome = open(&file)
-                .and_then(|conn| read(&conn))
-                .map_err(|error| error.to_string());
+            let outcome =
+                open(&file).and_then(|conn| read(&conn).map_err(|error| error.to_string()));
             // After a timeout nobody waits for the outcome any more; dropping it
             // is the abandonment READ_WAIT describes.
             let _ = done.send(outcome);

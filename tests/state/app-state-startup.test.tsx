@@ -31,9 +31,12 @@ function loadedAppData(overrides: Partial<LoadedAppData> = {}): LoadedAppData {
   return {
     config: null,
     configQuarantinedTo: null,
+    configNewer: null,
     state: null,
     panes: null,
     panesError: null,
+    panesNewer: null,
+    snapshotsNewer: null,
     dataDir: "/private/tmp/quickdeck-test",
     debugEnabled: false,
     systemLanguage: "en",
@@ -50,6 +53,7 @@ function StartupState() {
       <span data-testid="load-status">{state.loadStatus}</span>
       <span data-testid="save-state">{state.saveState}</span>
       <span data-testid="load-error">{state.loadError ? text(state.loadError) : null}</span>
+      <span data-testid="corrupt-panes">{String(state.loadErrorIsCorruptPanes)}</span>
       <span data-testid="blocking-error">
         {state.blockingError ? text(state.blockingError.message) : null}
       </span>
@@ -114,7 +118,6 @@ describe("persistence failure presentation", () => {
     persistence.loadAppData.mockResolvedValueOnce(
       loadedAppData({
         panes: {
-          version: 1,
           panes: [{ id: "HOSTILE-SENTINEL", content: 42 }],
         } as unknown as LoadedAppData["panes"],
       }),
@@ -144,6 +147,44 @@ describe("persistence failure presentation", () => {
     expect(message).not.toContain(".invalid");
     expect(message).not.toContain("HOSTILE-SENTINEL");
     expect(message).not.toContain("EACCES");
+  });
+});
+
+describe("stores from a newer build", () => {
+  it("halts on a newer panes.json, names it, and offers no reset", async () => {
+    persistence.loadAppData.mockResolvedValueOnce(loadedAppData({ panesNewer: 2 }));
+
+    const host = await renderStartupState();
+
+    expect(host.querySelector('[data-testid="load-status"]')?.textContent).toBe("failed");
+    const message = host.querySelector('[data-testid="load-error"]')?.textContent ?? "";
+    expect(message).toContain("panes.json");
+    expect(message).toContain("newer version");
+    expect(message).toContain("(format 2)");
+    expect(host.querySelector('[data-testid="corrupt-panes"]')?.textContent).toBe("false");
+  });
+
+  it("halts on a newer snapshots.sqlite3 and names it", async () => {
+    persistence.loadAppData.mockResolvedValueOnce(loadedAppData({ snapshotsNewer: 3 }));
+
+    const host = await renderStartupState();
+
+    expect(host.querySelector('[data-testid="load-status"]')?.textContent).toBe("failed");
+    const message = host.querySelector('[data-testid="load-error"]')?.textContent ?? "";
+    expect(message).toContain("snapshots.sqlite3");
+    expect(message).toContain("(format 3)");
+    expect(host.querySelector('[data-testid="corrupt-panes"]')?.textContent).toBe("false");
+  });
+
+  it("runs on built-in settings beside a newer config.json and says so", async () => {
+    persistence.loadAppData.mockResolvedValueOnce(loadedAppData({ configNewer: 2 }));
+
+    const host = await renderStartupState();
+
+    expect(host.querySelector('[data-testid="load-status"]')?.textContent).toBe("ready");
+    const message = host.querySelector('[data-testid="blocking-error"]')?.textContent ?? "";
+    expect(message).toContain("config.json");
+    expect(message).toContain("default settings");
   });
 });
 

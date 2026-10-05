@@ -298,3 +298,17 @@ fn a_bounded_read_opens_the_file_read_only_and_reports_a_missing_database() {
     assert!(write.is_err(), "a read connection must not write");
     assert!(read_bounded(dir.path().join("missing.sqlite3"), read_sessions).is_err());
 }
+
+#[test]
+fn a_records_database_from_a_newer_build_is_not_read() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("records.sqlite3");
+    let conn = Connection::open(&file).unwrap();
+    conn.execute_batch(SCHEMA).unwrap();
+    conn.execute_batch("pragma user_version = 2;").unwrap();
+    drop(conn);
+
+    let refused = read_bounded(file, read_sessions).err().unwrap();
+    assert!(refused.contains("records.sqlite3"), "{refused}");
+    assert!(refused.contains("newer"), "{refused}");
+}

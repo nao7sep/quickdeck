@@ -1,5 +1,6 @@
 pub mod archive;
 pub mod backup_store;
+pub mod format_version;
 mod i18n;
 mod instance_owner;
 mod logging;

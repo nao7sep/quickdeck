@@ -220,8 +220,8 @@ describe("panesShapeIssues", () => {
   const pane = { id: "a", title: "T", content: "body", headerColor: "#112233", backgroundColor: "#445566" };
 
   it("passes a sound store and an absent panes key (first run)", () => {
-    expect(panesShapeIssues({ version: 1, panes: [pane] })).toEqual([]);
-    expect(panesShapeIssues({ version: 1 })).toEqual([]);
+    expect(panesShapeIssues({ panes: [pane] })).toEqual([]);
+    expect(panesShapeIssues({})).toEqual([]);
   });
 
   it("flags a pane with no usable id — normalizePanes would silently DROP it", () => {
@@ -249,12 +249,6 @@ describe("panesShapeIssues", () => {
     expect(panesShapeIssues({ panes: "nope" })).toEqual(["panes is not an array"]);
     expect(panesShapeIssues([])).toEqual(["panes file is not a JSON object"]);
     expect(panesShapeIssues(null)).toEqual(["panes file is not a JSON object"]);
-  });
-
-  it("flags a malformed schema version", () => {
-    expect(panesShapeIssues({ version: "2", panes: [pane] })).toEqual([
-      "version is not a finite number",
-    ]);
   });
 });
 

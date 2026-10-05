@@ -150,6 +150,8 @@
 
   "settingsReset.title": "설정 파일이 재설정됨",
   "settingsReset.body": "설정 파일을 읽을 수 없어서 QuickDeck이 해당 파일을 보존하고 기본값으로 시작했습니다. 보존된 사본의 위치는 로그에 기록되어 있습니다. 패널 텍스트는 그대로입니다.",
+  "settingsNewer.title": "더 새로운 버전에서 작성된 설정 파일",
+  "settingsNewer.body": "설정 파일(config.json)은 더 새로운 버전의 QuickDeck에서 작성되어 원래 위치에 그대로 두었습니다. QuickDeck은 기본 설정을 사용하고 있으며 설정 변경 사항은 저장되지 않습니다. 저장된 설정을 사용하려면 QuickDeck을 업데이트하십시오.",
 
   "load.title": "QuickDeck이 저장된 데이터를 준비할 수 없습니다",
   "load.hint": "기존 데이터를 보호하기 위해 이 상태에서는 QuickDeck이 변경 사항을 저장하지 않습니다. 파일은 앱의 데이터 폴더(기본값은 {dataDir}, {envVar}이(가) 설정된 경우 해당 위치)에 있습니다. 앱을 종료하고 해당 파일을 복구하거나 옮긴 다음 다시 실행하십시오.",
@@ -160,6 +162,7 @@
   "load.panesUnreadable": "패널 텍스트 파일(panes.json)을 읽을 수 없어 원래 위치에 그대로 두었습니다. 데이터 폴더를 사용할 수 있고 QuickDeck이 접근할 수 있는지 확인한 다음 다시 시도하십시오. 진단 정보는 로그에 있습니다.",
   "load.panesDamaged": "패널 텍스트 파일(panes.json)이 손상되어 원래 위치에 그대로 두었습니다. 진단 정보는 로그에 있습니다.",
   "load.panesNewer": "패널 텍스트 파일(panes.json)은 더 새로운 버전의 QuickDeck(형식 {version})에서 작성되어 원래 위치에 그대로 두었습니다. 파일을 열려면 QuickDeck을 업데이트하십시오.",
+  "load.snapshotsNewer": "스냅샷 저장 파일(snapshots.sqlite3)은 더 새로운 버전의 QuickDeck(형식 {version})에서 작성되어 원래 위치에 그대로 두었습니다. 파일을 열려면 QuickDeck을 업데이트하십시오.",
   "load.setAsideFailed": "손상된 패널 파일을 따로 보관할 수 없습니다. 기존 파일은 변경되지 않았습니다.",
 
   "crash.title": "QuickDeck이 이 창을 계속 열어 둘 수 없습니다",
