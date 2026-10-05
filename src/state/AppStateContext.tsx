@@ -282,7 +282,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       setZoomLevelState(normalizeZoomLevel(data.state?.zoomLevel));
 
       const defaultTitle = loadTranslator.t("pane.defaultTitle");
-      const loadedPanes = normalizePanes(data.panes?.panes, defaultTitle);
+      const loadedPanes = data.panes === null ? [] : normalizePanes(data.panes.panes, defaultTitle);
       if (loadedPanes.length === 0) {
         setPanes([{ ...firstPane, title: defaultTitle }]);
       } else {

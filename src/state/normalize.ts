@@ -7,7 +7,6 @@
 
 import type { AppSettings, Pane } from "../types";
 import { defaultSettings } from "./defaults";
-import { randomPaneColor } from "../utils/paneColors";
 import { singleLine } from "../utils/textCleanup";
 import { normalizeLanguagePreference } from "../i18n/languages";
 import { normalizeThemePreference } from "../utils/theme";
@@ -147,22 +146,18 @@ export function readSettingsSets(loaded: unknown): AppSettings {
   return normalizeSettings(settingsFromSets(sets));
 }
 
+const HEX_COLOR = /^#[0-9a-f]{6}$/i;
+
 // Shape failures in a loaded panes.json — the store that carries the user's TEXT, so a
-// failure here halts rather than quarantines (storage-path conventions). normalizePanes
-// below is deliberately lossy: it DROPS an entry with no usable id and coerces a
-// non-string body to "". That is right for a value already known to be sound, and
-// catastrophic for one that is not — the close path saves unconditionally, so a launch
-// and a quit is enough to write the lossy reading back over the user's text. This gate
-// runs first so a damaged store reaches the halt branch instead.
+// failure here halts rather than quarantines (storage-path conventions). Every field
+// this build writes must be there: a pane without its id, title, content or colours
+// is damaged, never filled in, because the close path saves unconditionally and a
+// launch and a quit would write the filled-in reading back over the user's text.
 export function panesShapeIssues(loaded: unknown): string[] {
   if (loaded === null || typeof loaded !== "object" || Array.isArray(loaded)) {
     return ["panes file is not a JSON object"];
   }
   const source = loaded as Record<string, unknown>;
-  if (!("panes" in source)) {
-    // Absent is the first-run case, not corruption: the default pane is created.
-    return [];
-  }
   if (!Array.isArray(source.panes)) {
     return ["panes is not an array"];
   }
@@ -181,11 +176,16 @@ export function panesShapeIssues(loaded: unknown): string[] {
     } else {
       seenIds.add(entry.id);
     }
-    if ("content" in entry && typeof entry.content !== "string") {
-      issues.push(`pane ${index} has a non-string content`);
+    for (const key of ["title", "content"]) {
+      if (typeof entry[key] !== "string") {
+        issues.push(`pane ${index} has no string ${key}`);
+      }
     }
-    if ("title" in entry && typeof entry.title !== "string") {
-      issues.push(`pane ${index} has a non-string title`);
+    for (const key of ["headerColor", "backgroundColor"]) {
+      const color = entry[key];
+      if (typeof color !== "string" || !HEX_COLOR.test(color)) {
+        issues.push(`pane ${index} has no valid ${key}`);
+      }
     }
   });
   return issues;
@@ -204,35 +204,14 @@ export function normalizeZoomLevel(value: unknown): number {
   );
 }
 
-// `defaultTitle` is the localized name given to a pane whose title is missing.
-export function normalizePanes(panes: Pane[] | undefined, defaultTitle: string): Pane[] {
-  if (!Array.isArray(panes)) {
-    return [];
-  }
-
-  const accumulatedHeaders: string[] = [];
-
-  return panes
-    .filter((pane) => typeof pane.id === "string" && pane.id.length > 0)
-    .map((pane) => {
-      const hasColors =
-        typeof pane.headerColor === "string" &&
-        /^#[0-9a-f]{6}$/i.test(pane.headerColor) &&
-        typeof pane.backgroundColor === "string" &&
-        /^#[0-9a-f]{6}$/i.test(pane.backgroundColor);
-
-      const colors = hasColors
-        ? { header: pane.headerColor, background: pane.backgroundColor }
-        : randomPaneColor(accumulatedHeaders);
-
-      accumulatedHeaders.push(colors.header);
-
-      return {
-        id: pane.id,
-        title: typeof pane.title === "string" && pane.title.length > 0 ? pane.title : defaultTitle,
-        content: typeof pane.content === "string" ? pane.content : "",
-        headerColor: colors.header,
-        backgroundColor: colors.background,
-      };
-    });
+// Panes that passed panesShapeIssues, as the editor holds them: a title the user
+// cleared shows the localized default name (`defaultTitle`).
+export function normalizePanes(panes: Pane[], defaultTitle: string): Pane[] {
+  return panes.map((pane) => ({
+    id: pane.id,
+    title: pane.title.length > 0 ? pane.title : defaultTitle,
+    content: pane.content,
+    headerColor: pane.headerColor,
+    backgroundColor: pane.backgroundColor,
+  }));
 }

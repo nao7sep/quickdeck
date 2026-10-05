@@ -32,8 +32,8 @@ type SnapshotsModalProps = {
 const COPIED_FEEDBACK_MS = 2000;
 
 // A snapshot's origin in words: the pane's name as it reads now while that pane exists,
-// otherwise the name it carried when the copy was taken. Empty for a copy saved before
-// names were recorded, which then shows nothing rather than a placeholder.
+// otherwise the name it carried when the copy was taken. Empty when the pane had no
+// name, which then shows nothing rather than a placeholder.
 function paneName(liveTitle: string | undefined, savedTitle: string): string {
   return (liveTitle ?? savedTitle).trim();
 }

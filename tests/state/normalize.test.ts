@@ -14,9 +14,6 @@ import {
 } from "../../src/state/normalize";
 import { DEFAULT_EDITOR_FONT_FAMILY_STACK, defaultSettings } from "../../src/state/defaults";
 import { ZOOM_DEFAULT, ZOOM_MAX, ZOOM_MIN } from "../../src/utils/zoom";
-import type { Pane } from "../../src/types";
-
-const HEX = /^#[0-9a-f]{6}$/i;
 
 describe("clampNumber", () => {
   it("returns the fallback for non-finite values", () => {
@@ -146,49 +143,18 @@ describe("SETTINGS_BOUNDS agreement between Save and read", () => {
 });
 
 describe("normalizePanes", () => {
-  it("returns an empty array for non-array input", () => {
-    expect(normalizePanes(undefined, "New Buffer")).toEqual([]);
-    expect(normalizePanes("nope" as unknown as Pane[], "New Buffer")).toEqual([]);
-  });
-
-  it("drops panes without a usable id", () => {
-    const panes = [
-      { id: "", title: "x", content: "", headerColor: "#aabbcc", backgroundColor: "#112233" },
-      { title: "no id" },
-    ] as unknown as Pane[];
-    expect(normalizePanes(panes, "New Buffer")).toEqual([]);
-  });
-
-  it("preserves valid colors and content", () => {
+  it("keeps every field of a sound pane", () => {
     const panes = [
       { id: "p1", title: "Title", content: "body", headerColor: "#aabbcc", backgroundColor: "#112233" },
-    ] as Pane[];
-    expect(normalizePanes(panes, "New Buffer")[0]).toEqual({
-      id: "p1",
-      title: "Title",
-      content: "body",
-      headerColor: "#aabbcc",
-      backgroundColor: "#112233",
-    });
+    ];
+    expect(normalizePanes(panes, "New Buffer")).toEqual(panes);
   });
 
-  it("regenerates colors when they are missing or invalid", () => {
+  it("shows the default title for a pane whose title was cleared", () => {
     const panes = [
-      { id: "p1", title: "T", content: "", headerColor: "red", backgroundColor: "#112233" },
-    ] as unknown as Pane[];
-    const pane = normalizePanes(panes, "New Buffer")[0];
-    expect(pane.headerColor).toMatch(HEX);
-    expect(pane.backgroundColor).toMatch(HEX);
-  });
-
-  it("applies the given default title and the content fallback", () => {
-    const panes = [
-      { id: "p1", title: "" },
-      { id: "p2", content: 42 },
-    ] as unknown as Pane[];
-    const result = normalizePanes(panes, "New Buffer");
-    expect(result[0].title).toBe("New Buffer");
-    expect(result[1].content).toBe("");
+      { id: "p1", title: "", content: "", headerColor: "#aabbcc", backgroundColor: "#112233" },
+    ];
+    expect(normalizePanes(panes, "New Buffer")[0].title).toBe("New Buffer");
   });
 });
 
@@ -219,9 +185,24 @@ describe("settingsShapeIssues", () => {
 describe("panesShapeIssues", () => {
   const pane = { id: "a", title: "T", content: "body", headerColor: "#112233", backgroundColor: "#445566" };
 
-  it("passes a sound store and an absent panes key (first run)", () => {
-    expect(panesShapeIssues({ panes: [pane] })).toEqual([]);
-    expect(panesShapeIssues({})).toEqual([]);
+  it("passes a sound store, an empty title included", () => {
+    expect(panesShapeIssues({ panes: [pane, { ...pane, id: "b", title: "" }] })).toEqual([]);
+  });
+
+  it("flags a store without its panes", () => {
+    expect(panesShapeIssues({})).toEqual(["panes is not an array"]);
+  });
+
+  it("flags a pane missing a field this build always writes, never filling it in", () => {
+    const { title, ...untitled } = pane;
+    const { headerColor, ...uncoloured } = pane;
+    void title;
+    void headerColor;
+    expect(panesShapeIssues({ panes: [untitled] })).toEqual(["pane 0 has no string title"]);
+    expect(panesShapeIssues({ panes: [uncoloured] })).toEqual(["pane 0 has no valid headerColor"]);
+    expect(panesShapeIssues({ panes: [{ ...pane, backgroundColor: "red" }] })).toEqual([
+      "pane 0 has no valid backgroundColor",
+    ]);
   });
 
   it("flags a pane with no usable id — normalizePanes would silently DROP it", () => {
@@ -239,9 +220,9 @@ describe("panesShapeIssues", () => {
     ]);
   });
 
-  it("flags a non-string body — normalizePanes would silently blank it", () => {
+  it("flags a non-string body", () => {
     expect(panesShapeIssues({ panes: [{ ...pane, content: 123 }] })).toEqual([
-      "pane 0 has a non-string content",
+      "pane 0 has no string content",
     ]);
   });
 
