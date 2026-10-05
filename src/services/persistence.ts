@@ -10,7 +10,6 @@ export type StateFile = {
   // The webview zoom — a view adjustment, so it is state, never config
   // (persisted-store-separation conventions).
   zoomLevel: number;
-  updatedAtUtc: string;
 };
 
 // The panes' text and identity — the user's work product, its own store
@@ -18,7 +17,6 @@ export type StateFile = {
 export type PanesFile = {
   version: 1;
   panes: Pane[];
-  updatedAtUtc: string;
 };
 
 export type LoadedAppData = {
@@ -77,7 +75,6 @@ export function buildStateFile(
     version: 1,
     activePaneId,
     zoomLevel,
-    updatedAtUtc: new Date().toISOString(),
   };
 }
 
@@ -85,7 +82,6 @@ export function buildPanesFile(panes: Pane[]): PanesFile {
   return {
     version: 1,
     panes,
-    updatedAtUtc: new Date().toISOString(),
   };
 }
 

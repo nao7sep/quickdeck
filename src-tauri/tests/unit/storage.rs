@@ -122,11 +122,13 @@ fn first_insert_succeeds_with_expected_id_shape() {
     let result = create_snapshot_with_connection(&conn, input("pane-a", "hello")).unwrap();
     assert!(result.inserted);
     let id = result.id.expect("id present");
-    // id = <created_at_utc>-<pane_id>-<hash12>, created_at_utc ends in "-utc".
-    assert!(id.contains("-utc-pane-a-"), "unexpected id: {id}");
-    let hash12 = id.rsplit('-').next().unwrap();
-    assert_eq!(hash12.len(), 12);
-    assert!(hash12.chars().all(|c| c.is_ascii_hexdigit()));
+    // id = <yyyymmdd-hhmmss-utc>-<pane_id>-<nanoid>.
+    let (_, discriminator) = id.split_once("-utc-pane-a-").expect("stamp and pane");
+    assert_eq!(
+        discriminator.chars().count(),
+        crate::nanoid::DEFAULT_LENGTH,
+        "unexpected id: {id}"
+    );
 }
 
 #[test]
@@ -177,6 +179,72 @@ fn exact_duplicate_in_same_pane_is_deduped() {
 }
 
 #[test]
+fn a_pane_returning_to_earlier_text_records_it_again() {
+    let conn = mem_db();
+    let results: Vec<_> = ["first", "second", "first", "first"]
+        .into_iter()
+        .map(|content| create_snapshot_with_connection(&conn, input("p1", content)).unwrap())
+        .collect();
+    assert!(results[0].inserted);
+    assert!(results[1].inserted);
+    assert!(results[2].inserted);
+    assert_ne!(results[2].id, results[0].id);
+    // Only the pane's latest snapshot is compared.
+    assert!(!results[3].inserted);
+    assert_eq!(results[3].id, results[2].id);
+    assert_eq!(count_rows(&conn), 3);
+}
+
+#[test]
+fn another_panes_copy_does_not_change_which_snapshot_is_latest() {
+    let conn = mem_db();
+    create_snapshot_with_connection(&conn, input("p1", "body")).unwrap();
+    create_snapshot_with_connection(&conn, input("p2", "other")).unwrap();
+    let again = create_snapshot_with_connection(&conn, input("p1", "body")).unwrap();
+    assert!(!again.inserted);
+    assert_eq!(count_rows(&conn), 2);
+}
+
+#[test]
+fn the_latest_of_same_instant_snapshots_is_the_one_stored_last() {
+    let conn = mem_db();
+    let ts = "2026-01-01T00:00:01.000Z";
+    insert_row(&conn, "z-older", "p1", ts, "older");
+    insert_row(&conn, "a-newer", "p1", ts, "newer");
+    let repeat = create_snapshot_with_connection(&conn, input("p1", "newer")).unwrap();
+    assert!(!repeat.inserted);
+    assert_eq!(repeat.id.as_deref(), Some("a-newer"));
+    let back = create_snapshot_with_connection(&conn, input("p1", "older")).unwrap();
+    assert!(back.inserted);
+}
+
+#[test]
+fn a_store_that_refused_repeated_text_accepts_a_pane_returning_to_it() {
+    let conn = Connection::open_in_memory().expect("open in-memory db");
+    conn.execute_batch(
+        "create table snapshots (
+           id text primary key,
+           pane_id text not null,
+           pane_title text not null default '',
+           created_at_utc text not null,
+           trigger text not null,
+           content_hash text not null,
+           content text not null
+         );
+         create unique index snapshots_unique_pane_content
+           on snapshots(pane_id, content_hash);",
+    )
+    .expect("old schema");
+    init_schema(&conn).expect("init schema");
+
+    for content in ["first", "second", "first"] {
+        let result = create_snapshot_with_connection(&conn, input("p1", content)).unwrap();
+        assert!(result.inserted, "{content} not recorded");
+    }
+    assert_eq!(count_rows(&conn), 3);
+}
+
+#[test]
 fn same_content_in_different_panes_both_insert() {
     let conn = mem_db();
     let a = create_snapshot_with_connection(&conn, input("p1", "shared")).unwrap();
@@ -191,15 +259,21 @@ fn same_content_in_different_panes_both_insert() {
 fn batch_insert_dedupes_within_transaction() {
     let conn = mem_db();
     let tx = conn.unchecked_transaction().unwrap();
-    let results: Vec<_> = vec![input("p1", "x"), input("p1", "x"), input("p1", "y")]
-        .into_iter()
-        .map(|s| create_snapshot_with_connection(&tx, s).unwrap())
-        .collect();
+    let results: Vec<_> = vec![
+        input("p1", "x"),
+        input("p1", "x"),
+        input("p1", "y"),
+        input("p1", "x"),
+    ]
+    .into_iter()
+    .map(|s| create_snapshot_with_connection(&tx, s).unwrap())
+    .collect();
     tx.commit().unwrap();
     assert!(results[0].inserted);
     assert!(!results[1].inserted);
     assert!(results[2].inserted);
-    assert_eq!(count_rows(&conn), 2);
+    assert!(results[3].inserted);
+    assert_eq!(count_rows(&conn), 3);
 }
 
 #[test]
@@ -452,8 +526,7 @@ fn search_paginates_with_has_more_flag() {
 #[test]
 fn search_pagination_is_stable_across_same_second_rows() {
     let conn = mem_db();
-    // Four snapshots sharing one created_at_utc, with distinct content so
-    // the (pane_id, content_hash) index is satisfied.
+    // Four snapshots sharing one created_at_utc.
     let ts = "2026-01-01T00:00:01.000Z";
     for i in 0..4 {
         insert_row(&conn, &format!("id{i}"), "p1", ts, &format!("term {i}"));
@@ -579,6 +652,67 @@ fn atomic_write_records_byte_identical_bytes_through_the_choke_point() {
     );
 
     crate::backup_store::close_backup_store();
+}
+
+fn backup_rows(data_dir: &Path, path: &Path) -> i64 {
+    Connection::open(data_dir.join(crate::backup_store::BACKUPS_DB_FILE_NAME))
+        .unwrap()
+        .query_row(
+            "SELECT count(*) FROM backups WHERE path = ?1",
+            params![path.to_string_lossy()],
+            |row| row.get(0),
+        )
+        .unwrap()
+}
+
+// Backdates a file so a test can tell a rewrite of the same bytes from no write.
+fn backdate(path: &Path) -> std::time::SystemTime {
+    let old = std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_000_000_000);
+    File::options()
+        .write(true)
+        .open(path)
+        .unwrap()
+        .set_modified(old)
+        .unwrap();
+    old
+}
+
+#[test]
+#[serial(backup_store)]
+fn a_write_that_changes_nothing_leaves_the_file_and_the_backups_alone() {
+    crate::backup_store::close_backup_store();
+
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join(PANES_FILE_NAME);
+    let value = serde_json::json!({ "version": 1, "panes": [] });
+
+    atomic_write_json(dir.path(), &path, &value).unwrap();
+    let old = backdate(&path);
+    atomic_write_json(dir.path(), &path, &value).unwrap();
+    assert_eq!(fs::metadata(&path).unwrap().modified().unwrap(), old);
+    assert_eq!(backup_rows(dir.path(), &path), 1);
+
+    let changed = serde_json::json!({ "version": 1, "panes": [{ "id": "p1" }] });
+    atomic_write_json(dir.path(), &path, &changed).unwrap();
+    assert_ne!(fs::metadata(&path).unwrap().modified().unwrap(), old);
+    assert_eq!(read_json_optional(&path).unwrap(), Some(changed));
+    assert_eq!(backup_rows(dir.path(), &path), 2);
+
+    crate::backup_store::close_backup_store();
+}
+
+#[test]
+fn a_state_save_that_changes_nothing_leaves_the_file_alone() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join(STATE_FILE_NAME);
+    let state = serde_json::json!({ "version": 1, "activePaneId": "p1", "zoomLevel": 1.1 });
+    save_records_list_width_in(dir.path(), 420).unwrap();
+    save_state_in(dir.path(), state.clone()).unwrap();
+    let old = backdate(&path);
+
+    save_state_in(dir.path(), state).unwrap();
+    save_records_list_width_in(dir.path(), 420).unwrap();
+    assert_eq!(fs::metadata(&path).unwrap().modified().unwrap(), old);
 }
 
 #[test]

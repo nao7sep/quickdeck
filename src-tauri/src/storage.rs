@@ -30,7 +30,8 @@ use crate::paths::app_data_dir;
 // - `records.sqlite3`   — log lines (logging.rs).             not recorded (binary; never archived)
 // - `logs/`             — log lines whose record write failed. not recorded (append-mode, by construction)
 //
-// Every managed-*text* write goes through `write_json_atomically`. The recorded
+// Every managed-*text* write goes through `write_json_atomically`, which skips a
+// write whose bytes equal the file's (content-lifecycle conventions). The recorded
 // files (config.json, panes.json) use `atomic_write_json`, which — strictly AFTER
 // the atomic rename lands — records the exact bytes it just wrote into
 // `backups.sqlite3` (see backup_store.rs); the volatile-state files (state.json,
@@ -173,7 +174,7 @@ pub fn config_to_write(data_dir: &Path, sets: JsonValue) -> Result<Option<JsonVa
 
 pub fn write_config(data_dir: &Path, config: &JsonValue) -> Result<(), String> {
     // records: config.json is durable user settings — managed text, recorded on
-    // every save (data-backup conventions).
+    // every save that changes it (data-backup conventions).
     atomic_write_json(data_dir, &data_dir.join(CONFIG_FILE_NAME), config)
 }
 
@@ -256,7 +257,8 @@ pub fn save_window_state(data_dir: &Path, state: JsonValue) -> Result<(), String
 
 pub fn save_panes(app: &AppHandle, panes: JsonValue) -> Result<(), String> {
     // records: panes.json holds the panes' text — the user's durable work
-    // product — managed text, recorded on every save (data-backup conventions).
+    // product — managed text, recorded on every save that changes it (data-backup
+    // conventions).
     let data_dir = app_data_dir(app)?;
     atomic_write_json(&data_dir, &data_dir.join(PANES_FILE_NAME), &panes)
 }
@@ -403,7 +405,7 @@ fn create_snapshot_from_input(
 
 // Snapshot commands run concurrently, so a write takes SQLite's write lock before
 // its duplicate check: two copies of the same text then cannot both pass the
-// check and collide on the unique index.
+// check and store it twice.
 fn begin_snapshot_write(conn: &mut Connection) -> Result<Transaction<'_>, String> {
     conn.transaction_with_behavior(TransactionBehavior::Immediate)
         .map_err(to_string_error)
@@ -420,34 +422,40 @@ fn create_snapshot_with_connection(
         });
     }
 
+    // A copy is new when it differs from the pane's latest snapshot, so text the
+    // pane held before and returned to is recorded again. Latest is newest in the
+    // order the window lists, with insertion order breaking a same-instant tie.
     let content_hash = hash_content(&snapshot.content);
-    let existing_id = conn
+    let latest = conn
         .query_row(
-            "select id from snapshots where pane_id = ?1 and content_hash = ?2 limit 1",
-            params![snapshot.pane_id, content_hash],
-            |row| row.get::<_, String>(0),
+            "select id, content_hash from snapshots where pane_id = ?1
+             order by created_at_utc desc, rowid desc limit 1",
+            params![snapshot.pane_id],
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
         )
         .optional()
         .map_err(to_string_error)?;
 
-    if let Some(id) = existing_id {
-        return Ok(SnapshotWriteResult {
-            inserted: false,
-            id: Some(id),
-        });
+    if let Some((id, latest_hash)) = latest {
+        if latest_hash == content_hash {
+            return Ok(SnapshotWriteResult {
+                inserted: false,
+                id: Some(id),
+            });
+        }
     }
 
     let now = Utc::now();
     // Data column: the canonical internal/serialized form (ISO 8601, exactly 3
     // fractional digits, Z). The id keeps the compact filename-style stamp — an
-    // opaque, sortable, filesystem-safe key whose content-hash suffix makes it
-    // unique even within the same second.
+    // opaque, sortable, filesystem-safe key whose nanoid suffix keeps it unique
+    // when a pane returns to earlier text within the same second.
     let created_at_utc = now.to_rfc3339_opts(SecondsFormat::Millis, true);
     let id = format!(
         "{}-{}-{}",
         now.format("%Y%m%d-%H%M%S-utc"),
         snapshot.pane_id,
-        &content_hash[..12]
+        crate::nanoid::generate()?
     );
 
     // not recorded: this writes into snapshots.sqlite3, a binary SQLite file that is
@@ -615,8 +623,10 @@ fn temp_path_for(path: &Path) -> Result<PathBuf, String> {
 //
 // Writes `value` to a same-directory `<stem>-<nanoid>.tmp` (the derived-filename
 // grammar), then atomically renames it over `path`, so a crash mid-write cannot
-// corrupt the target. STRICTLY AFTER the rename lands — the file is exactly where it
-// belongs — it best-effort records the exact bytes just written into `backups.sqlite3`
+// corrupt the target; bytes equal to the file's are not written at all, so neither
+// the file nor the backup history sees a save that changed nothing. STRICTLY AFTER
+// the rename lands — the file is exactly where it belongs — it best-effort records
+// the exact bytes just written into `backups.sqlite3`
 // under `data_dir` (the caller's resolved root, from the single resolver). Recording
 // before the rename would risk a "backup of a save that never happened": if the rename
 // then failed, the history would hold a version that never reached disk. The recorded
@@ -624,7 +634,9 @@ fn temp_path_for(path: &Path) -> Result<PathBuf, String> {
 // risk capturing a concurrent writer's content). The record never throws back into
 // this write and never affects the save's success (see backup_store.rs).
 fn atomic_write_json(data_dir: &Path, path: &Path, value: &JsonValue) -> Result<(), String> {
-    let bytes = write_json_atomically(path, value)?;
+    let Some(bytes) = write_json_atomically(path, value)? else {
+        return Ok(());
+    };
 
     // After the rename: the file is exactly where it belongs, so record the bytes we
     // just wrote. Best-effort — record() catches, logs once, and swallows every
@@ -644,19 +656,25 @@ fn atomic_write_json_unrecorded(path: &Path, value: &JsonValue) -> Result<(), St
     write_json_atomically(path, value).map(|_| ())
 }
 
-// The temp-file-then-rename write itself; returns the exact bytes now on disk.
-fn write_json_atomically(path: &Path, value: &JsonValue) -> Result<Vec<u8>, String> {
+// The temp-file-then-rename write itself; returns the exact bytes now on disk, or
+// None when the file already held them and nothing was written.
+fn write_json_atomically(path: &Path, value: &JsonValue) -> Result<Option<Vec<u8>>, String> {
     let parent = path
         .parent()
         .ok_or_else(|| format!("missing parent directory for {}", path.display()))?;
-    fs::create_dir_all(parent).map_err(to_string_error)?;
 
-    let tmp_path = temp_path_for(path)?;
     // The exact bytes that land on disk: pretty JSON plus the single trailing
     // newline. Building the whole buffer once (rather than two write_all calls)
     // is what lets the backup record a blob byte-identical to the file.
     let mut bytes = serde_json::to_vec_pretty(value).map_err(to_string_error)?;
     bytes.push(b'\n');
+    // A missing or unreadable file is written.
+    if fs::read(path).is_ok_and(|current| current == bytes) {
+        return Ok(None);
+    }
+
+    fs::create_dir_all(parent).map_err(to_string_error)?;
+    let tmp_path = temp_path_for(path)?;
 
     // A failed write or rename removes its own temp, best-effort, on each error
     // path. Nothing else ever removes a temp: a startup sweep could delete a
@@ -681,7 +699,7 @@ fn write_json_atomically(path: &Path, value: &JsonValue) -> Result<Vec<u8>, Stri
         let _ = directory.sync_all();
     }
 
-    Ok(bytes)
+    Ok(Some(bytes))
 }
 
 fn open_snapshot_db(data_dir: &Path) -> Result<Connection, String> {
@@ -715,8 +733,8 @@ fn ensure_snapshot_db(data_dir: &Path) -> Result<(), String> {
 // it — and nothing about a copy's age or position says whether it still matters.
 // The window browses and searches every row, the count is on screen, and Delete
 // and Delete all are one action each, so forgetting stays the reader's to decide.
-// The unique index on (pane_id, content_hash) is what keeps that affordable:
-// repeating a copy writes nothing, so only genuinely new text adds a row.
+// Repeating a copy of a pane's latest text writes nothing, so only text the pane
+// did not just hold adds a row.
 fn init_schema(conn: &Connection) -> Result<(), String> {
     conn.execute_batch(
         "
@@ -730,8 +748,9 @@ fn init_schema(conn: &Connection) -> Result<(), String> {
           content_hash text not null,
           content text not null
         );
-        create unique index if not exists snapshots_unique_pane_content
-          on snapshots(pane_id, content_hash);
+        -- A store written while copies were compared with every earlier snapshot
+        -- carries this index, which would refuse text a pane returns to.
+        drop index if exists snapshots_unique_pane_content;
         create index if not exists snapshots_pane_time
           on snapshots(pane_id, created_at_utc desc);
         create index if not exists snapshots_time

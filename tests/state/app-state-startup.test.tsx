@@ -116,7 +116,6 @@ describe("persistence failure presentation", () => {
         panes: {
           version: 1,
           panes: [{ id: "HOSTILE-SENTINEL", content: 42 }],
-          updatedAtUtc: "2026-09-06T00:00:00.000Z",
         } as unknown as LoadedAppData["panes"],
       }),
     );
