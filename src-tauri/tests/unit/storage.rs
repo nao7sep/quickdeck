@@ -38,32 +38,6 @@ fn a_snapshot_keeps_the_pane_title_it_was_taken_under() {
 }
 
 #[test]
-fn a_store_written_before_titles_gains_the_column_and_reads_its_rows_as_unnamed() {
-    let conn = Connection::open_in_memory().expect("open in-memory db");
-    // The schema as it stood before a snapshot carried its pane's name.
-    conn.execute_batch(
-        "create table snapshots (
-           id text primary key,
-           pane_id text not null,
-           created_at_utc text not null,
-           trigger text not null,
-           content_hash text not null,
-           content text not null
-         );
-         insert into snapshots (id, pane_id, created_at_utc, trigger, content_hash, content)
-         values ('old', 'pane-1', '2026-09-08T00:00:00.000Z', 'copy', 'hash', 'kept text');",
-    )
-    .expect("old schema");
-
-    init_schema(&conn).expect("migrate");
-
-    let listed = list_snapshots_with_connection(&conn, "", 10, 0).expect("list");
-    let row = listed.rows.first().expect("the old row survives");
-    assert_eq!(row.content, "kept text");
-    assert_eq!(row.pane_title, "");
-}
-
-#[test]
 fn deleting_takes_one_copy_or_the_whole_store() {
     let conn = mem_db();
     for content in ["first", "second", "third"] {
@@ -216,32 +190,6 @@ fn the_latest_of_same_instant_snapshots_is_the_one_stored_last() {
     assert_eq!(repeat.id.as_deref(), Some("a-newer"));
     let back = create_snapshot_with_connection(&conn, input("p1", "older")).unwrap();
     assert!(back.inserted);
-}
-
-#[test]
-fn a_store_that_refused_repeated_text_accepts_a_pane_returning_to_it() {
-    let conn = Connection::open_in_memory().expect("open in-memory db");
-    conn.execute_batch(
-        "create table snapshots (
-           id text primary key,
-           pane_id text not null,
-           pane_title text not null default '',
-           created_at_utc text not null,
-           trigger text not null,
-           content_hash text not null,
-           content text not null
-         );
-         create unique index snapshots_unique_pane_content
-           on snapshots(pane_id, content_hash);",
-    )
-    .expect("old schema");
-    init_schema(&conn).expect("init schema");
-
-    for content in ["first", "second", "first"] {
-        let result = create_snapshot_with_connection(&conn, input("p1", content)).unwrap();
-        assert!(result.inserted, "{content} not recorded");
-    }
-    assert_eq!(count_rows(&conn), 3);
 }
 
 #[test]

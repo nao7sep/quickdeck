@@ -62,7 +62,7 @@ export type SnapshotWriteResult = {
 export type SnapshotRow = {
   id: string;
   // Which pane the text was captured from, and what that pane was called at the time.
-  // The title is empty for a copy taken before titles were recorded.
+  // The title is empty when the pane had none.
   paneId: string;
   paneTitle: string;
   createdAtUtc: string;

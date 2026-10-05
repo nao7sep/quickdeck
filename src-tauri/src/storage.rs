@@ -110,7 +110,7 @@ pub struct SnapshotInput {
 pub struct SnapshotRow {
     pub id: String,
     pub pane_id: String,
-    /// Empty for a copy taken before titles were recorded.
+    /// Empty when the pane had no title.
     pub pane_title: String,
     pub created_at_utc: String,
     pub content: String,
@@ -901,29 +901,13 @@ fn init_schema(conn: &Connection) -> Result<(), String> {
           content_hash text not null,
           content text not null
         );
-        -- A store written while copies were compared with every earlier snapshot
-        -- carries this index, which would refuse text a pane returns to.
-        drop index if exists snapshots_unique_pane_content;
         create index if not exists snapshots_pane_time
           on snapshots(pane_id, created_at_utc desc);
         create index if not exists snapshots_time
           on snapshots(created_at_utc desc);
         ",
     )
-    .map_err(to_string_error)?;
-
-    // A store written before titles were recorded gains the column; its existing rows keep
-    // the empty title they were saved with, which the app reads as "pane unknown".
-    let has_title = conn
-        .prepare("select 1 from pragma_table_info('snapshots') where name = 'pane_title'")
-        .and_then(|mut statement| statement.exists([]))
-        .map_err(to_string_error)?;
-    if !has_title {
-        conn.execute_batch("alter table snapshots add column pane_title text not null default '';")
-            .map_err(to_string_error)?;
-    }
-
-    Ok(())
+    .map_err(to_string_error)
 }
 
 fn hash_content(content: &str) -> String {
