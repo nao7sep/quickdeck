@@ -940,6 +940,14 @@ fn open_snapshot_db(data_dir: &Path) -> Result<Connection, String> {
     }
 }
 
+// Openers read the format marker and prepare a new store one at a time. Two
+// connections switching the same new database to WAL at once can fail with
+// SQLITE_BUSY that the busy timeout does not wait out, and opens do race: React's
+// development StrictMode sends load_app_data twice together. instance_owner makes
+// this process the store's only one, so an in-process lock leaves the switch to a
+// single opener; the next one finds the store Readable.
+static SNAPSHOT_STORE_PREPARE_LOCK: Mutex<()> = Mutex::new(());
+
 fn open_snapshot_store(data_dir: &Path) -> Result<SnapshotStore, String> {
     // not recorded: snapshots.sqlite3 (+ its -wal/-shm sidecars) is a binary,
     // append-safe store and the app's own recovery mechanism — excluded from the
@@ -953,6 +961,9 @@ fn open_snapshot_store(data_dir: &Path) -> Result<SnapshotStore, String> {
     // instead of waiting, exactly as backup_store::open_store's comment explains.
     conn.pragma_update(None, "busy_timeout", 5000)
         .map_err(to_string_error)?;
+    let _guard = SNAPSHOT_STORE_PREPARE_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     match format_version::check_sqlite(&conn, SNAPSHOTS_DB_FILE_NAME, format_version::SNAPSHOTS)? {
         SqliteFormat::Newer(recorded) => return Ok(SnapshotStore::Newer(recorded)),
         SqliteFormat::New => init_schema(&conn)?,
