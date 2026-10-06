@@ -146,7 +146,9 @@
 
   "saveError.title": "QuickDeck 无法保存你的数据",
   "saveError.autosave": "你最近的更改仍保留在窗格中。请释放一些存储空间，或恢复对数据文件夹的访问权限，然后重试。",
-  "saveError.onClose": "你最近的更改仍保留在窗格中。请释放一些存储空间，或恢复对数据文件夹的访问权限，然后再次尝试关闭。",
+  "saveError.onClose": "QuickDeck 没有退出，你最近的更改仍保留在窗格中。请释放一些存储空间，或恢复对数据文件夹的访问权限，然后重试。如果仍要退出，未保存的更改将会丢失。",
+  "saveError.retry": "重试",
+  "saveError.quitAnyway": "仍要退出",
 
   "settingsReset.title": "设置文件已重置",
   "settingsReset.body": "你的设置文件（config.json）无法读取，因此 QuickDeck 已将其移到 {path}，并使用默认设置启动。你的窗格文本未受影响。",

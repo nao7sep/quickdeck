@@ -146,7 +146,9 @@
 
   "saveError.title": "QuickDeck non è riuscito a salvare i tuoi dati",
   "saveError.autosave": "Le modifiche più recenti restano aperte. Libera spazio di archiviazione o ripristina l’accesso alla cartella dei dati, poi riprova.",
-  "saveError.onClose": "Le modifiche più recenti restano aperte. Libera spazio di archiviazione o ripristina l’accesso alla cartella dei dati, poi prova di nuovo a chiudere la finestra.",
+  "saveError.onClose": "QuickDeck non è stato chiuso, quindi le modifiche più recenti restano aperte. Libera spazio di archiviazione o ripristina l’accesso alla cartella dei dati, poi riprova. Se esci comunque, le modifiche non salvate andranno perse.",
+  "saveError.retry": "Riprova",
+  "saveError.quitAnyway": "Esci comunque",
 
   "settingsReset.title": "Un file delle impostazioni è stato reimpostato",
   "settingsReset.body": "Il file delle impostazioni (config.json) non era leggibile, quindi QuickDeck lo ha spostato in {path} ed è partito con le impostazioni predefinite. Il testo dei tuoi riquadri non è stato toccato.",

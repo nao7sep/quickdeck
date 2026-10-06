@@ -146,7 +146,9 @@
 
   "saveError.title": "QuickDeck konnte Ihre Daten nicht speichern",
   "saveError.autosave": "Ihre letzten Änderungen sind weiterhin geöffnet. Geben Sie Speicherplatz frei oder stellen Sie den Zugriff auf den Datenordner wieder her und versuchen Sie es dann erneut.",
-  "saveError.onClose": "Ihre letzten Änderungen sind weiterhin geöffnet. Geben Sie Speicherplatz frei oder stellen Sie den Zugriff auf den Datenordner wieder her und schließen Sie das Fenster dann erneut.",
+  "saveError.onClose": "QuickDeck wurde nicht beendet, Ihre letzten Änderungen sind also weiterhin geöffnet. Geben Sie Speicherplatz frei oder stellen Sie den Zugriff auf den Datenordner wieder her und versuchen Sie es dann erneut. Wenn Sie QuickDeck trotzdem beenden, gehen die nicht gespeicherten Änderungen verloren.",
+  "saveError.retry": "Wiederholen",
+  "saveError.quitAnyway": "Trotzdem beenden",
 
   "settingsReset.title": "Eine Einstellungsdatei wurde zurückgesetzt",
   "settingsReset.body": "Ihre Einstellungsdatei (config.json) war nicht lesbar. QuickDeck hat sie nach {path} verschoben und ist mit den Standardeinstellungen gestartet. Der Text Ihrer Bereiche ist unverändert.",

@@ -146,7 +146,9 @@
 
   "saveError.title": "QuickDeck n’a pas pu enregistrer vos données",
   "saveError.autosave": "Vos dernières modifications restent ouvertes. Libérez de l’espace de stockage ou rétablissez l’accès au dossier de données, puis réessayez.",
-  "saveError.onClose": "Vos dernières modifications restent ouvertes. Libérez de l’espace de stockage ou rétablissez l’accès au dossier de données, puis essayez de nouveau de fermer la fenêtre.",
+  "saveError.onClose": "QuickDeck ne s’est pas fermé, donc vos dernières modifications restent ouvertes. Libérez de l’espace de stockage ou rétablissez l’accès au dossier de données, puis réessayez. Si vous quittez quand même, les modifications non enregistrées seront perdues.",
+  "saveError.retry": "Réessayer",
+  "saveError.quitAnyway": "Quitter quand même",
 
   "settingsReset.title": "Un fichier de réglages a été réinitialisé",
   "settingsReset.body": "Votre fichier de réglages (config.json) était illisible\u00a0: QuickDeck l’a déplacé vers {path} et a démarré avec les réglages par défaut. Le texte de vos volets n’a pas été modifié.",

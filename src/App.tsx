@@ -20,6 +20,7 @@ import {
 import { AboutModal } from "./components/AboutModal";
 import { SnapshotsModal } from "./components/SnapshotsModal";
 import { ErrorModal } from "./components/ErrorModal";
+import { QuitSaveErrorModal, type QuitSaveErrorChoice } from "./components/QuitSaveErrorModal";
 import { LoadErrorScreen } from "./components/LoadErrorScreen";
 import { Menu, MenuItem } from "./components/Menu";
 import { PaneSwitcher } from "./components/PaneSwitcher";
@@ -31,6 +32,7 @@ import { matchesShortcut } from "./shortcuts";
 import { applyWindowTheme } from "./services/windowTheme";
 import { applyLanguage } from "./services/persistence";
 import { openRecordsWindow } from "./services/records";
+import { saveForQuit } from "./services/quit";
 import { useI18n } from "./i18n/I18nContext";
 import type { MessageKey } from "./i18n/catalogues";
 import { message } from "./i18n/translate";
@@ -77,7 +79,6 @@ export function App() {
     addPane,
     movePane,
     saveNow,
-    showBlockingError,
     showToast,
     clearToast,
     snapshotAllPanes,
@@ -93,6 +94,7 @@ export function App() {
   const [languageApplicationFailed, setLanguageApplicationFailed] = useState(false);
   const [zoomApplicationFailed, setZoomApplicationFailed] = useState(false);
   const [topmostApplicationFailed, setTopmostApplicationFailed] = useState(false);
+  const [quitSaveFailed, setQuitSaveFailed] = useState(false);
   const [statusBarContentWidth, setStatusBarContentWidth] = useState(0);
   const statusBarRef = useRef<HTMLElement | null>(null);
   const appDestroyingRef = useRef(false);
@@ -365,7 +367,7 @@ export function App() {
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
-      if (loadStatus !== "ready" || openModal || blockingError) {
+      if (loadStatus !== "ready" || openModal || blockingError || quitSaveFailed) {
         return;
       }
 
@@ -458,6 +460,7 @@ export function App() {
     openMenuModal,
     openModal,
     panes,
+    quitSaveFailed,
     setActivePaneId,
     settings,
     toggleTopmost,
@@ -491,7 +494,6 @@ export function App() {
   const saveNowRef = useRef(saveNow);
   const snapshotAllPanesRef = useRef(snapshotAllPanes);
   const showToastRef = useRef(showToast);
-  const showBlockingErrorRef = useRef(showBlockingError);
 
   useEffect(() => {
     saveNowRef.current = saveNow;
@@ -505,40 +507,54 @@ export function App() {
     showToastRef.current = showToast;
   }, [showToast]);
 
-  useEffect(() => {
-    showBlockingErrorRef.current = showBlockingError;
-  }, [showBlockingError]);
+  // The answer the quit save-failure modal is waiting for.
+  const quitChoiceRef = useRef<((choice: QuitSaveErrorChoice) => void) | null>(null);
+  const chooseAfterQuitSaveFailure = useCallback((choice: QuitSaveErrorChoice) => {
+    const resolve = quitChoiceRef.current;
+    quitChoiceRef.current = null;
+    setQuitSaveFailed(false);
+    resolve?.(choice);
+  }, []);
 
   useEffect(() => {
     const appWindow = isTauri() ? getCurrentWindow() : null;
     let closeUnlisten: (() => void) | undefined;
     let closeInFlight = false;
 
+    const quitSteps = {
+      snapshot: () => snapshotAllPanesRef.current("app_close"),
+      save: () => saveNowRef.current(),
+    };
+
+    function askAfterQuitSaveFailure(): Promise<QuitSaveErrorChoice> {
+      return new Promise((resolve) => {
+        quitChoiceRef.current = resolve;
+        setQuitSaveFailed(true);
+      });
+    }
+
     // The clean-shutdown line itself is logged Rust-side on RunEvent (see
     // lib.rs): a frontend log here would be a fire-and-forget IPC racing the
     // window teardown, so it could not be relied on to persist. The failure
-    // paths below only log when the close is aborted, in which case the window
-    // stays open and the forward has time to land.
-    async function persistCloseState(): Promise<boolean> {
-      try {
-        await snapshotAllPanesRef.current("app_close");
-      } catch (error) {
-        // Insurance snapshots are best-effort; proceed to the real save, but
-        // record that the close-time snapshot did not land.
-        logWarn("close snapshot failed", { error: serializeError(error) });
-      }
-      try {
-        await saveNowRef.current();
-        return true;
-      } catch (error) {
-        logError("save on close failed", { error: serializeError(error) });
-        showBlockingErrorRef.current(message("saveError.title"), message("saveError.onClose"));
-        return false;
+    // paths log while the window is still open.
+    //
+    // Resolves whether the window may close: the save landed, or the user chose
+    // to quit without it. A failed save cancels the quit (unsaved-edits
+    // conventions, Quitting).
+    async function saveBeforeClose(): Promise<boolean> {
+      for (;;) {
+        if (await saveForQuit(quitSteps)) return true;
+        const choice = await askAfterQuitSaveFailure();
+        if (choice === "quitAnyway") {
+          logWarn("quit without saving", {});
+          return true;
+        }
+        if (choice === "cancel") return false;
       }
     }
 
     function handleBeforeUnload() {
-      void persistCloseState();
+      void saveForQuit(quitSteps);
     }
 
     window.addEventListener("beforeunload", handleBeforeUnload);
@@ -555,11 +571,7 @@ export function App() {
         }
         closeInFlight = true;
         try {
-          const saved = await persistCloseState();
-          if (!saved) {
-            // The blocking-error modal is now visible. Leave the window open
-            // so the user can fix the underlying problem and try closing
-            // again; finally resets the flag.
+          if (!(await saveBeforeClose())) {
             return;
           }
           appDestroyingRef.current = true;
@@ -585,6 +597,11 @@ export function App() {
     return () => {
       window.removeEventListener("beforeunload", handleBeforeUnload);
       if (!appDestroyingRef.current) closeUnlisten?.();
+      // A pending question settles through its safe path (modal-dialog
+      // conventions, Dialog Promises and Queues).
+      const resolve = quitChoiceRef.current;
+      quitChoiceRef.current = null;
+      resolve?.("cancel");
     };
   }, []);
 
@@ -751,6 +768,7 @@ export function App() {
       {openModal === "about" ? <AboutModal onClose={() => setOpenModal(null)} /> : null}
       {openModal === "snapshots" ? <SnapshotsModal onClose={() => setOpenModal(null)} /> : null}
       {blockingError ? <ErrorModal error={blockingError} onClose={dismissBlockingError} /> : null}
+      {quitSaveFailed ? <QuitSaveErrorModal onChoose={chooseAfterQuitSaveFailure} /> : null}
       <ToastViewport
         themeApplicationFailed={themeApplicationFailed}
         languageApplicationFailed={languageApplicationFailed}

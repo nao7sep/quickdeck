@@ -146,7 +146,9 @@
 
   "saveError.title": "QuickDeck no pudo guardar tus datos",
   "saveError.autosave": "Tus últimos cambios siguen abiertos. Libera espacio de almacenamiento o restablece el acceso a la carpeta de datos y vuelve a intentarlo.",
-  "saveError.onClose": "Tus últimos cambios siguen abiertos. Libera espacio de almacenamiento o restablece el acceso a la carpeta de datos y vuelve a intentar cerrar la ventana.",
+  "saveError.onClose": "QuickDeck no se cerró, así que tus últimos cambios siguen abiertos. Libera espacio de almacenamiento o restablece el acceso a la carpeta de datos y vuelve a intentarlo. Si sales de todos modos, se perderán los cambios que no se guardaron.",
+  "saveError.retry": "Reintentar",
+  "saveError.quitAnyway": "Salir de todos modos",
 
   "settingsReset.title": "Se restableció un archivo de configuración",
   "settingsReset.body": "No se pudo leer tu archivo de configuración (config.json), así que QuickDeck lo movió a {path} y empezó con la configuración predeterminada. El texto de tus paneles está intacto.",

@@ -146,7 +146,9 @@
 
   "saveError.title": "QuickDeck couldn't save your data",
   "saveError.autosave": "Your latest changes remain open. Free some storage or restore access to the data folder, then try again.",
-  "saveError.onClose": "Your latest changes remain open. Free some storage or restore access to the data folder, then try closing again.",
+  "saveError.onClose": "QuickDeck did not quit, so your latest changes are still open. Free some storage or restore access to the data folder, then retry. If you quit anyway, the changes that were not saved will be lost.",
+  "saveError.retry": "Retry",
+  "saveError.quitAnyway": "Quit anyway",
 
   "settingsReset.title": "A Settings File Was Reset",
   "settingsReset.body": "Your settings file (config.json) could not be read, so QuickDeck moved it to {path} and started with default settings. Your pane text is untouched.",

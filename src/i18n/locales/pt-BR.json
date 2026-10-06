@@ -146,7 +146,9 @@
 
   "saveError.title": "O QuickDeck não conseguiu salvar seus dados",
   "saveError.autosave": "Suas alterações mais recentes continuam abertas. Libere espaço de armazenamento ou restaure o acesso à pasta de dados e tente novamente.",
-  "saveError.onClose": "Suas alterações mais recentes continuam abertas. Libere espaço de armazenamento ou restaure o acesso à pasta de dados e tente fechar novamente.",
+  "saveError.onClose": "O QuickDeck não foi encerrado, então suas alterações mais recentes continuam abertas. Libere espaço de armazenamento ou restaure o acesso à pasta de dados e tente novamente. Se você sair mesmo assim, as alterações não salvas serão perdidas.",
+  "saveError.retry": "Tentar novamente",
+  "saveError.quitAnyway": "Sair mesmo assim",
 
   "settingsReset.title": "Um arquivo de configurações foi redefinido",
   "settingsReset.body": "Não foi possível ler o seu arquivo de configurações (config.json), então o QuickDeck o moveu para {path} e começou com as configurações padrão. O texto dos seus painéis não foi alterado.",
