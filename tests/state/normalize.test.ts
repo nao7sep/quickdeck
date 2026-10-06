@@ -147,14 +147,14 @@ describe("normalizePanes", () => {
     const panes = [
       { id: "p1", title: "Title", content: "body", headerColor: "#aabbcc", backgroundColor: "#112233" },
     ];
-    expect(normalizePanes(panes, "New Buffer")).toEqual(panes);
+    expect(normalizePanes(panes)).toEqual(panes);
   });
 
-  it("shows the default title for a pane whose title was cleared", () => {
+  it("keeps a title the user cleared empty", () => {
     const panes = [
       { id: "p1", title: "", content: "", headerColor: "#aabbcc", backgroundColor: "#112233" },
     ];
-    expect(normalizePanes(panes, "New Buffer")[0].title).toBe("New Buffer");
+    expect(normalizePanes(panes)[0].title).toBe("");
   });
 });
 

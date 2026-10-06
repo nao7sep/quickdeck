@@ -120,3 +120,16 @@ describe("PaneView editor font resolution", () => {
     settings.editorFontFamily = original;
   });
 });
+
+describe("PaneView title", () => {
+  it("keeps a cleared title empty and shows the default name only as its placeholder", async () => {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    await act(async () => root?.render(<PaneView pane={{ ...pane("hello"), title: "" }} />));
+    const input = container.querySelector("input.paneTitleInput") as HTMLInputElement;
+    expect(input.value).toBe("");
+    expect(input.placeholder).toBe("New Buffer");
+  });
+});

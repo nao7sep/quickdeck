@@ -204,12 +204,12 @@ export function normalizeZoomLevel(value: unknown): number {
   );
 }
 
-// Panes that passed panesShapeIssues, as the editor holds them: a title the user
-// cleared shows the localized default name (`defaultTitle`).
-export function normalizePanes(panes: Pane[], defaultTitle: string): Pane[] {
+// Panes that passed panesShapeIssues, as the editor holds them. A title the user
+// cleared stays empty; the default name is only shown in its place.
+export function normalizePanes(panes: Pane[]): Pane[] {
   return panes.map((pane) => ({
     id: pane.id,
-    title: pane.title.length > 0 ? pane.title : defaultTitle,
+    title: pane.title,
     content: pane.content,
     headerColor: pane.headerColor,
     backgroundColor: pane.backgroundColor,

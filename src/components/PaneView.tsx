@@ -56,7 +56,7 @@ export function PaneView({ pane }: PaneViewProps) {
     <section
       id={settings.zen ? panePanelDomId(pane.id) : undefined}
       role={settings.zen ? "tabpanel" : undefined}
-      aria-label={settings.zen ? t("pane.region", { title: pane.title }) : undefined}
+      aria-label={settings.zen ? t("pane.region", { title: pane.title || t("pane.defaultTitle") }) : undefined}
       className={`pane ${active ? "pane-active" : ""}`}
       style={
         {
@@ -74,6 +74,7 @@ export function PaneView({ pane }: PaneViewProps) {
           aria-label={t("pane.titleLabel")}
           className="paneTitleInput"
           value={pane.title}
+          placeholder={t("pane.defaultTitle")}
           spellCheck={false}
           onChange={(event) => updatePaneTitle(pane.id, event.target.value)}
           onBlur={() => commitPaneTitle(pane.id)}

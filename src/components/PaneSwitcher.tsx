@@ -128,7 +128,7 @@ export function PaneSwitcher({ panes, activePaneId, onSelect }: PaneSwitcherProp
         onClick={() => setOpen((value) => !value)}
       >
         <PaneSwatch color={activePane.headerColor} />
-        <span className="paneSwitcherTitle">{activePane.title}</span>
+        <span className="paneSwitcherTitle">{activePane.title || t("pane.defaultTitle")}</span>
         <ChevronUp size={14} className="paneSwitcherChevron" />
       </button>
       {open ? createPortal(
@@ -159,7 +159,7 @@ export function PaneSwitcher({ panes, activePaneId, onSelect }: PaneSwitcherProp
                 }}
               >
                 <PaneSwatch color={pane.headerColor} />
-                <span className="paneSwitcherOptionTitle">{pane.title}</span>
+                <span className="paneSwitcherOptionTitle">{pane.title || t("pane.defaultTitle")}</span>
               </button>
             );
           })}
