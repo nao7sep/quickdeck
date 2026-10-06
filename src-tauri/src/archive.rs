@@ -21,8 +21,10 @@ use zip::{write::SimpleFileOptions, CompressionMethod, ZipArchive, ZipWriter};
 
 use crate::format_version::{self, JsonFormat};
 
-/// An archive's file name: its run time, per the timestamp-conventions.
-const ARCHIVE_NAME_FORMAT: &str = "%Y%m%d-%H%M%S-utc.zip";
+/// An archive's file name: its run time in the machine-paced millisecond form
+/// (timestamp-conventions) that `logging::session_stamp` writes, read back by
+/// thinning.
+const ARCHIVE_NAME_FORMAT: &str = "%Y%m%d-%H%M%S-%3f-utc.zip";
 
 /// The entry that says what the archive holds, beside the stores.
 const MANIFEST_NAME: &str = "manifest.json";
@@ -334,8 +336,12 @@ pub fn archive_stores(root: &Path) -> Result<bool, String> {
             ),
         }
     }
-    let target = directory.join(Utc::now().format(ARCHIVE_NAME_FORMAT).to_string());
-    // Never overwrite a completed archive when two different runs share a second.
+    let target = directory.join(format!(
+        "{}.zip",
+        crate::logging::session_stamp(Utc::now())
+    ));
+    // Never overwrite a completed archive when two different runs share a
+    // millisecond.
     if target.exists() {
         return Err("archive timestamp already exists".into());
     }
