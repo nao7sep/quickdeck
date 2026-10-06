@@ -283,8 +283,8 @@ fn thins_by_age_on_the_fixed_schedule() {
 #[test]
 fn the_newest_copy_is_kept_however_old() {
     let now = "2026-10-02T00:00:00Z".parse().unwrap();
-    let paths =
-        ["20200101-000000-000-utc.zip", "20200102-000000-000-utc.zip"].map(std::path::PathBuf::from);
+    let paths = ["20200101-000000-000-utc.zip", "20200102-000000-000-utc.zip"]
+        .map(std::path::PathBuf::from);
     assert_eq!(thinned(&paths, now), [paths[0].clone()]);
 }
 

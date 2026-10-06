@@ -336,10 +336,7 @@ pub fn archive_stores(root: &Path) -> Result<bool, String> {
             ),
         }
     }
-    let target = directory.join(format!(
-        "{}.zip",
-        crate::logging::session_stamp(Utc::now())
-    ));
+    let target = directory.join(format!("{}.zip", crate::logging::session_stamp(Utc::now())));
     // Never overwrite a completed archive when two different runs share a
     // millisecond.
     if target.exists() {
