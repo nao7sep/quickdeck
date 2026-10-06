@@ -329,12 +329,12 @@ pub fn warn(message: &str, fields: Value) {
 // success or one `error` line on failure, each carrying the parameters and the
 // elapsed duration. This is what keeps "log every boundary crossing" to one info
 // line per crossing.
-pub fn boundary<T>(
+pub fn boundary<T, E: std::fmt::Display>(
     op: &str,
     params: Value,
-    body: impl FnOnce() -> Result<T, String>,
+    body: impl FnOnce() -> Result<T, E>,
     summarize: impl FnOnce(&T) -> Value,
-) -> Result<T, String> {
+) -> Result<T, E> {
     let started = Instant::now();
 
     let mut fields = into_map(params);
@@ -353,7 +353,7 @@ pub fn boundary<T>(
             write_event(Level::Info, "boundary ok", now_iso(), fields);
         }
         Err(err) => {
-            fields.insert("error".to_string(), Value::String(err.clone()));
+            fields.insert("error".to_string(), Value::String(err.to_string()));
             write_event(Level::Error, "boundary failed", now_iso(), fields);
         }
     }

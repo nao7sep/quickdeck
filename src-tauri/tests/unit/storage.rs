@@ -994,7 +994,7 @@ fn a_config_write_quarantines_a_non_object_before_saving_the_sets() {
     let path = dir.path().join(CONFIG_FILE_NAME);
     fs::write(&path, b"[1,2,3]").unwrap();
 
-    save_config(dir.path(), serde_json::json!({"zen": true})).unwrap();
+    let reported = save_config(dir.path(), serde_json::json!({"zen": true})).unwrap();
     let quarantined = fs::read_dir(dir.path())
         .unwrap()
         .map(|entry| entry.unwrap().path())
@@ -1003,6 +1003,7 @@ fn a_config_write_quarantines_a_non_object_before_saving_the_sets() {
                 .is_some_and(|extension| extension == "invalid")
         })
         .unwrap();
+    assert_eq!(reported, Some(quarantined.to_string_lossy().into_owned()));
     assert_eq!(fs::read(quarantined).unwrap(), b"[1,2,3]");
     assert_eq!(
         on_disk(&path),
@@ -1301,11 +1302,12 @@ fn count_rows(conn: &Connection) -> i64 {
         .unwrap()
 }
 
-fn save_config(data_dir: &Path, sets: JsonValue) -> Result<(), String> {
-    match config_to_write(data_dir, sets)? {
-        Some(config) => write_config(data_dir, &config),
-        None => Ok(()),
+fn save_config(data_dir: &Path, sets: JsonValue) -> Result<Option<String>, String> {
+    let write = config_to_write(data_dir, sets)?;
+    if let Some(config) = write.content {
+        write_config(data_dir, &config)?;
     }
+    Ok(write.quarantined_to)
 }
 
 #[test]
@@ -1357,7 +1359,10 @@ fn a_config_write_equal_to_the_file_leaves_its_bytes_alone() {
             serde_json::json!({"zen": true, "topmost": true})
         )
         .unwrap(),
-        None
+        ConfigToWrite {
+            content: None,
+            quarantined_to: None
+        }
     );
     assert_eq!(fs::read_to_string(&path).unwrap(), bytes);
     crate::backup_store::close_backup_store();

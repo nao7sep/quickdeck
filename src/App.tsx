@@ -64,6 +64,7 @@ export function App() {
     blockingError,
     dismissBlockingError,
     loadError,
+    loadErrorPath,
     loadErrorIsCorruptPanes,
     resetCorruptPanes,
     loadStatus,
@@ -597,6 +598,7 @@ export function App() {
     return (
       <LoadErrorScreen
         error={loadError ?? message("load.unknown")}
+        path={loadErrorPath}
         onSetAsideAndReset={loadErrorIsCorruptPanes ? () => void resetCorruptPanes() : undefined}
       />
     );

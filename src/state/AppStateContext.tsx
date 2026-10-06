@@ -30,6 +30,7 @@ import {
   createSnapshot,
   createSnapshots,
   loadAppData,
+  loadFailurePath,
   quarantineCorruptPanes,
   saveConfig,
   savePanes,
@@ -73,6 +74,9 @@ type AppStateContextValue = {
   dataDir: string;
   loadStatus: LoadStatus;
   loadError: Message | null;
+  // The file a halt names, resolved by the Rust core; null when the load
+  // stopped before reaching a store.
+  loadErrorPath: string | null;
   loadErrorIsCorruptPanes: boolean;
   snapshotCount: number;
   snapshotJustSavedAt: number | null;
@@ -118,6 +122,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const [systemLocale, setSystemLocale] = useState<string | null>(null);
   const [loadStatus, setLoadStatus] = useState<LoadStatus>("loading");
   const [loadError, setLoadError] = useState<Message | null>(null);
+  const [loadErrorPath, setLoadErrorPath] = useState<string | null>(null);
   // True when the failure is specifically a corrupt panes.json — the one halt
   // whose screen offers the explicit set-aside reset.
   const [loadErrorIsCorruptPanes, setLoadErrorIsCorruptPanes] = useState(false);
@@ -218,6 +223,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         logError("panes load failed", { error: data.panesError });
         setLoadErrorIsCorruptPanes(true);
         setLoadError(message("load.panesUnreadable"));
+        setLoadErrorPath(data.panesPath);
         setLoadStatus("failed");
         return;
       }
@@ -226,13 +232,14 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       // core left it in place and logged it, and it is never offered the
       // corrupt-file reset (store-recovery conventions).
       const newer = data.panesNewer !== null
-        ? message("load.panesNewer", { version: data.panesNewer })
+        ? { error: message("load.panesNewer", { version: data.panesNewer }), path: data.panesPath }
         : data.snapshotsNewer !== null
-          ? message("load.snapshotsNewer", { version: data.snapshotsNewer })
+          ? { error: message("load.snapshotsNewer", { version: data.snapshotsNewer }), path: data.snapshotsPath }
           : null;
       if (newer !== null) {
         setLoadErrorIsCorruptPanes(false);
-        setLoadError(newer);
+        setLoadError(newer.error);
+        setLoadErrorPath(newer.path);
         setLoadStatus("failed");
         return;
       }
@@ -243,6 +250,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
           logError("panes.json failed its shape check", { issues: paneIssues });
           setLoadErrorIsCorruptPanes(true);
           setLoadError(message("load.panesDamaged"));
+          setLoadErrorPath(data.panesPath);
           setLoadStatus("failed");
           return;
         }
@@ -262,7 +270,10 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       });
 
       if (data.configQuarantinedTo !== null) {
-        showBlockingError(message("settingsReset.title"), message("settingsReset.body"));
+        showBlockingError(
+          message("settingsReset.title"),
+          message("settingsReset.body", { path: data.configQuarantinedTo }),
+        );
       }
       if (data.configNewer !== null) {
         showBlockingError(message("settingsNewer.title"), message("settingsNewer.body"));
@@ -304,6 +315,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         logError("load failed", { error: serializeError(error) });
         setLoadErrorIsCorruptPanes(false);
         setLoadError(message("load.failed"));
+        setLoadErrorPath(loadFailurePath(error));
         setLoadStatus("failed");
       }
     }
@@ -333,21 +345,27 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
 
   // The reset the corrupt-panes halt screen offers: quarantine panes.json on
   // the user's command (the rename either lands or the error surfaces), then
-  // reload — the absent store comes back as the default single pane.
+  // reload — the absent store comes back as the default single pane — and say
+  // where the file went.
   const resetCorruptPanes = useCallback(async () => {
     try {
       const quarantinedTo = await quarantineCorruptPanes();
       logInfo("corrupt panes.json set aside on user command", { quarantinedTo });
       setLoadErrorIsCorruptPanes(false);
       setLoadError(null);
+      setLoadErrorPath(null);
       setLoadStatus("loading");
       await loadPersistedState();
+      showBlockingError(
+        message("panesSetAside.title"),
+        message("panesSetAside.body", { path: quarantinedTo }),
+      );
     } catch (error) {
       logError("panes reset failed", { error: serializeError(error) });
       setLoadError(message("load.setAsideFailed"));
       setLoadStatus("failed");
     }
-  }, [loadPersistedState]);
+  }, [loadPersistedState, showBlockingError]);
 
   const updatePaneTitle = useCallback(
     (paneId: string, title: string) => {
@@ -551,17 +569,23 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     try {
       // Every save sends every stored set; the write queue applies them in call
       // order, and the core writes nothing when they equal the file.
-      await Promise.all([
+      const [configSetAsideTo] = await Promise.all([
         saveConfig(storedSettingsSets(settings)),
         persistState(buildStateFile(activePaneId, zoomLevel)),
         savePanes(buildPanesFile(panes)),
       ]);
       setSaveState(resolveSaveState(dirtyAtStart, dirtyCounterRef.current));
+      if (configSetAsideTo !== null) {
+        showBlockingError(
+          message("settingsSetAside.title"),
+          message("settingsSetAside.body", { path: configSetAsideTo }),
+        );
+      }
     } catch (error) {
       setSaveState("error");
       throw error;
     }
-  }, [activePaneId, loadStatus, panes, settings, zoomLevel]);
+  }, [activePaneId, loadStatus, panes, settings, showBlockingError, zoomLevel]);
 
   useEffect(() => {
     if (loadStatus !== "ready" || saveState !== "unsaved") {
@@ -592,6 +616,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       dataDir,
       loadStatus,
       loadError,
+      loadErrorPath,
       loadErrorIsCorruptPanes,
       snapshotCount,
       snapshotJustSavedAt,
@@ -627,6 +652,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       dismissBlockingError,
       dismissToast,
       loadError,
+      loadErrorPath,
       loadErrorIsCorruptPanes,
       loadStatus,
       movePane,

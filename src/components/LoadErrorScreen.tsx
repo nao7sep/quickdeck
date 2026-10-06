@@ -14,6 +14,9 @@ import { logWarn, serializeError } from "../services/logger";
 
 type LoadErrorScreenProps = {
   error: Message;
+  // The file the halt names; null when the load stopped before reaching a
+  // store, and the hint then names the data folder instead.
+  path: string | null;
   // Present only for the corrupt-panes halt: the user-commanded reset that
   // sets the unreadable file aside (preserving its bytes) and starts fresh —
   // a halting store must be clearable from the surface that reported the
@@ -21,7 +24,7 @@ type LoadErrorScreenProps = {
   onSetAsideAndReset?: () => void;
 };
 
-export function LoadErrorScreen({ error, onSetAsideAndReset }: LoadErrorScreenProps) {
+export function LoadErrorScreen({ error, path, onSetAsideAndReset }: LoadErrorScreenProps) {
   const { t, rich, text } = useI18n();
   function quit() {
     if (isTauri()) {
@@ -44,10 +47,12 @@ export function LoadErrorScreen({ error, onSetAsideAndReset }: LoadErrorScreenPr
         <h1 className="loadErrorTitle">{t("load.title")}</h1>
         <p className="loadErrorMessage">{text(error)}</p>
         <p className="loadErrorHint">
-          {rich("load.hint", {
-            dataDir: <code>~/.quickdeck</code>,
-            envVar: <code>QUICKDECK_DATA_DIR</code>,
-          })}
+          {path !== null
+            ? rich("load.hint", { path: <code>{path}</code> })
+            : rich("load.hintDataFolder", {
+                folder: <code>.quickdeck</code>,
+                envVar: <code>QUICKDECK_DATA_DIR</code>,
+              })}
         </p>
         <div className="loadErrorActions">
           {onSetAsideAndReset && (

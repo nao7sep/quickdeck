@@ -20,8 +20,7 @@ export type PanesFile = {
 
 export type LoadedAppData = {
   config: Record<string, unknown> | null;
-  // Where a corrupt config.json was set aside; retained for diagnostics while
-  // the app presents authored recovery copy.
+  // Where a corrupt config.json was set aside, which the settings report names.
   configQuarantinedTo: string | null;
   // The format a config.json from a newer build records: the file is left in
   // place and the app runs on built-in settings, which the core never saves
@@ -36,6 +35,10 @@ export type LoadedAppData = {
   // each halts with the file left in place, offering no reset.
   panesNewer: number | null;
   snapshotsNewer: number | null;
+  // Where panes.json and snapshots.sqlite3 live, resolved by the Rust core, so
+  // a halt on either names the file.
+  panesPath: string;
+  snapshotsPath: string;
   dataDir: string;
   // Whether developer-only debug logging is on (resolved by the Rust core).
   debugEnabled: boolean;
@@ -101,6 +104,8 @@ export async function loadAppData(): Promise<LoadedAppData> {
       panesError: null,
       panesNewer: null,
       snapshotsNewer: null,
+      panesPath: "",
+      snapshotsPath: "",
       dataDir: "Browser preview",
       debugEnabled: import.meta.env.DEV,
       systemLanguage: "en",
@@ -109,6 +114,15 @@ export async function loadAppData(): Promise<LoadedAppData> {
   }
 
   return invoke<LoadedAppData>("load_app_data");
+}
+
+// The store a failed load stopped at, when the Rust core named one: the path is
+// presentation data, and the failure's message stays diagnostic.
+export function loadFailurePath(error: unknown): string | null {
+  if (typeof error !== "object" || error === null || !("path" in error)) {
+    return null;
+  }
+  return typeof error.path === "string" ? error.path : null;
 }
 
 // Rebuilds the native menu in the interface language (the Rust core built it in
@@ -125,25 +139,26 @@ export async function applyLanguage(language: string): Promise<void> {
 // save always waits for an in-flight autosave of the same file to finish before
 // its own write starts — the file's final content then always reflects the more
 // recent call, whichever caller issued it (config/state/panes conventions).
-function makeWriteQueue<T>(command: string): (payload: T) => Promise<void> {
-  let queue: Promise<void> = Promise.resolve();
+function makeWriteQueue<T, R = void>(command: string): (payload: T) => Promise<R> {
+  let queue: Promise<unknown> = Promise.resolve();
   return (payload: T) => {
-    const write = queue.catch(() => {}).then(() => invoke<void>(command, payload as Record<string, unknown>));
+    const write = queue.catch(() => {}).then(() => invoke<R>(command, payload as Record<string, unknown>));
     queue = write;
     return write;
   };
 }
 
-const enqueueConfigWrite = makeWriteQueue<{ config: Partial<ConfigSets> }>("save_config");
+const enqueueConfigWrite = makeWriteQueue<{ config: Partial<ConfigSets> }, string | null>("save_config");
 const enqueueStateWrite = makeWriteQueue<{ state: StateFile }>("save_state");
 const enqueuePanesWrite = makeWriteQueue<{ panes: PanesFile }>("save_panes");
 
-export async function saveConfig(config: Partial<ConfigSets>): Promise<void> {
+// Resolves to where an unreadable config.json found on the way was set aside.
+export async function saveConfig(config: Partial<ConfigSets>): Promise<string | null> {
   if (!isTauri()) {
-    return;
+    return null;
   }
 
-  await enqueueConfigWrite({ config });
+  return enqueueConfigWrite({ config });
 }
 
 export async function saveState(state: StateFile): Promise<void> {

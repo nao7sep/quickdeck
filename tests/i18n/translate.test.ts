@@ -34,9 +34,9 @@ describe("createTranslator", () => {
   });
 
   it("puts markup into placeholders for rich text", () => {
-    const parts = createTranslator("en").rich("load.hint", { dataDir: "D", envVar: "E" }) as unknown[];
+    const parts = createTranslator("en").rich("load.hint", { path: "P" }) as unknown[];
     const filled = parts.map((part) => (isValidElement(part) ? (part as ReactElement<{ children: unknown }>).props.children : part));
-    expect(filled.join("")).toContain("(D by default, or E if set)");
+    expect(filled.join("")).toContain("repair or move P, then relaunch");
   });
 
   it("formats percentages and dates for the locale", () => {

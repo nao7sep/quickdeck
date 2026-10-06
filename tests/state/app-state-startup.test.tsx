@@ -8,6 +8,7 @@ import type { LoadedAppData } from "../../src/services/persistence";
 
 const persistence = vi.hoisted(() => ({
   loadAppData: vi.fn(),
+  quarantineCorruptPanes: vi.fn(),
   saveConfig: vi.fn(),
   saveState: vi.fn(),
   savePanes: vi.fn(),
@@ -20,6 +21,7 @@ vi.mock("../../src/services/persistence", async (importOriginal) => {
   return {
     ...original,
     loadAppData: persistence.loadAppData,
+    quarantineCorruptPanes: persistence.quarantineCorruptPanes,
     saveConfig: persistence.saveConfig,
     saveState: persistence.saveState,
     savePanes: persistence.savePanes,
@@ -37,6 +39,8 @@ function loadedAppData(overrides: Partial<LoadedAppData> = {}): LoadedAppData {
     panesError: null,
     panesNewer: null,
     snapshotsNewer: null,
+    panesPath: "/private/tmp/quickdeck-test/panes.json",
+    snapshotsPath: "/private/tmp/quickdeck-test/snapshots.sqlite3",
     dataDir: "/private/tmp/quickdeck-test",
     debugEnabled: false,
     systemLanguage: "en",
@@ -53,6 +57,7 @@ function StartupState() {
       <span data-testid="load-status">{state.loadStatus}</span>
       <span data-testid="save-state">{state.saveState}</span>
       <span data-testid="load-error">{state.loadError ? text(state.loadError) : null}</span>
+      <span data-testid="load-error-path">{state.loadErrorPath}</span>
       <span data-testid="corrupt-panes">{String(state.loadErrorIsCorruptPanes)}</span>
       <span data-testid="blocking-error">
         {state.blockingError ? text(state.blockingError.message) : null}
@@ -66,7 +71,7 @@ let root: Root | null = null;
 
 beforeEach(() => {
   persistence.loadAppData.mockResolvedValue(loadedAppData());
-  persistence.saveConfig.mockResolvedValue(undefined);
+  persistence.saveConfig.mockResolvedValue(null);
 });
 
 afterEach(async () => {
@@ -132,21 +137,112 @@ describe("persistence failure presentation", () => {
     expect(message).not.toContain("non-string content");
   });
 
-  it("keeps internal quarantine paths in the log and out of settings recovery copy", async () => {
+  it("names where an unreadable settings file was moved", async () => {
     persistence.loadAppData.mockResolvedValueOnce(
       loadedAppData({
-        configQuarantinedTo: "/.quickdeck/HOSTILE-SENTINEL-EACCES.invalid",
+        configQuarantinedTo: "/private/tmp/quickdeck-test/config-20261006-010203-004-utc.invalid",
       }),
     );
 
     const host = await renderStartupState();
 
     const message = host.querySelector('[data-testid="blocking-error"]')?.textContent ?? "";
-    expect(message).toContain("preserved copy's location is recorded in the log");
-    expect(message).not.toContain("/.quickdeck/");
-    expect(message).not.toContain(".invalid");
+    expect(message).toContain(
+      "moved it to /private/tmp/quickdeck-test/config-20261006-010203-004-utc.invalid",
+    );
+    expect(message).toContain("default settings");
+  });
+
+  it("names a settings file set aside by a save", async () => {
+    persistence.saveConfig.mockResolvedValueOnce(
+      "/private/tmp/quickdeck-test/config-20261006-010203-004-utc.invalid",
+    );
+    let state: ReturnType<typeof useAppState> | undefined;
+    function SaveProbe() {
+      state = useAppState();
+      return null;
+    }
+    const host = document.createElement("div");
+    document.body.append(host);
+    root = createRoot(host);
+    await act(async () => {
+      root?.render(
+        <AppStateProvider>
+          <SaveProbe />
+          <StartupState />
+        </AppStateProvider>,
+      );
+    });
+
+    await act(async () => {
+      await state?.saveNow();
+    });
+
+    const message = host.querySelector('[data-testid="blocking-error"]')?.textContent ?? "";
+    expect(message).toContain(
+      "moved it to /private/tmp/quickdeck-test/config-20261006-010203-004-utc.invalid",
+    );
+    expect(message).toContain("current settings stay in use");
+  });
+
+  it("names the pane text file a halt left in place, and where the reset moved it", async () => {
+    persistence.loadAppData.mockResolvedValueOnce(loadedAppData({ panesError: "unreadable" }));
+    persistence.quarantineCorruptPanes.mockResolvedValueOnce(
+      "/private/tmp/quickdeck-test/panes-20261006-010203-004-utc.invalid",
+    );
+    let state: ReturnType<typeof useAppState> | undefined;
+    function ResetProbe() {
+      state = useAppState();
+      return null;
+    }
+    const host = document.createElement("div");
+    document.body.append(host);
+    root = createRoot(host);
+    await act(async () => {
+      root?.render(
+        <AppStateProvider>
+          <ResetProbe />
+          <StartupState />
+        </AppStateProvider>,
+      );
+    });
+    expect(host.querySelector('[data-testid="load-error-path"]')?.textContent).toBe(
+      "/private/tmp/quickdeck-test/panes.json",
+    );
+
+    await act(async () => {
+      await state?.resetCorruptPanes();
+    });
+
+    expect(host.querySelector('[data-testid="load-status"]')?.textContent).toBe("ready");
+    const message = host.querySelector('[data-testid="blocking-error"]')?.textContent ?? "";
+    expect(message).toContain("moved to /private/tmp/quickdeck-test/panes-20261006-010203-004-utc.invalid");
+  });
+
+  it("names the store a failed load stopped at and keeps its diagnostic out of the copy", async () => {
+    persistence.loadAppData.mockRejectedValueOnce({
+      path: "/private/tmp/quickdeck-test/snapshots.sqlite3",
+      message: "TypeError EACCES HOSTILE-SENTINEL",
+    });
+
+    const host = await renderStartupState();
+
+    expect(host.querySelector('[data-testid="load-status"]')?.textContent).toBe("failed");
+    expect(host.querySelector('[data-testid="load-error-path"]')?.textContent).toBe(
+      "/private/tmp/quickdeck-test/snapshots.sqlite3",
+    );
+    const message = host.querySelector('[data-testid="load-error"]')?.textContent ?? "";
     expect(message).not.toContain("HOSTILE-SENTINEL");
     expect(message).not.toContain("EACCES");
+  });
+
+  it("names no file when a failed load stopped before reaching a store", async () => {
+    persistence.loadAppData.mockRejectedValueOnce("could not create data dir HOSTILE-SENTINEL");
+
+    const host = await renderStartupState();
+
+    expect(host.querySelector('[data-testid="load-status"]')?.textContent).toBe("failed");
+    expect(host.querySelector('[data-testid="load-error-path"]')?.textContent).toBe("");
   });
 });
 
@@ -173,6 +269,9 @@ describe("stores from a newer build", () => {
     const message = host.querySelector('[data-testid="load-error"]')?.textContent ?? "";
     expect(message).toContain("snapshots.sqlite3");
     expect(message).toContain("(format 3)");
+    expect(host.querySelector('[data-testid="load-error-path"]')?.textContent).toBe(
+      "/private/tmp/quickdeck-test/snapshots.sqlite3",
+    );
     expect(host.querySelector('[data-testid="corrupt-panes"]')?.textContent).toBe("false");
   });
 

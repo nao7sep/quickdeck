@@ -20,7 +20,7 @@ use menu::SAFE_QUIT_MENU_ID;
 use records::{RecordDetail, RecordSources, RecordsPage, RecordsQuery};
 use serde::Serialize;
 use serde_json::{json, Map, Value as JsonValue};
-use storage::{LoadedAppData, SnapshotInput, SnapshotListResult, SnapshotWriteResult};
+use storage::{LoadFailure, LoadedAppData, SnapshotInput, SnapshotListResult, SnapshotWriteResult};
 use tauri::{AppHandle, Manager, RunEvent, Runtime, State, Theme, WindowEvent};
 use window_placement::PlacementState;
 
@@ -63,16 +63,16 @@ pub(crate) fn bring_main_forward<R: Runtime>(app: &AppHandle<R>) {
 
 // File, database and clipboard work runs on a blocking thread, per the
 // PLAYBOOK's "Own the work in flight".
-async fn off_main_thread<T: Send + 'static>(
-    work: impl FnOnce() -> Result<T, String> + Send + 'static,
-) -> Result<T, String> {
+async fn off_main_thread<T: Send + 'static, E: From<String> + Send + 'static>(
+    work: impl FnOnce() -> Result<T, E> + Send + 'static,
+) -> Result<T, E> {
     tauri::async_runtime::spawn_blocking(work)
         .await
-        .map_err(|error| error.to_string())?
+        .map_err(|error| E::from(error.to_string()))?
 }
 
 #[tauri::command]
-async fn load_app_data(app: AppHandle) -> Result<LoadedAppData, String> {
+async fn load_app_data(app: AppHandle) -> Result<LoadedAppData, LoadFailure> {
     off_main_thread(move || {
         archive::wait_for_launch(&app.state::<archive::ArchiveSession>().launch);
         let language = app.state::<LanguageState>();
@@ -167,20 +167,22 @@ fn apply_language(
 }
 
 // Sets equal to the file write nothing and log nothing, so every autosave can
-// send them; only an actual write crosses the logged boundary.
+// send them; only an actual write crosses the logged boundary. Returns where an
+// unreadable config.json found on the way was set aside.
 #[tauri::command]
-async fn save_config(app: AppHandle, config: JsonValue) -> Result<(), String> {
+async fn save_config(app: AppHandle, config: JsonValue) -> Result<Option<String>, String> {
     off_main_thread(move || {
         let data_dir = paths::app_data_dir(&app)?;
-        match storage::config_to_write(&data_dir, config)? {
-            Some(config) => logging::boundary(
+        let write = storage::config_to_write(&data_dir, config)?;
+        if let Some(config) = write.content {
+            logging::boundary(
                 "save_config",
                 json!({}),
                 || storage::write_config(&data_dir, &config),
                 |_| json!({}),
-            ),
-            None => Ok(()),
+            )?;
         }
+        Ok(write.quarantined_to)
     })
     .await
 }

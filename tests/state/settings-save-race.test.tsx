@@ -25,6 +25,8 @@ vi.mock("@tauri-apps/api/core", () => ({
           panesError: null,
           panesNewer: null,
           snapshotsNewer: null,
+          panesPath: "/private/tmp/quickdeck-test/panes.json",
+          snapshotsPath: "/private/tmp/quickdeck-test/snapshots.sqlite3",
           dataDir: "/private/tmp/quickdeck-test",
           debugEnabled: false,
           systemLanguage: "en",
@@ -33,15 +35,15 @@ vi.mock("@tauri-apps/api/core", () => ({
       case "save_config":
         core.configWrites += 1;
         if (core.configWrites === 1) {
-          return new Promise<void>((resolve) => {
+          return new Promise<null>((resolve) => {
             core.releaseFirstWrite = () => {
               core.file = args.config;
-              resolve();
+              resolve(null);
             };
           });
         }
         core.file = args.config;
-        return undefined;
+        return null;
       case "count_snapshots":
         return 0;
       default:

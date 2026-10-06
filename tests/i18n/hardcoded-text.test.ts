@@ -28,7 +28,7 @@ const LITERAL_TEXT = new Set([
   // A CSS generic family name, shown as an example value.
   "monospace",
   // Paths and variable names in the data-folder hint.
-  "~/.quickdeck",
+  ".quickdeck",
   "QUICKDECK_DATA_DIR",
   // The author's name in the copyright line.
   "© 2026 Yoshinao Inoguchi ·",

@@ -76,6 +76,10 @@ pub struct LoadedAppData {
     // each halts the app with the file left exactly in place, and offers no reset.
     pub panes_newer: Option<u32>,
     pub snapshots_newer: Option<u32>,
+    // Where panes.json and snapshots.sqlite3 live, so a halt on either names
+    // the file (store-recovery conventions).
+    pub panes_path: String,
+    pub snapshots_path: String,
     pub data_dir: String,
     // Whether developer-only debug logging is on. Set by the command layer
     // (see lib.rs) from logging::debug_enabled(); storage leaves it false.
@@ -123,7 +127,44 @@ pub struct SnapshotListResult {
     pub has_more: bool,
 }
 
-pub fn load_app_data(app: &AppHandle) -> Result<LoadedAppData, String> {
+// A load that stopped, with the store it stopped at when it was one, so the
+// halt can name the file (store-recovery conventions). The message is
+// diagnostic only.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LoadFailure {
+    pub path: Option<String>,
+    pub message: String,
+}
+
+impl LoadFailure {
+    fn at(path: &Path) -> impl FnOnce(String) -> Self + '_ {
+        move |message| Self {
+            path: Some(path.to_string_lossy().into_owned()),
+            message,
+        }
+    }
+}
+
+impl From<String> for LoadFailure {
+    fn from(message: String) -> Self {
+        Self {
+            path: None,
+            message,
+        }
+    }
+}
+
+impl std::fmt::Display for LoadFailure {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match &self.path {
+            Some(path) => write!(formatter, "{path}: {}", self.message),
+            None => formatter.write_str(&self.message),
+        }
+    }
+}
+
+pub fn load_app_data(app: &AppHandle) -> Result<LoadedAppData, LoadFailure> {
     let data_dir = app_data_dir(app)?;
     // Per-store failure isolation (persisted-store-separation, Independent
     // recovery): each store takes its own branch, so a corrupt settings file
@@ -132,12 +173,14 @@ pub fn load_app_data(app: &AppHandle) -> Result<LoadedAppData, String> {
     // work product and halts — its error rides in the result so the other
     // stores still load and the halt surface can offer a reset.
     let config_path = data_dir.join(CONFIG_FILE_NAME);
-    let config = read_rebuildable_store(&config_path, format_version::CONFIG)?;
+    let config = read_rebuildable_store(&config_path, format_version::CONFIG)
+        .map_err(LoadFailure::at(&config_path))?;
     // state.json contains only the active pane and zoom. Preserve and log corrupt
     // bytes, or a newer format, but do not surface a dialog for disposable view
     // state.
     let state_path = data_dir.join(STATE_FILE_NAME);
-    let state = read_rebuildable_store(&state_path, format_version::STATE)?;
+    let state = read_rebuildable_store(&state_path, format_version::STATE)
+        .map_err(LoadFailure::at(&state_path))?;
     let panes_path = data_dir.join(PANES_FILE_NAME);
     let (panes, panes_error, panes_newer) =
         match read_json_store(&panes_path, format_version::PANES) {
@@ -146,15 +189,17 @@ pub fn load_app_data(app: &AppHandle) -> Result<LoadedAppData, String> {
             Ok(JsonRead::Newer(recorded)) => (None, None, Some(recorded)),
             Ok(JsonRead::Corrupt(message)) | Err(message) => (None, Some(message), None),
         };
-    let snapshots_newer = match open_snapshot_store(&data_dir)? {
-        SnapshotStore::Ready(_) => None,
-        SnapshotStore::Newer(recorded) => Some(recorded),
-    };
+    let snapshots_path = data_dir.join(SNAPSHOTS_DB_FILE_NAME);
+    let snapshots_newer =
+        match open_snapshot_store(&data_dir).map_err(LoadFailure::at(&snapshots_path))? {
+            SnapshotStore::Ready(_) => None,
+            SnapshotStore::Newer(recorded) => Some(recorded),
+        };
     for (path, newer) in [
         (&config_path, config.newer),
         (&state_path, state.newer),
         (&panes_path, panes_newer),
-        (&data_dir.join(SNAPSHOTS_DB_FILE_NAME), snapshots_newer),
+        (&snapshots_path, snapshots_newer),
     ] {
         if let Some(recorded) = newer {
             report_newer(path, recorded);
@@ -170,6 +215,8 @@ pub fn load_app_data(app: &AppHandle) -> Result<LoadedAppData, String> {
         panes_error,
         panes_newer,
         snapshots_newer,
+        panes_path: panes_path.to_string_lossy().into_owned(),
+        snapshots_path: snapshots_path.to_string_lossy().into_owned(),
         data_dir: data_dir.to_string_lossy().into_owned(),
         debug_enabled: false,
         system_language: String::new(),
@@ -177,11 +224,19 @@ pub fn load_app_data(app: &AppHandle) -> Result<LoadedAppData, String> {
     })
 }
 
+// What a config save writes, and where an unreadable config.json found on the
+// way was set aside, so the frontend can report it (store-recovery conventions).
+#[derive(Debug, PartialEq)]
+pub struct ConfigToWrite {
+    pub content: Option<JsonValue>,
+    pub quarantined_to: Option<String>,
+}
+
 // The file content for the given sets — every set that differs from its
 // built-in, which the frontend decides — keeping only known keys, or None when
 // that equals the file, so an absent file stays absent and a file whose sets are
 // all back at their built-ins keeps only its format marker.
-pub fn config_to_write(data_dir: &Path, sets: JsonValue) -> Result<Option<JsonValue>, String> {
+pub fn config_to_write(data_dir: &Path, sets: JsonValue) -> Result<ConfigToWrite, String> {
     const KEYS: &[&str] = &[
         "language",
         "theme",
@@ -192,15 +247,16 @@ pub fn config_to_write(data_dir: &Path, sets: JsonValue) -> Result<Option<JsonVa
         "snapshotSearchPageSize",
         "editorFont",
     ];
-    let current = read_rebuildable_store(&data_dir.join(CONFIG_FILE_NAME), format_version::CONFIG)?
-        .value
-        .unwrap_or_default();
+    let current = read_rebuildable_store(&data_dir.join(CONFIG_FILE_NAME), format_version::CONFIG)?;
     let mut stored = sets
         .as_object()
         .ok_or("config sets are not an object")?
         .clone();
     stored.retain(|key, _| KEYS.contains(&key.as_str()));
-    Ok((current != stored).then_some(JsonValue::Object(stored)))
+    Ok(ConfigToWrite {
+        content: (current.value.unwrap_or_default() != stored).then_some(JsonValue::Object(stored)),
+        quarantined_to: current.quarantined_to,
+    })
 }
 
 pub fn write_config(data_dir: &Path, config: &JsonValue) -> Result<(), String> {
