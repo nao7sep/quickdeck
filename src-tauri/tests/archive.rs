@@ -332,7 +332,7 @@ fn archives_live_directly_in_backups_and_an_older_archives_folder_is_left_alone(
 }
 
 #[test]
-fn a_manifest_from_a_newer_build_is_not_compared_and_its_archive_is_left_alone() {
+fn a_manifest_from_a_newer_build_is_not_compared_and_its_archives_are_left_alone() {
     let root = tempfile::tempdir().unwrap();
     database(root.path());
     assert!(archive_stores(root.path()).unwrap());
@@ -362,12 +362,16 @@ fn a_manifest_from_a_newer_build_is_not_compared_and_its_archive_is_left_alone()
         zip.finish().unwrap();
     }
     fs::remove_file(&first).unwrap();
+    // A second one in the same thinning period, which would drop the first.
+    let newer_later = root.path().join("backups/20200101-120000-utc.zip");
+    fs::copy(&newer, &newer_later).unwrap();
     let kept = fs::read(&newer).unwrap();
 
     assert!(
         archive_stores(root.path()).unwrap(),
         "a manifest this build cannot read is no match"
     );
-    assert_eq!(zips(root.path()).len(), 2);
+    assert_eq!(zips(root.path()).len(), 3);
     assert_eq!(fs::read(&newer).unwrap(), kept);
+    assert_eq!(fs::read(&newer_later).unwrap(), kept);
 }

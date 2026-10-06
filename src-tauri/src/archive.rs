@@ -230,9 +230,8 @@ fn archives(directory: &Path) -> Result<Vec<PathBuf>, String> {
     Ok(paths)
 }
 
-// A manifest in a newer format is one this build cannot compare with, so the
-// run writes a new archive beside the one that holds it.
-fn read_manifest(path: &Path) -> Result<Manifest, String> {
+// An archive's manifest, its format marker checked.
+fn manifest_format(path: &Path) -> Result<JsonFormat, String> {
     let mut archive = ZipArchive::new(File::open(path).map_err(error)?).map_err(error)?;
     let mut bytes = Vec::new();
     archive
@@ -241,7 +240,13 @@ fn read_manifest(path: &Path) -> Result<Manifest, String> {
         .read_to_end(&mut bytes)
         .map_err(error)?;
     let value = serde_json::from_slice(&bytes).map_err(error)?;
-    match format_version::read_json(value, format_version::ARCHIVE_MANIFEST)? {
+    format_version::read_json(value, format_version::ARCHIVE_MANIFEST)
+}
+
+// A manifest in a newer format is one this build cannot compare with, so the
+// run writes a new archive beside the one that holds it.
+fn read_manifest(path: &Path) -> Result<Manifest, String> {
+    match manifest_format(path)? {
         JsonFormat::Readable(fields) => {
             serde_json::from_value(serde_json::Value::Object(fields)).map_err(error)
         }
@@ -361,6 +366,11 @@ pub fn archive_stores(root: &Path) -> Result<bool, String> {
     match archives(&directory) {
         Ok(paths) => {
             for path in thinned(&paths, Utc::now()) {
+                // An archive a newer build wrote is left exactly in place
+                // (store-recovery conventions).
+                if matches!(manifest_format(&path), Ok(JsonFormat::Newer(_))) {
+                    continue;
+                }
                 if let Err(reason) = fs::remove_file(&path) {
                     crate::logging::warn(
                         "archive thinning failed",
