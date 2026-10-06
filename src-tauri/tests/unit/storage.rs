@@ -665,6 +665,82 @@ fn a_write_that_changes_nothing_leaves_the_file_and_the_backups_alone() {
     crate::backup_store::close_backup_store();
 }
 
+#[cfg(target_os = "macos")]
+#[test]
+fn a_changed_save_keeps_the_mode_and_extended_attributes_with_a_fresh_modified_time() {
+    use std::ffi::{c_char, c_int, c_void, CString};
+    use std::os::unix::{ffi::OsStrExt, fs::PermissionsExt};
+
+    extern "C" {
+        fn setxattr(
+            path: *const c_char,
+            name: *const c_char,
+            value: *const c_void,
+            size: usize,
+            position: u32,
+            options: c_int,
+        ) -> c_int;
+        fn getxattr(
+            path: *const c_char,
+            name: *const c_char,
+            value: *mut c_void,
+            size: usize,
+            position: u32,
+            options: c_int,
+        ) -> isize;
+    }
+
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join(STATE_FILE_NAME);
+    let c_path = CString::new(path.as_os_str().as_bytes()).unwrap();
+    let name = CString::new("com.quickdeck.test").unwrap();
+    atomic_write_json_unrecorded(
+        &path,
+        &serde_json::json!({ "zoomLevel": 1.0 }),
+        format_version::STATE,
+    )
+    .unwrap();
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o640)).unwrap();
+    let value = b"kept";
+    // SAFETY: every pointer is valid for the length passed.
+    let set = unsafe {
+        setxattr(
+            c_path.as_ptr(),
+            name.as_ptr(),
+            value.as_ptr().cast(),
+            value.len(),
+            0,
+            0,
+        )
+    };
+    assert_eq!(set, 0);
+    let old = backdate(&path);
+
+    atomic_write_json_unrecorded(
+        &path,
+        &serde_json::json!({ "zoomLevel": 1.2 }),
+        format_version::STATE,
+    )
+    .unwrap();
+
+    let metadata = fs::metadata(&path).unwrap();
+    assert_eq!(metadata.permissions().mode() & 0o777, 0o640);
+    assert_ne!(metadata.modified().unwrap(), old);
+    let mut read = [0u8; 16];
+    // SAFETY: the buffer is valid for the length passed.
+    let len = unsafe {
+        getxattr(
+            c_path.as_ptr(),
+            name.as_ptr(),
+            read.as_mut_ptr().cast(),
+            read.len(),
+            0,
+            0,
+        )
+    };
+    assert_eq!(&read[..usize::try_from(len).unwrap()], value);
+}
+
 #[test]
 fn a_state_save_that_changes_nothing_leaves_the_file_alone() {
     let dir = tempfile::tempdir().unwrap();

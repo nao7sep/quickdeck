@@ -805,6 +805,8 @@ fn write_json_atomically(
     let write_tmp = (|| -> std::io::Result<()> {
         let mut file = File::create(&tmp_path)?;
         file.write_all(&bytes)?;
+        #[cfg(target_os = "macos")]
+        carry_replaced_metadata(path, &file, &tmp_path)?;
         file.sync_all()?;
         Ok(())
     })();
@@ -822,6 +824,47 @@ fn write_json_atomically(
     }
 
     Ok(Some(bytes))
+}
+
+// A replace keeps the original's permissions, ACL and extended attributes, Finder
+// tags among them (content-lifecycle conventions: a replace keeps what it can).
+// The flags never include COPYFILE_STAT or COPYFILE_SECURITY, which would also
+// carry the original's modified time; a volume that holds no ACL or extended
+// attributes keeps the rest. Windows replaces without carrying metadata.
+#[cfg(target_os = "macos")]
+fn carry_replaced_metadata(original: &Path, tmp: &File, tmp_path: &Path) -> std::io::Result<()> {
+    use std::ffi::{c_int, c_void};
+    use std::os::fd::AsRawFd;
+
+    extern "C" {
+        fn fcopyfile(from: c_int, to: c_int, state: *mut c_void, flags: u32) -> c_int;
+    }
+    const COPYFILE_ACL: u32 = 1 << 0;
+    const COPYFILE_XATTR: u32 = 1 << 2;
+    const ENOTSUP: i32 = 45;
+
+    let source = match File::open(original) {
+        Ok(source) => source,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(error),
+    };
+    // SAFETY: both descriptors stay open for the call, and fcopyfile accepts a
+    // null state.
+    let copied = unsafe {
+        fcopyfile(
+            source.as_raw_fd(),
+            tmp.as_raw_fd(),
+            std::ptr::null_mut(),
+            COPYFILE_ACL | COPYFILE_XATTR,
+        )
+    };
+    if copied != 0 {
+        let error = std::io::Error::last_os_error();
+        if error.raw_os_error() != Some(ENOTSUP) {
+            return Err(error);
+        }
+    }
+    fs::set_permissions(tmp_path, source.metadata()?.permissions())
 }
 
 // The snapshot store, opened for use, or the newer format it records, in which
