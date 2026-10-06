@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 // The window's close, which the menu's Quit, Cmd+Q, the Dock's Quit and closing
-// the last window all reach (unsaved-edits conventions, Quitting).
+// the last window all reach, and the save an OS logout, restart or shutdown asks
+// for (unsaved-edits conventions, Quitting).
 import React, { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -10,6 +11,8 @@ type CloseHandler = (event: { preventDefault: () => void }) => Promise<void>;
 const mocks = vi.hoisted(() => ({
   appState: {} as Record<string, unknown>,
   closeHandler: null as CloseHandler | null,
+  sessionEnding: null as (() => void) | null,
+  invoke: vi.fn((_command: string) => Promise.resolve()),
   destroy: vi.fn(() => Promise.resolve()),
   logError: vi.fn(),
   logWarn: vi.fn(),
@@ -18,7 +21,13 @@ const mocks = vi.hoisted(() => ({
 vi.mock("../src/state/AppStateContext", () => ({
   useAppState: () => mocks.appState,
 }));
-vi.mock("@tauri-apps/api/core", () => ({ isTauri: () => true }));
+vi.mock("@tauri-apps/api/core", () => ({ isTauri: () => true, invoke: mocks.invoke }));
+vi.mock("@tauri-apps/api/event", () => ({
+  listen: (event: string, handler: () => void) => {
+    if (event === "session-ending") mocks.sessionEnding = handler;
+    return Promise.resolve(() => undefined);
+  },
+}));
 vi.mock("@tauri-apps/api/window", () => ({
   currentMonitor: () => Promise.resolve(null),
   getCurrentWindow: () => ({
@@ -74,6 +83,9 @@ afterEach(async () => {
   document.body.innerHTML = "";
   vi.useRealTimers();
   mocks.closeHandler = null;
+  mocks.sessionEnding = null;
+  mocks.invoke.mockReset();
+  mocks.invoke.mockResolvedValue();
   mocks.destroy.mockReset();
   mocks.destroy.mockResolvedValue();
   mocks.logError.mockReset();
@@ -327,5 +339,67 @@ describe("closing the window", () => {
     expect(second.preventDefault).toHaveBeenCalledOnce();
     expect(state.saveNow).toHaveBeenCalledOnce();
     expect(document.querySelectorAll('[role="dialog"]')).toHaveLength(1);
+  });
+});
+
+describe("an OS logout, restart or shutdown", () => {
+  async function endSession() {
+    await act(async () => {
+      mocks.sessionEnding!();
+      await vi.advanceTimersByTimeAsync(0);
+    });
+  }
+
+  it("snapshots and saves, then reports, without closing the window itself", async () => {
+    const state = createAppState();
+    await renderApp(state);
+
+    await endSession();
+
+    expect(state.snapshotAllPanes).toHaveBeenCalledWith("app_close");
+    expect(state.saveNow).toHaveBeenCalledOnce();
+    expect(mocks.invoke).toHaveBeenCalledExactlyOnceWith("session_end_saved");
+    expect(mocks.destroy).not.toHaveBeenCalled();
+  });
+
+  it("never prompts when the save fails: it logs and reports", async () => {
+    const state = createAppState({ saveNow: vi.fn(() => Promise.reject(new Error("read-only"))) });
+    await renderApp(state);
+
+    await endSession();
+
+    expect(dialog()).toBeNull();
+    expect(mocks.logError).toHaveBeenCalledWith("save on close failed", expect.anything());
+    expect(mocks.invoke).toHaveBeenCalledExactlyOnceWith("session_end_saved");
+  });
+
+  it("reports once a stalled snapshot and save pass their bounds", async () => {
+    const stalled = vi.fn(() => new Promise<void>(() => undefined));
+    const state = createAppState({ snapshotAllPanes: stalled, saveNow: stalled });
+    await renderApp(state);
+
+    await endSession();
+    await advance(QUIT_SNAPSHOT_BOUND_MS + QUIT_SAVE_BOUND_MS - 1);
+    expect(mocks.invoke).not.toHaveBeenCalled();
+    await advance(1);
+
+    expect(dialog()).toBeNull();
+    expect(mocks.invoke).toHaveBeenCalledExactlyOnceWith("session_end_saved");
+  });
+
+  it("saves without prompting even while a cancelled quit is still asking", async () => {
+    const saveNow = vi.fn()
+      .mockRejectedValueOnce(new Error("read-only"))
+      .mockResolvedValueOnce(undefined);
+    const state = createAppState({ saveNow });
+    await renderApp(state);
+
+    await requestClose();
+    expect(dialog()).not.toBeNull();
+    await endSession();
+
+    expect(saveNow).toHaveBeenCalledTimes(2);
+    expect(document.querySelectorAll('[role="dialog"]')).toHaveLength(1);
+    expect(mocks.invoke).toHaveBeenCalledExactlyOnceWith("session_end_saved");
   });
 });

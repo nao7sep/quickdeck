@@ -22,6 +22,7 @@ vi.mock("../src/state/AppStateContext", () => ({
   useAppState: () => mocks.appState,
 }));
 vi.mock("@tauri-apps/api/core", () => ({ isTauri: () => true }));
+vi.mock("@tauri-apps/api/event", () => ({ listen: () => Promise.resolve(() => undefined) }));
 vi.mock("@tauri-apps/api/window", () => ({
   currentMonitor: mocks.currentMonitor,
   getCurrentWindow: () => ({

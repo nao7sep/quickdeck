@@ -227,7 +227,8 @@ fn the_writer_thread_writes_lines_in_order_before_answering_a_flush() {
     }
     let (done, written) = mpsc::sync_channel(1);
     writer.send(Message::Flush(done)).unwrap();
-    written.recv_timeout(FLUSH_WAIT).unwrap();
+    // A test machine under load may need longer than the shipped bound.
+    written.recv_timeout(Duration::from_secs(10)).unwrap();
 
     let conn = rusqlite::Connection::open(&file).unwrap();
     let messages: Vec<String> = conn

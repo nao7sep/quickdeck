@@ -32,7 +32,7 @@ import { matchesShortcut } from "./shortcuts";
 import { applyWindowTheme } from "./services/windowTheme";
 import { applyLanguage } from "./services/persistence";
 import { openRecordsWindow } from "./services/records";
-import { saveForQuit } from "./services/quit";
+import { onSessionEnding, reportSessionEndSaved, saveForQuit } from "./services/quit";
 import { useI18n } from "./i18n/I18nContext";
 import type { MessageKey } from "./i18n/catalogues";
 import { message } from "./i18n/translate";
@@ -519,6 +519,7 @@ export function App() {
   useEffect(() => {
     const appWindow = isTauri() ? getCurrentWindow() : null;
     let closeUnlisten: (() => void) | undefined;
+    let sessionEndUnlisten: (() => void) | undefined;
     let closeInFlight = false;
 
     const quitSteps = {
@@ -592,11 +593,27 @@ export function App() {
           message("toast.closeUnprotected"),
         );
       });
+
+      // An OS logout, restart or shutdown never prompts: the same save runs,
+      // its failures are logged, and the Rust core exits once it hears back or
+      // its own bound passes (unsaved-edits conventions, Quitting).
+      void onSessionEnding(() => {
+        void saveForQuit(quitSteps)
+          .then(() => reportSessionEndSaved())
+          .catch((error) => logWarn("session end report failed", { error: serializeError(error) }));
+      }).then((unlisten) => {
+        sessionEndUnlisten = unlisten;
+      }).catch((error) => {
+        logWarn("register session end handler failed", { error: serializeError(error) });
+      });
     }
 
     return () => {
       window.removeEventListener("beforeunload", handleBeforeUnload);
-      if (!appDestroyingRef.current) closeUnlisten?.();
+      if (!appDestroyingRef.current) {
+        closeUnlisten?.();
+        sessionEndUnlisten?.();
+      }
       // A pending question settles through its safe path (modal-dialog
       // conventions, Dialog Promises and Queues).
       const resolve = quitChoiceRef.current;

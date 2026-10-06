@@ -28,8 +28,9 @@ use crate::{
 // The free fields that name a domain object, and the column each one fills.
 const DOMAIN_IDS: [&str; 2] = ["paneId", "snapshotId"];
 
-// How long `flush` waits for the writer before going on without it.
-const FLUSH_WAIT: Duration = Duration::from_secs(2);
+// How long `flush` waits for the writer before going on without it; part of
+// the quit's budget (src/quit.rs).
+pub(crate) const FLUSH_WAIT: Duration = Duration::from_millis(500);
 
 // The four levels, and only four.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -218,8 +219,8 @@ pub fn flush() {
     if written.recv_timeout(FLUSH_WAIT).is_err() {
         let _ = writeln!(
             std::io::stderr(),
-            "[quickdeck] log flush gave up after {} s",
-            FLUSH_WAIT.as_secs()
+            "[quickdeck] log flush gave up after {} ms",
+            FLUSH_WAIT.as_millis()
         );
     }
 }

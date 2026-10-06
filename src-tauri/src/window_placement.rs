@@ -14,8 +14,9 @@ use tauri::{AppHandle, PhysicalPosition, PhysicalSize, Window, WindowEvent, Wry}
 
 use crate::{logging, storage};
 
-// How long exit waits for window.json before going on without it.
-const SAVE_WAIT: Duration = Duration::from_secs(2);
+// How long exit waits for window.json before going on without it; part of the
+// quit's budget (src/quit.rs).
+pub(crate) const SAVE_WAIT: Duration = Duration::from_millis(500);
 
 /// The durable windows, by label: each keeps its own placement in window.json,
 /// which holds one record per label (window conventions, Placement).
@@ -273,7 +274,7 @@ pub fn save(root: &Path, state: &PlacementState) {
     if let Err(RecvTimeoutError::Timeout) = finished.recv_timeout(SAVE_WAIT) {
         logging::warn(
             "window placement save wait expired",
-            serde_json::json!({ "seconds": SAVE_WAIT.as_secs() }),
+            serde_json::json!({ "ms": SAVE_WAIT.as_millis() }),
         );
     }
 }

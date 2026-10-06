@@ -7,6 +7,7 @@ mod logging;
 mod menu;
 mod nanoid;
 mod paths;
+mod quit;
 pub mod records;
 mod records_window;
 pub mod storage;
@@ -484,6 +485,7 @@ pub fn run() {
     let app = tauri::Builder::default()
         .manage(language)
         .manage(managed_placement_state)
+        .manage(quit::SessionEnd::default())
         .plugin(instance_owner::init())
         .plugin(tauri_plugin_opener::init())
         .on_window_event(move |window, event| {
@@ -508,16 +510,7 @@ pub fn run() {
         })
         .on_menu_event(|app, event| {
             if event.id() == SAFE_QUIT_MENU_ID {
-                if let Some(window) = app.get_webview_window("main") {
-                    if let Err(error) = window.close() {
-                        logging::warn(
-                            "route quit through main window failed",
-                            json!({ "error": error.to_string() }),
-                        );
-                    }
-                } else {
-                    app.exit(0);
-                }
+                quit::request_quit(app);
             }
         })
         .setup(move |app| {
@@ -549,6 +542,7 @@ pub fn run() {
             if let Some(window) = main_window {
                 window.show()?;
             }
+            quit::install(app.handle());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -573,6 +567,7 @@ pub fn run() {
             delete_all_snapshots,
             copy_text,
             log_event,
+            quit::session_end_saved,
         ])
         .build(tauri::generate_context!())
         .expect("error while running QuickDeck");
@@ -583,7 +578,9 @@ pub fn run() {
     // exactly once (whichever exit event fires first).
     let mut shutdown_logged = false;
     app.run(move |app, event| {
-        if matches!(event, RunEvent::ExitRequested { .. }) {
+        // A quit the OS delivers straight to exit (the Dock's Quit, a logout)
+        // never closes the windows, so their placement is captured here too.
+        if matches!(event, RunEvent::ExitRequested { .. } | RunEvent::Exit) {
             for label in window_placement::DURABLE_WINDOWS {
                 if let Some(window) = app.get_webview_window(label) {
                     window_placement::capture(&window.as_ref().window(), &placement_state);

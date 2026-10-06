@@ -1,5 +1,5 @@
 //! Best-effort whole-store archive. Native work runs on a worker that launch
-//! and exit wait on for at most `WAIT`; only completed zip files participate in
+//! waits on for at most `WAIT` and exit for at most `EXIT_WAIT`; only completed zip files participate in
 //! dedup and thinning.
 use chrono::{DateTime, Datelike, NaiveDateTime, SecondsFormat, TimeDelta, Utc};
 use rusqlite::{
@@ -29,8 +29,12 @@ const ARCHIVE_NAME_FORMAT: &str = "%Y%m%d-%H%M%S-%3f-utc.zip";
 /// The entry that says what the archive holds, beside the stores.
 const MANIFEST_NAME: &str = "manifest.json";
 
-/// How long launch and exit wait for an archive run before going on without it.
+/// How long launch waits for an archive run before going on without it.
 const WAIT: Duration = Duration::from_secs(5);
+
+/// How long exit waits for its archive run; part of the quit's budget
+/// (src/quit.rs).
+pub(crate) const EXIT_WAIT: Duration = Duration::from_secs(2);
 
 /// A temporary file, then the files SQLite keeps beside a temporary store copy
 /// while it is open: the copy inherits the store's WAL mode.
@@ -146,10 +150,10 @@ pub fn finish_session(root: PathBuf, launch: &ArchiveRun) {
             _ => {}
         }
     });
-    if !run.join(WAIT) {
+    if !run.join(EXIT_WAIT) {
         crate::logging::warn(
             "archive exit wait expired",
-            json!({ "seconds": WAIT.as_secs() }),
+            json!({ "seconds": EXIT_WAIT.as_secs() }),
         );
     }
 }

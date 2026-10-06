@@ -1,3 +1,5 @@
+import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { logError, logWarn, serializeError } from "./logger";
 
 // The quit's save, shared by every quit path (unsaved-edits conventions,
@@ -46,4 +48,18 @@ export async function saveForQuit(steps: QuitSaveSteps): Promise<boolean> {
     logError("save on close wait expired", { ms: QUIT_SAVE_BOUND_MS });
   }
   return save.kind === "done";
+}
+
+// The event the Rust core sends when an OS logout, restart or shutdown asks
+// the app to quit (src-tauri/src/quit.rs).
+const SESSION_ENDING_EVENT = "session-ending";
+
+export function onSessionEnding(listener: () => void): Promise<() => void> {
+  return listen(SESSION_ENDING_EVENT, () => listener());
+}
+
+// Tells the Rust core the session-end save has finished, whatever its outcome,
+// so the app exits without waiting out its bound.
+export function reportSessionEndSaved(): Promise<void> {
+  return invoke("session_end_saved");
 }

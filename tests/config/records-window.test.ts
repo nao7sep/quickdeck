@@ -47,7 +47,7 @@ describe("Records window lifecycle", () => {
   it("gives the window its own placement record beside the main window's", () => {
     expect(placement).toContain('pub const DURABLE_WINDOWS: [&str; 2] = ["main", "records"];');
     expect(placement).toContain("DURABLE_WINDOWS.contains(&window.label())");
-    const exit = between(core, "RunEvent::ExitRequested { .. }) {", "#[cfg(");
+    const exit = between(core, "RunEvent::ExitRequested { .. } | RunEvent::Exit) {", "#[cfg(");
     expect(exit).toContain("for label in window_placement::DURABLE_WINDOWS");
   });
 
