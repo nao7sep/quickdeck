@@ -9,22 +9,29 @@ Set-Location $Repo
 
 $AppName = "QuickDeck"
 $Version = (node -p "require('./src-tauri/tauri.conf.json').version")
+if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($Version)) { throw "Could not read the application version" }
 $TauriCli = Join-Path $Repo "node_modules/.bin/tauri.cmd"
+$NsisDirectory = Join-Path $Repo "src-tauri/target/release/bundle/nsis"
+$PortableExecutable = Join-Path $Repo "src-tauri/target/release/quickdeck.exe"
 
 if (-not (Test-Path -PathType Leaf $TauriCli)) {
     throw "Missing local Tauri CLI. Run npm install before packaging."
 }
 
-Remove-Item -Recurse -Force artifacts -ErrorAction SilentlyContinue
+# Collect only outputs made by this invocation, keeping Cargo's build cache.
+foreach ($output in @("artifacts", $NsisDirectory, $PortableExecutable)) {
+    if (Test-Path $output) { Remove-Item -Recurse -Force $output }
+}
 New-Item -ItemType Directory -Force -Path artifacts | Out-Null
 
 # Builds the frontend, the Rust release binary, and the NSIS setup.exe.
 & $TauriCli build --bundles nsis
 if ($LASTEXITCODE -ne 0) { throw "Tauri build failed with exit code $LASTEXITCODE" }
 
-$setup = Get-ChildItem src-tauri/target/release/bundle/nsis/*-setup.exe | Select-Object -First 1
-if (-not $setup) { throw "tauri build did not produce an NSIS setup.exe" }
-Copy-Item $setup.FullName "artifacts/$AppName-$Version-setup.exe"
+$setups = @(Get-ChildItem -Path $NsisDirectory -Filter "*-setup.exe" -File -ErrorAction SilentlyContinue)
+if ($setups.Count -ne 1) { throw "Expected exactly one NSIS setup.exe from this build" }
+if (-not (Test-Path -PathType Leaf $PortableExecutable)) { throw "This build did not produce the portable executable" }
+Copy-Item $setups[0].FullName "artifacts/$AppName-$Version-setup.exe"
 
 # Portable: the release exe plus the application licence and third-party notices. Tauri embeds the
 # frontend into the binary; WebView2 is a system runtime present on Windows

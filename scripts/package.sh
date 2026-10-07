@@ -17,6 +17,7 @@ APP_NAME="QuickDeck"
 VERSION="$(node -p "require('./src-tauri/tauri.conf.json').version")"
 TAURI_CLI="node_modules/.bin/tauri"
 DMG_DIR="src-tauri/target/release/bundle/dmg"
+APP_DIR="src-tauri/target/release/bundle/macos"
 
 cleanup_dmg_scratch() {
   if [[ -d "$DMG_DIR" ]]; then
@@ -34,16 +35,24 @@ if [[ ! -x "$TAURI_CLI" ]]; then
   exit 1
 fi
 
-rm -rf artifacts
+# Collect only outputs made by this invocation, keeping Cargo’s build cache.
+rm -rf artifacts "$DMG_DIR" "$APP_DIR"
 mkdir -p artifacts
 
 # Builds the frontend (beforeBuildCommand), the Rust release binary, the .app, and
 # the .dmg. --bundles overrides tauri.conf.json's targets so macOS emits app + dmg.
 "$TAURI_CLI" build --bundles app,dmg
 
-DMG="$(ls "$DMG_DIR"/*.dmg | head -1)"
-APP="$(ls -d src-tauri/target/release/bundle/macos/*.app | head -1)"
-[ -f "$DMG" ] && [ -d "$APP" ] || { echo "tauri build did not produce the expected .dmg/.app" >&2; exit 1; }
+shopt -s nullglob
+DMGS=("$DMG_DIR"/*.dmg)
+APPS=("$APP_DIR"/*.app)
+if [[ ${#DMGS[@]} -ne 1 || ${#APPS[@]} -ne 1 ]]; then
+  echo "Expected exactly one .dmg and one .app from this build" >&2
+  exit 1
+fi
+DMG="${DMGS[0]}"
+APP="${APPS[0]}"
+[[ -f "$DMG" && -d "$APP" ]] || { echo "tauri build did not produce the expected .dmg/.app" >&2; exit 1; }
 
 cp "$DMG" "artifacts/$APP_NAME-$VERSION.dmg"
 # Portable: a zip of the .app without AppleDouble resource-fork sidecars.
