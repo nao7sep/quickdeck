@@ -266,10 +266,8 @@ fn concurrent_writes_of_the_same_copy_store_it_once_without_failing() {
             })
         })
         .collect();
-    let results: Vec<_> = writers
-        .into_iter()
-        .map(|writer| writer.join().unwrap().unwrap())
-        .collect();
+    let joined: Vec<_> = writers.into_iter().map(|writer| writer.join()).collect();
+    let results: Vec<_> = joined.into_iter().map(|result| result.unwrap().unwrap()).collect();
     assert_eq!(results.iter().filter(|result| result.inserted).count(), 1);
     assert!(results.iter().all(|result| result.id == results[0].id));
 }
@@ -676,6 +674,26 @@ fn a_write_that_changes_nothing_leaves_the_file_and_the_backups_alone() {
     assert_eq!(backup_rows(dir.path(), &path), 2);
 
     crate::backup_store::close_backup_store();
+}
+
+#[test]
+fn private_staging_refuses_an_existing_path_without_changing_its_bytes() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("existing.tmp");
+    fs::write(&path, "another writer").unwrap();
+    assert_eq!(create_private_stage(&path).unwrap_err().kind(), std::io::ErrorKind::AlreadyExists);
+    assert_eq!(fs::read_to_string(&path).unwrap(), "another writer");
+}
+
+#[cfg(unix)]
+#[test]
+fn private_staging_has_restrictive_access_before_any_bytes_are_written() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("new.tmp");
+    let file = create_private_stage(&path).unwrap();
+    assert_eq!(file.metadata().unwrap().len(), 0);
+    assert_eq!(file.metadata().unwrap().permissions().mode() & 0o777, 0o600);
 }
 
 #[cfg(target_os = "macos")]

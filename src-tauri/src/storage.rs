@@ -926,14 +926,15 @@ fn write_json_atomically(
     // path. Nothing else ever removes a temp: a startup sweep could delete a
     // concurrent instance's in-flight one, so a crash-stranded temp is left as
     // harmless debris (storage-path-conventions).
+    let mut file = create_private_stage(&tmp_path).map_err(to_string_error)?;
     let write_tmp = (|| -> std::io::Result<()> {
-        let mut file = File::create(&tmp_path)?;
         file.write_all(&bytes)?;
         #[cfg(target_os = "macos")]
         carry_replaced_permissions(path, &file)?;
         file.sync_all()?;
         Ok(())
     })();
+    drop(file);
     if let Err(error) = write_tmp {
         let _ = fs::remove_file(&tmp_path);
         return Err(to_string_error(error));
@@ -948,6 +949,16 @@ fn write_json_atomically(
     }
 
     Ok(JsonWrite::Written(bytes))
+}
+
+fn create_private_stage(path: &Path) -> std::io::Result<File> {
+    let mut options = fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)] {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    options.open(path)
 }
 
 // Preserve ordinary permission bits when replacing an existing file. The
