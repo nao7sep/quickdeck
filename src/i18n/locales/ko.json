@@ -101,6 +101,8 @@
   "snapshots.search": "검색",
   "snapshots.placeholder": "스냅샷 검색",
   "snapshots.failed": "스냅샷을 검색할 수 없습니다. 다시 시도하십시오.",
+  "snapshots.copyFailed": "스냅샷을 복사할 수 없습니다. 다시 시도하십시오.",
+  "snapshots.deleteFailed": "스냅샷을 삭제할 수 없습니다. 다시 시도하십시오.",
   "snapshots.entryLabel": "{timestamp}의 스냅샷",
 
   "records.title": "로그",

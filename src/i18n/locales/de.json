@@ -101,6 +101,8 @@
   "snapshots.search": "Suchen",
   "snapshots.placeholder": "Snapshots durchsuchen",
   "snapshots.failed": "Die Snapshots konnten nicht durchsucht werden. Bitte erneut versuchen.",
+  "snapshots.copyFailed": "Der Snapshot konnte nicht kopiert werden. Bitte erneut versuchen.",
+  "snapshots.deleteFailed": "Die Snapshots konnten nicht gelöscht werden. Bitte erneut versuchen.",
   "snapshots.entryLabel": "Snapshot vom {timestamp}",
 
   "records.title": "Protokoll",

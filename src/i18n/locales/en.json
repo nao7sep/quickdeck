@@ -101,6 +101,8 @@
   "snapshots.search": "Search",
   "snapshots.placeholder": "Search snapshots",
   "snapshots.failed": "Snapshots could not be searched. Try again.",
+  "snapshots.copyFailed": "The snapshot could not be copied. Try again.",
+  "snapshots.deleteFailed": "Snapshots could not be deleted. Try again.",
   "snapshots.entryLabel": "Snapshot from {timestamp}",
 
   "records.title": "Records",

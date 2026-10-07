@@ -127,6 +127,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   // whose screen offers the explicit set-aside reset.
   const [loadErrorIsCorruptPanes, setLoadErrorIsCorruptPanes] = useState(false);
   const [snapshotCount, setSnapshotCount] = useState(0);
+  const snapshotCountRequestRef = useRef(0);
   const [snapshotJustSavedAt, setSnapshotJustSavedAt] = useState<number | null>(null);
   // The interface shows a language once its catalogue has loaded, so a saved
   // change takes effect when the catalogue is ready.
@@ -468,12 +469,13 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     [markUnsaved, panes],
   );
 
-  // The count is kept by adding to it as copies are written, so after a deletion the store
-  // is asked again rather than guessed at.
+  // Mutations refresh the authoritative count; older reads cannot replace a
+  // later read issued after another committed mutation.
   const refreshSnapshotCount = useCallback(() => {
+    const request = ++snapshotCountRequestRef.current;
     void countSnapshots()
       .then((count) => {
-        if (!canceledRef.current) {
+        if (!canceledRef.current && request === snapshotCountRequestRef.current) {
           setSnapshotCount(count);
         }
       })
@@ -495,7 +497,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       void createSnapshot({ paneId, paneTitle, trigger, content: trimmed })
         .then((result) => {
           if (result.inserted) {
-            setSnapshotCount((current) => current + 1);
+            refreshSnapshotCount();
             setSnapshotJustSavedAt(Date.now());
           }
         })
@@ -505,7 +507,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
           showToast("snapshot", "warning", message("toast.snapshotFailed"));
         });
     },
-    [loadStatus, showToast],
+    [loadStatus, refreshSnapshotCount, showToast],
   );
 
   const snapshotAllPanes = useCallback(
@@ -530,11 +532,11 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       const results = await createSnapshots(snapshots);
       const insertedCount = results.filter((result) => result.inserted).length;
       if (insertedCount > 0) {
-        setSnapshotCount((current) => current + insertedCount);
+        refreshSnapshotCount();
         setSnapshotJustSavedAt(Date.now());
       }
     },
-    [loadStatus],
+    [loadStatus, refreshSnapshotCount],
   );
 
   const updateSettings = useCallback((nextSettings: AppSettings) => {

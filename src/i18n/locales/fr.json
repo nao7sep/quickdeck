@@ -101,6 +101,8 @@
   "snapshots.search": "Rechercher",
   "snapshots.placeholder": "Rechercher dans les instantanés",
   "snapshots.failed": "Impossible de rechercher dans les instantanés. Réessayez.",
+  "snapshots.copyFailed": "Impossible de copier l’instantané. Réessayez.",
+  "snapshots.deleteFailed": "Impossible de supprimer les instantanés. Réessayez.",
   "snapshots.entryLabel": "Instantané du {timestamp}",
 
   "records.title": "Journal",

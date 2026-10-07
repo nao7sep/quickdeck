@@ -101,6 +101,8 @@
   "snapshots.search": "搜索",
   "snapshots.placeholder": "搜索快照",
   "snapshots.failed": "无法搜索快照。请重试。",
+  "snapshots.copyFailed": "无法复制快照。请重试。",
+  "snapshots.deleteFailed": "无法删除快照。请重试。",
   "snapshots.entryLabel": "{timestamp} 的快照",
 
   "records.title": "日志",

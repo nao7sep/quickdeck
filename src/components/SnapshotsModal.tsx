@@ -50,15 +50,28 @@ export function SnapshotsModal({ onClose }: SnapshotsModalProps) {
   const i18n = useI18n();
   const { t } = i18n;
   const [query, setQuery] = useState("");
+  const appliedQueryRef = useRef("");
   const [rows, setRows] = useState<SnapshotRow[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(false);
   const [loaded, setLoaded] = useState(false);
-  const [failed, setFailed] = useState(false);
+  const [listFailed, setListFailed] = useState(false);
+  const [copyFailed, setCopyFailed] = useState(false);
+  const [deleteFailed, setDeleteFailed] = useState(false);
   const [copied, setCopied] = useState(false);
   const composing = useComposing();
   const listInFlightRef = useRef(false);
+  const listSettledRef = useRef<Promise<void>>(Promise.resolve());
+  const listVersionRef = useRef(0);
+  const copyInFlightRef = useRef(false);
+  const deleteInFlightRef = useRef(false);
+  const selectionVersionRef = useRef(0);
+  const selectedIdRef = useRef(selectedId);
+  if (selectedIdRef.current !== selectedId) {
+    selectedIdRef.current = selectedId;
+    selectionVersionRef.current += 1;
+  }
   const listRef = useRef<HTMLDivElement | null>(null);
   const detailRef = useRef<HTMLPreElement | null>(null);
   // `load` is memoized on the page size, so it cannot read `rows` from the
@@ -68,23 +81,28 @@ export function SnapshotsModal({ onClose }: SnapshotsModalProps) {
   rowsRef.current = rows;
 
   const load = useCallback(
-    async (nextOffset: number, searchQuery: string) => {
+    async (nextOffset: number, searchQuery: string, afterMutation = false) => {
       // The Search button is disabled while loading, but Enter can arrive before
       // React commits that state. Claim the request synchronously so two loads
       // cannot race and let an older response replace newer rows.
-      if (listInFlightRef.current) {
+      if (listInFlightRef.current || (deleteInFlightRef.current && !afterMutation)) {
         return;
       }
 
       listInFlightRef.current = true;
+      const version = listVersionRef.current;
+      let settle!: () => void;
+      listSettledRef.current = new Promise<void>((resolve) => { settle = resolve; });
+      if (nextOffset === 0) appliedQueryRef.current = searchQuery.trim();
       setLoading(true);
-      setFailed(false);
       try {
         const result = await listSnapshots(
           searchQuery.trim(),
           settings.snapshotSearchPageSize,
           nextOffset,
         );
+        if (version !== listVersionRef.current) return;
+        setListFailed(false);
         const next =
           nextOffset === 0 ? result.rows : [...rowsRef.current, ...result.rows];
         const nextIds = next.map((row) => row.id);
@@ -99,7 +117,8 @@ export function SnapshotsModal({ onClose }: SnapshotsModalProps) {
         // Report modal-local failures inline; the modal stays usable, so there is
         // no need to spawn an app-level toast over it.
         logWarn("snapshot list failed", { offset: nextOffset, error: serializeError(err) });
-        setFailed(true);
+        if (version !== listVersionRef.current) return;
+        setListFailed(true);
         if (nextOffset === 0) {
           setRows([]);
           setSelectedId(null);
@@ -109,6 +128,7 @@ export function SnapshotsModal({ onClose }: SnapshotsModalProps) {
         listInFlightRef.current = false;
         setLoading(false);
         setLoaded(true);
+        settle();
       }
     },
     [settings.snapshotSearchPageSize],
@@ -125,7 +145,7 @@ export function SnapshotsModal({ onClose }: SnapshotsModalProps) {
     selected === null ? undefined : panes.find((pane) => pane.id === selected.paneId);
 
   // Which deletion is being asked about: one copy, the whole store, or nothing.
-  const [pendingDelete, setPendingDelete] = useState<"one" | "all" | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<{ scope: "one"; id: string } | { scope: "all" } | null>(null);
 
   const copiedTimerRef = useRef<number | null>(null);
 
@@ -147,7 +167,10 @@ export function SnapshotsModal({ onClose }: SnapshotsModalProps) {
     }
   }, [selectedId]);
 
-  useEffect(() => clearCopiedTimer, []);
+  useEffect(() => () => {
+    selectionVersionRef.current += 1;
+    clearCopiedTimer();
+  }, []);
 
   function selectAt(index: number) {
     const row = rows[index];
@@ -165,15 +188,19 @@ export function SnapshotsModal({ onClose }: SnapshotsModalProps) {
   }
 
   async function copySelected() {
-    if (selected === null) {
+    if (selected === null || copyInFlightRef.current) {
       return;
     }
+    copyInFlightRef.current = true;
+    const selectionVersion = selectionVersionRef.current;
     // Drop the previous result first, so pressing Copy again while the label
     // still reads Copied shows the change rather than nothing at all.
     clearCopiedTimer();
     setCopied(false);
     try {
       await copyText(selected.content);
+      setCopyFailed(false);
+      if (selectionVersion !== selectionVersionRef.current) return;
       setCopied(true);
       copiedTimerRef.current = window.setTimeout(() => {
         copiedTimerRef.current = null;
@@ -181,7 +208,9 @@ export function SnapshotsModal({ onClose }: SnapshotsModalProps) {
       }, COPIED_FEEDBACK_MS);
     } catch (err) {
       logWarn("snapshot copy failed", { error: serializeError(err) });
-      setFailed(true);
+      setCopyFailed(true);
+    } finally {
+      copyInFlightRef.current = false;
     }
   }
 
@@ -189,27 +218,30 @@ export function SnapshotsModal({ onClose }: SnapshotsModalProps) {
   // list is read again afterwards rather than patched, so what the window shows is what
   // the store holds.
   async function confirmDelete() {
-    const scope = pendingDelete;
+    const request = pendingDelete;
+    if (request === null || deleteInFlightRef.current) return;
+    deleteInFlightRef.current = true;
     setPendingDelete(null);
-    if (scope === null) {
-      return;
-    }
-
     try {
-      if (scope === "all") {
-        await deleteAllSnapshots();
-      } else if (selected !== null) {
-        await deleteSnapshot(selected.id);
+      try {
+        if (request.scope === "all") await deleteAllSnapshots();
+        else await deleteSnapshot(request.id);
+      } catch (err) {
+        logWarn("snapshot delete failed", { scope: request.scope, error: serializeError(err) });
+        setDeleteFailed(true);
+        return;
       }
-    } catch (err) {
-      logWarn("snapshot delete failed", { scope, error: serializeError(err) });
-      setFailed(true);
-      return;
+      setDeleteFailed(false);
+      setSelectedId(null);
+      // A pre-mutation list cannot repopulate deleted rows. Wait for its actual
+      // settlement before the replacement read, retaining one list request.
+      listVersionRef.current += 1;
+      await listSettledRef.current;
+      await load(0, appliedQueryRef.current, true);
+      refreshSnapshotCount();
+    } finally {
+      deleteInFlightRef.current = false;
     }
-
-    setSelectedId(null);
-    await load(0, query);
-    void refreshSnapshotCount();
   }
 
   // The next page arrives by scrolling rather than by a control, which also
@@ -221,22 +253,22 @@ export function SnapshotsModal({ onClose }: SnapshotsModalProps) {
     }
     const remaining = list.scrollHeight - list.scrollTop - list.clientHeight;
     if (remaining <= LOAD_MORE_THRESHOLD_PX) {
-      void load(rows.length, query);
+      void load(rows.length, appliedQueryRef.current);
     }
   }
 
   function emptyMessage(): string | null {
-    if (failed) return null;
+    if (listFailed) return null;
     if (!loaded || loading) return t("snapshots.loading");
     if (rows.length > 0) return null;
-    return query.trim().length === 0 ? t("snapshots.emptyStore") : t("snapshots.noMatches");
+    return appliedQueryRef.current.length === 0 ? t("snapshots.emptyStore") : t("snapshots.noMatches");
   }
 
   const message = emptyMessage();
 
   const confirmation = pendingDelete === null ? null : (
     <ModalBase
-      title={pendingDelete === "all" ? t("snapshots.deleteAllTitle") : t("snapshots.deleteTitle")}
+      title={pendingDelete.scope === "all" ? t("snapshots.deleteAllTitle") : t("snapshots.deleteTitle")}
       onRequestClose={() => setPendingDelete(null)}
       footer={
         <>
@@ -249,7 +281,7 @@ export function SnapshotsModal({ onClose }: SnapshotsModalProps) {
         </>
       }
     >
-      <p>{pendingDelete === "all" ? t("snapshots.deleteAllBody") : t("snapshots.deleteBody")}</p>
+      <p>{pendingDelete.scope === "all" ? t("snapshots.deleteAllBody") : t("snapshots.deleteBody")}</p>
     </ModalBase>
   );
 
@@ -295,7 +327,7 @@ export function SnapshotsModal({ onClose }: SnapshotsModalProps) {
             <button
               className="secondaryButton dangerTrigger"
               type="button"
-              onClick={() => setPendingDelete("all")}
+              onClick={() => setPendingDelete({ scope: "all" })}
             >
               {t("snapshots.deleteAll")}
             </button>
@@ -325,7 +357,7 @@ export function SnapshotsModal({ onClose }: SnapshotsModalProps) {
                 // page, since scrolling is what loads one for the pointer.
                 if (event.key === "ArrowDown" && hasMore && !loading) {
                   event.preventDefault();
-                  void load(rows.length, query);
+                  void load(rows.length, appliedQueryRef.current);
                 }
                 return;
               }
@@ -333,11 +365,13 @@ export function SnapshotsModal({ onClose }: SnapshotsModalProps) {
               selectAt(target);
             }}
           >
-            {failed ? (
+            {listFailed ? (
               <p className="errorText" role="alert">
                 {t("snapshots.failed")}
               </p>
             ) : null}
+            {copyFailed ? <p className="errorText" role="alert">{t("snapshots.copyFailed")}</p> : null}
+            {deleteFailed ? <p className="errorText" role="alert">{t("snapshots.deleteFailed")}</p> : null}
             {message !== null ? <p className="mutedText">{message}</p> : null}
             {rows.map((row, index) => {
               const timestamp = formatSnapshotTimestamp(row.createdAtUtc, i18n.dateTime);
@@ -414,7 +448,7 @@ export function SnapshotsModal({ onClose }: SnapshotsModalProps) {
                   <button
                     className="iconTextButton dangerTrigger"
                     type="button"
-                    onClick={() => setPendingDelete("one")}
+                    onClick={() => setPendingDelete({ scope: "one", id: selected.id })}
                   >
                     <Trash2 size={15} />
                     {t("snapshots.delete")}

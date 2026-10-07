@@ -101,6 +101,8 @@
   "snapshots.search": "Cerca",
   "snapshots.placeholder": "Cerca nelle istantanee",
   "snapshots.failed": "Impossibile cercare nelle istantanee. Riprova.",
+  "snapshots.copyFailed": "Impossibile copiare l’istantanea. Riprova.",
+  "snapshots.deleteFailed": "Impossibile eliminare le istantanee. Riprova.",
   "snapshots.entryLabel": "Istantanea del {timestamp}",
 
   "records.title": "Log",

@@ -101,6 +101,8 @@
   "snapshots.search": "検索",
   "snapshots.placeholder": "スナップショットを検索",
   "snapshots.failed": "スナップショットを検索できませんでした。もう一度お試しください。",
+  "snapshots.copyFailed": "スナップショットをコピーできませんでした。もう一度お試しください。",
+  "snapshots.deleteFailed": "スナップショットを削除できませんでした。もう一度お試しください。",
   "snapshots.entryLabel": "{timestamp} のスナップショット",
 
   "records.title": "ログ",

@@ -422,6 +422,99 @@ describe("SnapshotsModal detail pane", () => {
 });
 
 describe("SnapshotsModal failure presentation", () => {
+  it("pages the applied search while draft search text is unsubmitted", async () => {
+    mocks.list.mockResolvedValueOnce({ rows: [row("a", "first")], hasMore: true });
+    mocks.list.mockResolvedValueOnce({ rows: [row("b", "second")], hasMore: false });
+    await open();
+    const input = document.querySelector<HTMLInputElement>('input[type="search"]')!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "needle");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await act(async () => document.querySelector(".snapshotList")!.dispatchEvent(new Event("scroll", { bubbles: true })));
+    expect(mocks.list).toHaveBeenLastCalledWith("", 20, 1);
+    expect(rows().map((element) => element.dataset.snapshotId)).toEqual(["a", "b"]);
+  });
+
+  it("deletes the confirmed snapshot even when a pending search changes selection", async () => {
+    mocks.list.mockResolvedValueOnce({ rows: [row("a", "first")], hasMore: false });
+    let settle!: (value: unknown) => void;
+    mocks.list.mockImplementationOnce(() => new Promise((resolve) => { settle = resolve; }));
+    mocks.list.mockResolvedValueOnce({ rows: [row("b", "second")], hasMore: false });
+    mocks.deleteOne.mockResolvedValue(true);
+    await open();
+    const button = (text: string) => Array.from(document.querySelectorAll("button")).find((item) => item.textContent === text)!;
+    await act(async () => button("Search").click());
+    await act(async () => button("Delete").click());
+    await act(async () => settle({ rows: [row("b", "second")], hasMore: false }));
+    await act(async () => Array.from(document.querySelectorAll("button")).filter((item) => item.textContent === "Delete").at(-1)!.click());
+    expect(mocks.deleteOne).toHaveBeenCalledWith("a");
+  });
+
+  it("discards a pre-delete page and reloads once it settles", async () => {
+    mocks.list.mockResolvedValueOnce({ rows: [row("a", "first")], hasMore: true });
+    let settle!: (value: unknown) => void;
+    mocks.list.mockImplementationOnce(() => new Promise((resolve) => { settle = resolve; }));
+    mocks.list.mockResolvedValueOnce({ rows: [], hasMore: false });
+    mocks.deleteOne.mockResolvedValue(true);
+    await open();
+    await act(async () => document.querySelector(".snapshotList")!.dispatchEvent(new Event("scroll", { bubbles: true })));
+    const deletes = () => Array.from(document.querySelectorAll("button")).filter((item) => item.textContent === "Delete");
+    try {
+      await act(async () => deletes()[0].click());
+      await act(async () => deletes().at(-1)!.click());
+      expect(mocks.deleteOne).toHaveBeenCalledWith("a");
+      expect(mocks.list).toHaveBeenCalledTimes(2);
+    } finally {
+      await act(async () => settle({ rows: [row("old", "deleted result")], hasMore: false }));
+    }
+    expect(mocks.list).toHaveBeenLastCalledWith("", 20, 0);
+    expect(rows()).toEqual([]);
+    expect(mocks.refreshCount).toHaveBeenCalledOnce();
+  });
+
+  it("keeps Copy and Delete failures through unrelated searches and clears each on correction", async () => {
+    mocks.list.mockResolvedValue({ rows: [row("a", "first")], hasMore: false });
+    mocks.copyText.mockRejectedValueOnce(new Error("clipboard failed"));
+    mocks.deleteOne.mockRejectedValueOnce(new Error("delete failed"));
+    await open();
+    const button = (text: string) => Array.from(document.querySelectorAll("button")).find((item) => item.textContent === text)!;
+    const confirm = async () => {
+      await act(async () => button("Delete").click());
+      await act(async () => Array.from(document.querySelectorAll("button")).filter((item) => item.textContent === "Delete").at(-1)!.click());
+    };
+    await act(async () => button("Copy").click());
+    await confirm();
+    await act(async () => button("Search").click());
+    expect(document.body.textContent).toContain("The snapshot could not be copied. Try again.");
+    expect(document.body.textContent).toContain("Snapshots could not be deleted. Try again.");
+    mocks.copyText.mockResolvedValueOnce(undefined);
+    await act(async () => button("Copy").click());
+    expect(document.body.textContent).not.toContain("The snapshot could not be copied. Try again.");
+    expect(document.body.textContent).toContain("Snapshots could not be deleted. Try again.");
+    mocks.deleteOne.mockResolvedValueOnce(true);
+    await confirm();
+    expect(document.body.textContent).not.toContain("Snapshots could not be deleted. Try again.");
+  });
+
+  it.each([false, true])("does not apply late Copy feedback after selection changes (return to A: %s)", async (returnToA) => {
+    mocks.list.mockResolvedValue({ rows: [row("a", "first"), row("b", "second")], hasMore: false });
+    let settle!: () => void;
+    mocks.copyText.mockImplementationOnce(() => new Promise<void>((resolve) => { settle = resolve; }));
+    await open();
+    const copy = Array.from(document.querySelectorAll("button")).find((item) => item.textContent === "Copy")!;
+    try {
+      await act(async () => { copy.click(); copy.click(); });
+      expect(mocks.copyText).toHaveBeenCalledOnce();
+      expect(mocks.copyText).toHaveBeenCalledWith("first");
+      await act(async () => rows()[1].click());
+      if (returnToA) await act(async () => rows()[0].click());
+    } finally {
+      await act(async () => settle());
+    }
+    expect(document.querySelector(".snapshotDetailActions")!.textContent).not.toContain("Copied");
+  });
+
   it("keeps hostile diagnostic text in the log and out of the modal", async () => {
     mocks.list.mockRejectedValue(
       new TypeError("EACCES /private/tmp/HOSTILE-SENTINEL Error invoking remote method"),

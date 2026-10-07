@@ -101,6 +101,8 @@
   "snapshots.search": "Pesquisar",
   "snapshots.placeholder": "Pesquisar nos instantâneos",
   "snapshots.failed": "Não foi possível pesquisar nos instantâneos. Tente novamente.",
+  "snapshots.copyFailed": "Não foi possível copiar o instantâneo. Tente novamente.",
+  "snapshots.deleteFailed": "Não foi possível apagar os instantâneos. Tente novamente.",
   "snapshots.entryLabel": "Instantâneo de {timestamp}",
 
   "records.title": "Registros",

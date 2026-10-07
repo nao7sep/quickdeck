@@ -101,6 +101,8 @@
   "snapshots.search": "Найти",
   "snapshots.placeholder": "Искать в снимках",
   "snapshots.failed": "Не удалось выполнить поиск по снимкам. Попробуйте ещё раз.",
+  "snapshots.copyFailed": "Не удалось скопировать снимок. Попробуйте ещё раз.",
+  "snapshots.deleteFailed": "Не удалось удалить снимки. Попробуйте ещё раз.",
   "snapshots.entryLabel": "Снимок от {timestamp}",
 
   "records.title": "Журнал",
