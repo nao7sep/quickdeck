@@ -327,7 +327,16 @@ mod windows_session {
             unsafe {
                 let _ = MsgWaitForMultipleObjects(None, false, wait, QS_ALLINPUT);
                 let mut message = MSG::default();
-                while PeekMessageW(&mut message, None, 0, 0, PM_REMOVE).as_bool() {
+                loop {
+                    if !matches!(saved.try_recv(), Err(TryRecvError::Empty)) {
+                        return;
+                    }
+                    if Instant::now() >= deadline {
+                        return log_session_save_expired();
+                    }
+                    if !PeekMessageW(&mut message, None, 0, 0, PM_REMOVE).as_bool() {
+                        break;
+                    }
                     if message.message == WM_QUIT {
                         // Left for tao's own loop, after this wait.
                         PostQuitMessage(message.wParam.0 as i32);
