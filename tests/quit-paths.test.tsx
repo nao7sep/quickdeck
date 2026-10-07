@@ -56,6 +56,7 @@ vi.mock("../src/services/windowTheme", () => ({
 }));
 vi.mock("../src/services/persistence", () => ({
   applyLanguage: () => Promise.resolve(),
+  saveFailureMessage: (error: any) => error?.newer ? { key: "saveError.panesNewer", values: { path: error.path, version: error.newer } } : null,
 }));
 vi.mock("../src/services/records", () => ({
   openRecordsWindow: () => Promise.resolve(),
@@ -132,7 +133,7 @@ function createAppState(overrides: Record<string, unknown> = {}) {
     setActivePaneId: noop,
     addPane: noop,
     movePane: noop,
-    saveNow: vi.fn(() => Promise.resolve()),
+    saveNow: vi.fn(() => Promise.resolve(true)),
     showBlockingError: noop,
     showToast: noop,
     snapshotAllPanes: vi.fn(() => Promise.resolve()),
@@ -271,10 +272,33 @@ describe("closing the window", () => {
     expect(mocks.destroy).not.toHaveBeenCalled();
   });
 
+  it("keeps the window open when only an older input version was saved", async () => {
+    const state = createAppState({ saveNow: vi.fn(() => Promise.resolve(false)) });
+    await renderApp(state);
+    const { done } = await requestClose();
+    expect(mocks.destroy).not.toHaveBeenCalled();
+    expect(dialog()?.textContent).toContain("latest changes are still open");
+    await click("Cancel");
+    await done;
+    expect(mocks.destroy).not.toHaveBeenCalled();
+  });
+
+  it("names a newer panes refusal while retaining quit recovery choices", async () => {
+    const state = createAppState({ saveNow: vi.fn(() => Promise.reject({ path: "/actual/panes.json", newer: 2, message: "HOSTILE" })) });
+    await renderApp(state);
+    const { done } = await requestClose();
+    expect(dialog()?.textContent).toContain("/actual/panes.json");
+    expect(dialog()?.textContent).toContain("newer format (2)");
+    expect(dialog()?.textContent).not.toContain("HOSTILE");
+    await click("Cancel");
+    await done;
+    expect(mocks.destroy).not.toHaveBeenCalled();
+  });
+
   it("closes when Retry saves", async () => {
     const saveNow = vi.fn()
       .mockRejectedValueOnce(new Error("read-only"))
-      .mockResolvedValueOnce(undefined);
+      .mockResolvedValueOnce(true);
     const state = createAppState({ saveNow });
     await renderApp(state);
 
@@ -390,7 +414,7 @@ describe("an OS logout, restart or shutdown", () => {
   it("saves without prompting even while a cancelled quit is still asking", async () => {
     const saveNow = vi.fn()
       .mockRejectedValueOnce(new Error("read-only"))
-      .mockResolvedValueOnce(undefined);
+      .mockResolvedValueOnce(true);
     const state = createAppState({ saveNow });
     await renderApp(state);
 

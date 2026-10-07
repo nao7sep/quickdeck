@@ -148,6 +148,7 @@
 
   "saveError.title": "QuickDeck이 데이터를 저장할 수 없습니다",
   "saveError.autosave": "최근 변경 사항은 화면에 그대로 남아 있습니다. 저장 공간을 확보하거나 데이터 폴더에 대한 접근 권한을 복구한 다음 다시 시도하십시오.",
+  "saveError.panesNewer": "{path}의 텍스트 창 파일은 더 새로운 형식({version})을 사용하므로 변경하지 않았습니다. 최근 변경 사항은 열린 상태로 유지됩니다. 이 파일에 저장하기 전에 QuickDeck을 업데이트하십시오.",
   "saveError.onClose": "QuickDeck이 종료되지 않았으므로 최근 변경 사항은 화면에 그대로 남아 있습니다. 저장 공간을 확보하거나 데이터 폴더에 대한 접근 권한을 복구한 다음 다시 시도하십시오. 그래도 종료하면 저장되지 않은 변경 사항은 사라집니다.",
   "saveError.retry": "다시 시도",
   "saveError.quitAnyway": "그래도 종료",

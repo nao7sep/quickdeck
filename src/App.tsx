@@ -30,12 +30,12 @@ import { ShortcutsModal } from "./components/ShortcutsModal";
 import { ToastViewport } from "./components/ToastViewport";
 import { matchesShortcut } from "./shortcuts";
 import { applyWindowTheme } from "./services/windowTheme";
-import { applyLanguage } from "./services/persistence";
+import { saveFailureMessage, applyLanguage } from "./services/persistence";
 import { openRecordsWindow } from "./services/records";
 import { onSessionEnding, reportSessionEndSaved, saveForQuit } from "./services/quit";
 import { useI18n } from "./i18n/I18nContext";
 import type { MessageKey } from "./i18n/catalogues";
-import { message } from "./i18n/translate";
+import { message, type Message } from "./i18n/translate";
 import { isEditableTarget, shadowsMacTextEditing } from "./utils/shortcuts";
 import { isComposingEvent } from "./hooks/useComposing";
 import { logError, logWarn, serializeError } from "./services/logger";
@@ -95,6 +95,7 @@ export function App() {
   const [zoomApplicationFailed, setZoomApplicationFailed] = useState(false);
   const [topmostApplicationFailed, setTopmostApplicationFailed] = useState(false);
   const [quitSaveFailed, setQuitSaveFailed] = useState(false);
+  const [quitSaveReason, setQuitSaveReason] = useState<Message | null>(null);
   const [statusBarContentWidth, setStatusBarContentWidth] = useState(0);
   const statusBarRef = useRef<HTMLElement | null>(null);
   const appDestroyingRef = useRef(false);
@@ -524,7 +525,8 @@ export function App() {
 
     const quitSteps = {
       snapshot: () => snapshotAllPanesRef.current("app_close"),
-      save: () => saveNowRef.current(),
+      save: () => { setQuitSaveReason(null); return saveNowRef.current(); },
+      onFailure: (error: unknown) => setQuitSaveReason(saveFailureMessage(error)),
     };
 
     function askAfterQuitSaveFailure(): Promise<QuitSaveErrorChoice> {
@@ -785,7 +787,7 @@ export function App() {
       {openModal === "about" ? <AboutModal onClose={() => setOpenModal(null)} /> : null}
       {openModal === "snapshots" ? <SnapshotsModal onClose={() => setOpenModal(null)} /> : null}
       {blockingError ? <ErrorModal error={blockingError} onClose={dismissBlockingError} /> : null}
-      {quitSaveFailed ? <QuitSaveErrorModal onChoose={chooseAfterQuitSaveFailure} /> : null}
+      {quitSaveFailed ? <QuitSaveErrorModal reason={quitSaveReason} onChoose={chooseAfterQuitSaveFailure} /> : null}
       <ToastViewport
         themeApplicationFailed={themeApplicationFailed}
         languageApplicationFailed={languageApplicationFailed}

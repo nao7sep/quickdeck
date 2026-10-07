@@ -1231,6 +1231,25 @@ fn no_write_replaces_a_json_store_in_a_newer_format() {
 }
 
 #[test]
+#[serial(backup_store)]
+fn panes_save_distinguishes_newer_refusal_from_an_exact_noop() {
+    crate::backup_store::close_backup_store();
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join(PANES_FILE_NAME);
+    fs::write(&path, NEWER).unwrap();
+    let error = save_panes_in(dir.path(), &serde_json::json!({ "panes": [] })).unwrap_err();
+    assert_eq!(error.path.as_deref(), path.to_str());
+    assert_eq!(error.newer, Some(2));
+    assert_eq!(fs::read_to_string(&path).unwrap(), NEWER);
+    assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 1);
+    let current = serde_json::json!({ "panes": [] });
+    fs::write(&path, "{\n  \"formatVersion\": 1,\n  \"panes\": []\n}\n").unwrap();
+    save_panes_in(dir.path(), &current).unwrap();
+    assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 1, "no-op creates no backup or temp");
+    crate::backup_store::close_backup_store();
+}
+
+#[test]
 fn launch_reads_of_config_skip_a_newer_unmarked_or_corrupt_file() {
     assert_eq!(
         launch_config(r#"{"formatVersion":1,"theme":"dark"}"#),

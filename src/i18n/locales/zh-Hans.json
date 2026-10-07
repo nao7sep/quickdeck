@@ -148,6 +148,7 @@
 
   "saveError.title": "QuickDeck 无法保存你的数据",
   "saveError.autosave": "你最近的更改仍保留在窗格中。请释放一些存储空间，或恢复对数据文件夹的访问权限，然后重试。",
+  "saveError.panesNewer": "{path} 处的文本窗格文件使用较新的格式（{version}），已保持不变。您最新的更改仍处于打开状态。保存到此文件前，请更新 QuickDeck。",
   "saveError.onClose": "QuickDeck 没有退出，你最近的更改仍保留在窗格中。请释放一些存储空间，或恢复对数据文件夹的访问权限，然后重试。如果仍要退出，未保存的更改将会丢失。",
   "saveError.retry": "重试",
   "saveError.quitAnyway": "仍要退出",

@@ -67,10 +67,10 @@ it("ends with the latest settings when a set is reverted during an in-flight sav
   await act(async () => { root?.render(<AppStateProvider><Probe /></AppStateProvider>); });
 
   await act(async () => { state!.updateSettings({ ...state!.settings, zen: true }); });
-  let first: Promise<void> = Promise.resolve();
+  let first: Promise<boolean> = Promise.resolve(true);
   await act(async () => { first = state!.saveNow(); });
   await act(async () => { state!.updateSettings({ ...state!.settings, zen: false }); });
-  let second: Promise<void> = Promise.resolve();
+  let second: Promise<boolean> = Promise.resolve(true);
   await act(async () => { second = state!.saveNow(); });
 
   await act(async () => {

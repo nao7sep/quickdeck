@@ -34,6 +34,7 @@ import {
   quarantineCorruptPanes,
   saveConfig,
   savePanes,
+  saveFailureMessage,
   saveState as persistState,
 } from "../services/persistence";
 import { logError, logInfo, logWarn, serializeError, setDebugEnabled } from "../services/logger";
@@ -94,7 +95,7 @@ type AppStateContextValue = {
   // panes.json aside and reloads (storage-path conventions — a halting store
   // is clearable from the surface that reported the failure).
   resetCorruptPanes: () => Promise<void>;
-  saveNow: () => Promise<void>;
+  saveNow: () => Promise<boolean>;
   recordSnapshot: (paneId: string, trigger: SnapshotTrigger, content: string) => void;
   snapshotAllPanes: (trigger: SnapshotTrigger) => Promise<void>;
   showToast: (owner: string, kind: ToastKind, message: Message) => void;
@@ -561,12 +562,14 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   // change control flow, since autosave and the close path want different
   // policies. No-ops unless load succeeded — see the LoadStatus comment in
   // types.ts.
+  const savedInputRevision = dirtyCounterRef.current;
   const saveNow = useCallback(async () => {
-    if (loadStatus !== "ready") {
-      return;
-    }
+    if (loadStatus !== "ready") return true;
+    // The closure's payload and revision come from the same render. An edit
+    // admitted before its next render cannot certify an older payload.
+    if (savedInputRevision !== dirtyCounterRef.current) return false;
 
-    const dirtyAtStart = dirtyCounterRef.current;
+    const dirtyAtStart = savedInputRevision;
     setSaveState("saving");
     try {
       // Every save sends every stored set; the write queue applies them in call
@@ -576,18 +579,20 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         persistState(buildStateFile(activePaneId, zoomLevel)),
         savePanes(buildPanesFile(panes)),
       ]);
-      setSaveState(resolveSaveState(dirtyAtStart, dirtyCounterRef.current));
+      const result = resolveSaveState(dirtyAtStart, dirtyCounterRef.current);
+      setSaveState(result);
       if (configSetAsideTo !== null) {
         showBlockingError(
           message("settingsSetAside.title"),
           message("settingsSetAside.body", { path: configSetAsideTo }),
         );
       }
+      return result === "saved";
     } catch (error) {
       setSaveState("error");
       throw error;
     }
-  }, [activePaneId, loadStatus, panes, settings, showBlockingError, zoomLevel]);
+  }, [activePaneId, loadStatus, panes, savedInputRevision, settings, showBlockingError, zoomLevel]);
 
   useEffect(() => {
     if (loadStatus !== "ready" || saveState !== "unsaved") {
@@ -597,7 +602,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     const timeoutId = window.setTimeout(() => {
       saveNow().catch((error) => {
         logError("autosave failed", { error: serializeError(error) });
-        showBlockingError(message("saveError.title"), message("saveError.autosave"));
+        showBlockingError(message("saveError.title"), saveFailureMessage(error) ?? message("saveError.autosave"));
       });
     }, Math.max(1, settings.autosaveDelaySeconds) * 1000);
 

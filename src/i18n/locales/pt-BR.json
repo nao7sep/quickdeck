@@ -148,6 +148,7 @@
 
   "saveError.title": "O QuickDeck não conseguiu salvar seus dados",
   "saveError.autosave": "Suas alterações mais recentes continuam abertas. Libere espaço de armazenamento ou restaure o acesso à pasta de dados e tente novamente.",
+  "saveError.panesNewer": "O arquivo de texto dos painéis em {path} usa um formato mais recente ({version}) e não foi alterado. Suas últimas alterações continuam abertas. Atualize o QuickDeck antes de salvar neste arquivo.",
   "saveError.onClose": "O QuickDeck não foi encerrado, então suas alterações mais recentes continuam abertas. Libere espaço de armazenamento ou restaure o acesso à pasta de dados e tente novamente. Se você sair mesmo assim, as alterações não salvas serão perdidas.",
   "saveError.retry": "Tentar novamente",
   "saveError.quitAnyway": "Sair mesmo assim",

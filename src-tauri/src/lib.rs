@@ -21,7 +21,7 @@ use menu::SAFE_QUIT_MENU_ID;
 use records::{RecordDetail, RecordSources, RecordsPage, RecordsQuery};
 use serde::Serialize;
 use serde_json::{json, Map, Value as JsonValue};
-use storage::{LoadFailure, LoadedAppData, SnapshotInput, SnapshotListResult, SnapshotWriteResult};
+use storage::{SaveFailure, LoadFailure, LoadedAppData, SnapshotInput, SnapshotListResult, SnapshotWriteResult};
 use tauri::{AppHandle, Manager, RunEvent, Runtime, State, Theme, WindowEvent};
 use window_placement::PlacementState;
 
@@ -202,7 +202,7 @@ async fn save_state(app: AppHandle, state: JsonValue) -> Result<(), String> {
 }
 
 #[tauri::command]
-async fn save_panes(app: AppHandle, panes: JsonValue) -> Result<(), String> {
+async fn save_panes(app: AppHandle, panes: JsonValue) -> Result<(), SaveFailure> {
     off_main_thread(move || {
         logging::boundary(
             "save_panes",

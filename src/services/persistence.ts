@@ -1,3 +1,4 @@
+import { message, type Message } from "../i18n/translate";
 import type { ConfigSets } from "../state/normalize";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import type { Pane, SnapshotTrigger } from "../types";
@@ -123,6 +124,13 @@ export function loadFailurePath(error: unknown): string | null {
     return null;
   }
   return typeof error.path === "string" ? error.path : null;
+}
+
+// Named native refusal; diagnostic text is never presented as product copy.
+export function saveFailureMessage(error: unknown): Message | null {
+  if (typeof error !== "object" || error === null || !("path" in error) || !("newer" in error)) return null;
+  return typeof error.path === "string" && typeof error.newer === "number"
+    ? message("saveError.panesNewer", { path: error.path, version: error.newer }) : null;
 }
 
 // Rebuilds the native menu in the interface language (the Rust core built it in

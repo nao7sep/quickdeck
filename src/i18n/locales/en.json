@@ -148,6 +148,7 @@
 
   "saveError.title": "QuickDeck couldn't save your data",
   "saveError.autosave": "Your latest changes remain open. Free some storage or restore access to the data folder, then try again.",
+  "saveError.panesNewer": "The pane text file at {path} uses a newer format ({version}) and was left unchanged. Your latest changes remain open. Update QuickDeck before saving to this file.",
   "saveError.onClose": "QuickDeck did not quit, so your latest changes are still open. Free some storage or restore access to the data folder, then retry. If you quit anyway, the changes that were not saved will be lost.",
   "saveError.retry": "Retry",
   "saveError.quitAnyway": "Quit anyway",

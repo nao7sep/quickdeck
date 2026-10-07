@@ -148,6 +148,7 @@
 
   "saveError.title": "QuickDeck non è riuscito a salvare i tuoi dati",
   "saveError.autosave": "Le modifiche più recenti restano aperte. Libera spazio di archiviazione o ripristina l’accesso alla cartella dei dati, poi riprova.",
+  "saveError.panesNewer": "Il file di testo dei pannelli in {path} usa un formato più recente ({version}) ed è rimasto invariato. Le ultime modifiche restano aperte. Aggiorna QuickDeck prima di salvare in questo file.",
   "saveError.onClose": "QuickDeck non è stato chiuso, quindi le modifiche più recenti restano aperte. Libera spazio di archiviazione o ripristina l’accesso alla cartella dei dati, poi riprova. Se esci comunque, le modifiche non salvate andranno perse.",
   "saveError.retry": "Riprova",
   "saveError.quitAnyway": "Esci comunque",

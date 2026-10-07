@@ -148,6 +148,7 @@
 
   "saveError.title": "QuickDeck konnte Ihre Daten nicht speichern",
   "saveError.autosave": "Ihre letzten Änderungen sind weiterhin geöffnet. Geben Sie Speicherplatz frei oder stellen Sie den Zugriff auf den Datenordner wieder her und versuchen Sie es dann erneut.",
+  "saveError.panesNewer": "Die Textdatei der Puffer unter {path} verwendet ein neueres Format ({version}) und bleibt unverändert. Ihre letzten Änderungen bleiben geöffnet. Aktualisieren Sie QuickDeck, bevor Sie in dieser Datei speichern.",
   "saveError.onClose": "QuickDeck wurde nicht beendet, Ihre letzten Änderungen sind also weiterhin geöffnet. Geben Sie Speicherplatz frei oder stellen Sie den Zugriff auf den Datenordner wieder her und versuchen Sie es dann erneut. Wenn Sie QuickDeck trotzdem beenden, gehen die nicht gespeicherten Änderungen verloren.",
   "saveError.retry": "Wiederholen",
   "saveError.quitAnyway": "Trotzdem beenden",

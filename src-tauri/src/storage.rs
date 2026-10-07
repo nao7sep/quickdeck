@@ -355,17 +355,44 @@ pub fn save_window_state(data_dir: &Path, state: JsonValue) -> Result<(), String
     )
 }
 
-pub fn save_panes(app: &AppHandle, panes: JsonValue) -> Result<(), String> {
-    // records: panes.json holds the panes' text — the user's durable work
-    // product — managed text, recorded on every save that changes it (data-backup
-    // conventions).
-    let data_dir = app_data_dir(app)?;
-    atomic_write_json(
-        &data_dir,
-        &data_dir.join(PANES_FILE_NAME),
-        &panes,
-        format_version::PANES,
-    )
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SaveFailure {
+    pub path: Option<String>,
+    pub newer: Option<u32>,
+    pub message: String,
+}
+
+impl From<String> for SaveFailure {
+    fn from(message: String) -> Self {
+        Self { path: None, newer: None, message }
+    }
+}
+
+impl std::fmt::Display for SaveFailure {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.message)
+    }
+}
+
+pub fn save_panes(app: &AppHandle, panes: JsonValue) -> Result<(), SaveFailure> {
+    save_panes_in(&app_data_dir(app)?, &panes)
+}
+
+fn save_panes_in(data_dir: &Path, panes: &JsonValue) -> Result<(), SaveFailure> {
+    let path = data_dir.join(PANES_FILE_NAME);
+    let outcome = write_json_atomically(&path, panes, format_version::PANES).map_err(|message| SaveFailure {
+        path: Some(path.to_string_lossy().into_owned()), newer: None, message,
+    })?;
+    match outcome {
+        JsonWrite::Newer(recorded) => Err(SaveFailure {
+            path: Some(path.to_string_lossy().into_owned()),
+            newer: Some(recorded),
+            message: format_version::newer_message(PANES_FILE_NAME, recorded),
+        }),
+        JsonWrite::Written(bytes) => { record_written_json(data_dir, &path, &bytes); Ok(()) },
+        JsonWrite::Unchanged => Ok(()),
+    }
 }
 
 // The user-commanded reset behind the panes halt surface: sets the corrupt
@@ -792,20 +819,21 @@ fn atomic_write_json(
     value: &JsonValue,
     version: u32,
 ) -> Result<(), String> {
-    let Some(bytes) = write_json_atomically(path, value, version)? else {
-        return Ok(());
-    };
+    if let JsonWrite::Written(bytes) = write_json_atomically(path, value, version)? {
+        record_written_json(data_dir, path, &bytes);
+    }
+    Ok(())
+}
 
+fn record_written_json(data_dir: &Path, path: &Path, bytes: &[u8]) {
     // After the rename: the file is exactly where it belongs, so record the bytes we
     // just wrote. Best-effort — record() catches, logs once, and swallows every
     // failure, so a backup problem can never break the save that already succeeded.
     crate::backup_store::record(
         &data_dir.join(crate::backup_store::BACKUPS_DB_FILE_NAME),
         path,
-        &bytes,
+        bytes,
     );
-
-    Ok(())
 }
 
 // The same atomic write without the backup record, for volatile state (state.json,
@@ -818,16 +846,19 @@ fn atomic_write_json_unrecorded(
     write_json_atomically(path, value, version).map(|_| ())
 }
 
-// The temp-file-then-rename write itself, with `version` recorded as the file's
-// format marker; returns the exact bytes now on disk, or None when nothing was
-// written: the file already held them, or it records a newer format. A newer
-// file is never written to (store-recovery conventions); the load that found it
-// reported it, so the skip itself is silent.
+enum JsonWrite {
+    Unchanged,
+    Newer(u32),
+    Written(Vec<u8>),
+}
+
+// The writer distinguishes an exact no-op from a protected newer destination
+// (store-recovery conventions); each store owns how it reports that refusal.
 fn write_json_atomically(
     path: &Path,
     value: &JsonValue,
     version: u32,
-) -> Result<Option<Vec<u8>>, String> {
+) -> Result<JsonWrite, String> {
     let parent = path
         .parent()
         .ok_or_else(|| format!("missing parent directory for {}", path.display()))?;
@@ -840,14 +871,10 @@ fn write_json_atomically(
     bytes.push(b'\n');
     // A missing or unreadable file is written.
     if let Ok(current) = fs::read(path) {
-        let newer = || {
-            serde_json::from_slice(&current)
-                .ok()
-                .and_then(|current| format_version::read_json(current, version).ok())
-                .is_some_and(|format| matches!(format, JsonFormat::Newer(_)))
-        };
-        if current == bytes || newer() {
-            return Ok(None);
+        if current == bytes { return Ok(JsonWrite::Unchanged); }
+        if let Some(JsonFormat::Newer(recorded)) = serde_json::from_slice(&current).ok()
+            .and_then(|current| format_version::read_json(current, version).ok()) {
+            return Ok(JsonWrite::Newer(recorded));
         }
     }
 
@@ -879,7 +906,7 @@ fn write_json_atomically(
         let _ = directory.sync_all();
     }
 
-    Ok(Some(bytes))
+    Ok(JsonWrite::Written(bytes))
 }
 
 // A replace keeps the original's permissions, ACL and extended attributes, Finder

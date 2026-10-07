@@ -9,16 +9,16 @@ import { logError, logWarn, serializeError } from "./logger";
 export const QUIT_SNAPSHOT_BOUND_MS = 400;
 export const QUIT_SAVE_BOUND_MS = 1000;
 
-type Settled = { kind: "done" } | { kind: "failed"; error: unknown } | { kind: "expired" };
+type Settled<T> = { kind: "done"; value: T } | { kind: "failed"; error: unknown } | { kind: "expired" };
 
 // A step past its bound keeps running; its outcome is unknown.
-function within(step: () => Promise<void>, ms: number): Promise<Settled> {
+function within<T>(step: () => Promise<T>, ms: number): Promise<Settled<T>> {
   return new Promise((resolve) => {
     const timer = setTimeout(() => resolve({ kind: "expired" }), ms);
     Promise.resolve()
       .then(step)
       .then(
-        () => resolve({ kind: "done" }),
+        (value) => resolve({ kind: "done", value }),
         (error: unknown) => resolve({ kind: "failed", error }),
       )
       .finally(() => clearTimeout(timer));
@@ -29,7 +29,8 @@ export type QuitSaveSteps = {
   // The insurance snapshots: logged when they fail, never holding the quit.
   snapshot: () => Promise<void>;
   // The panes, settings and state: the user's own work.
-  save: () => Promise<void>;
+  save: () => Promise<boolean>;
+  onFailure?: (error: unknown) => void;
 };
 
 // Resolves whether the user's own work is known to be saved.
@@ -44,10 +45,11 @@ export async function saveForQuit(steps: QuitSaveSteps): Promise<boolean> {
   const save = await within(steps.save, QUIT_SAVE_BOUND_MS);
   if (save.kind === "failed") {
     logError("save on close failed", { error: serializeError(save.error) });
+    steps.onFailure?.(save.error);
   } else if (save.kind === "expired") {
     logError("save on close wait expired", { ms: QUIT_SAVE_BOUND_MS });
   }
-  return save.kind === "done";
+  return save.kind === "done" && save.value;
 }
 
 // The event the Rust core sends when an OS logout, restart or shutdown asks

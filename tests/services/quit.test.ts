@@ -30,7 +30,7 @@ describe("saveForQuit", () => {
     const order: string[] = [];
     const saved = saveForQuit({
       snapshot: async () => void order.push("snapshot"),
-      save: async () => void order.push("save"),
+      save: async () => { order.push("save"); return true; },
     });
 
     await expect(saved).resolves.toBe(true);
@@ -40,7 +40,7 @@ describe("saveForQuit", () => {
   });
 
   it("logs a failed snapshot and still saves", async () => {
-    const save = vi.fn(() => Promise.resolve());
+    const save = vi.fn(() => Promise.resolve(true));
     const saved = saveForQuit({ snapshot: () => Promise.reject(new Error("disk full")), save });
 
     await expect(saved).resolves.toBe(true);
@@ -49,7 +49,7 @@ describe("saveForQuit", () => {
   });
 
   it("gives up on a snapshot past its bound, logs it, and still saves", async () => {
-    const save = vi.fn(() => Promise.resolve());
+    const save = vi.fn(() => Promise.resolve(true));
     const saved = saveForQuit({ snapshot: never, save });
 
     await vi.advanceTimersByTimeAsync(QUIT_SNAPSHOT_BOUND_MS - 1);
@@ -61,6 +61,10 @@ describe("saveForQuit", () => {
     expect(mocks.logWarn).toHaveBeenCalledWith("close snapshot wait expired", {
       ms: QUIT_SNAPSHOT_BOUND_MS,
     });
+  });
+
+  it("does not certify a completed save of outdated input", async () => {
+    await expect(saveForQuit({ snapshot: async () => {}, save: async () => false })).resolves.toBe(false);
   });
 
   it("reports a failed save and logs it", async () => {
@@ -75,7 +79,7 @@ describe("saveForQuit", () => {
 
   it("reports a save past its bound as not saved, and logs it", async () => {
     let settled: boolean | null = null;
-    void saveForQuit({ snapshot: () => Promise.resolve(), save: never }).then((value) => {
+    void saveForQuit({ snapshot: () => Promise.resolve(), save: () => new Promise<boolean>(() => undefined) }).then((value) => {
       settled = value;
     });
 
