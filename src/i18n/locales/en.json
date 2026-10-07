@@ -173,7 +173,9 @@
   "load.panesDamaged": "Your pane text file (panes.json) is damaged and has been left exactly where it is. Diagnostic details are in the log.",
   "load.panesNewer": "Your pane text file (panes.json) was written by a newer version of QuickDeck (format {version}) and has been left exactly in place. Update QuickDeck to open it.",
   "load.snapshotsNewer": "Your snapshot store (snapshots.sqlite3) was written by a newer version of QuickDeck (format {version}) and has been left exactly in place. Update QuickDeck to open it.",
-  "load.setAsideFailed": "The damaged pane file could not be set aside. Your existing files were not changed.",
+  "load.setAsideFailed": "QuickDeck could not finish setting aside the pane text file. Check the files named here before trying again.",
+  "load.settingsSetAside": "The unreadable settings file was moved to {path}.",
+  "load.panesSetAside": "The damaged pane text file was moved to {path}.",
 
   "crash.title": "QuickDeck could not keep this window open",
   "crash.body": "Reload the window to recover. Your saved decks and snapshots are unchanged.",

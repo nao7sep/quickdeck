@@ -173,7 +173,9 @@
   "load.panesDamaged": "El archivo de texto de tus paneles (panes.json) está dañado y se dejó exactamente donde estaba. Los detalles de diagnóstico están en el registro.",
   "load.panesNewer": "El archivo de texto de tus paneles (panes.json) lo escribió una versión más reciente de QuickDeck (formato {version}) y se dejó exactamente donde estaba. Actualiza QuickDeck para abrirlo.",
   "load.snapshotsNewer": "El almacén de tus instantáneas (snapshots.sqlite3) lo escribió una versión más reciente de QuickDeck (formato {version}) y se dejó exactamente donde estaba. Actualiza QuickDeck para abrirlo.",
-  "load.setAsideFailed": "No se pudo apartar el archivo de paneles dañado. Tus archivos no se modificaron.",
+  "load.setAsideFailed": "QuickDeck no pudo terminar de apartar el archivo de texto de los paneles. Comprueba los archivos indicados aquí antes de volver a intentarlo.",
+  "load.settingsSetAside": "El archivo de ajustes ilegible se movió a {path}.",
+  "load.panesSetAside": "El archivo de texto de los paneles dañado se movió a {path}.",
 
   "crash.title": "QuickDeck no pudo mantener abierta esta ventana",
   "crash.body": "Vuelve a cargar la ventana para recuperarla. Tus paneles e instantáneas guardados no han cambiado.",

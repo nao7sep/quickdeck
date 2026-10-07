@@ -173,7 +173,9 @@
   "load.panesDamaged": "Le fichier texte de vos volets (panes.json) est endommagé et a été laissé exactement à sa place. Les détails de diagnostic se trouvent dans le journal.",
   "load.panesNewer": "Le fichier texte de vos volets (panes.json) a été écrit par une version plus récente de QuickDeck (format {version}) et a été laissé exactement à sa place. Mettez QuickDeck à jour pour l’ouvrir.",
   "load.snapshotsNewer": "Le fichier de vos instantanés (snapshots.sqlite3) a été écrit par une version plus récente de QuickDeck (format {version}) et a été laissé exactement à sa place. Mettez QuickDeck à jour pour l’ouvrir.",
-  "load.setAsideFailed": "Le fichier de volets endommagé n’a pas pu être mis de côté. Vos fichiers existants n’ont pas été modifiés.",
+  "load.setAsideFailed": "QuickDeck n’a pas pu terminer la mise à l’écart du fichier texte des volets. Vérifiez les fichiers indiqués ici avant de réessayer.",
+  "load.settingsSetAside": "Le fichier de réglages illisible a été déplacé vers {path}.",
+  "load.panesSetAside": "Le fichier texte endommagé des volets a été déplacé vers {path}.",
 
   "crash.title": "QuickDeck n’a pas pu garder cette fenêtre ouverte",
   "crash.body": "Rechargez la fenêtre pour reprendre. Vos volets et instantanés enregistrés n’ont pas changé.",

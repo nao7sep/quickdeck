@@ -173,7 +173,9 @@
   "load.panesDamaged": "Il file di testo dei tuoi riquadri (panes.json) è danneggiato ed è rimasto esattamente dov’era. I dettagli diagnostici sono nel log.",
   "load.panesNewer": "Il file di testo dei tuoi riquadri (panes.json) è stato scritto da una versione più recente di QuickDeck (formato {version}) ed è rimasto esattamente dov’era. Aggiorna QuickDeck per aprirlo.",
   "load.snapshotsNewer": "L’archivio delle tue istantanee (snapshots.sqlite3) è stato scritto da una versione più recente di QuickDeck (formato {version}) ed è rimasto esattamente dov’era. Aggiorna QuickDeck per aprirlo.",
-  "load.setAsideFailed": "Impossibile mettere da parte il file dei riquadri danneggiato. I file esistenti non sono stati modificati.",
+  "load.setAsideFailed": "QuickDeck non è riuscito a completare lo spostamento del file di testo dei pannelli. Controlla i file indicati qui prima di riprovare.",
+  "load.settingsSetAside": "Il file delle impostazioni illeggibile è stato spostato in {path}.",
+  "load.panesSetAside": "Il file di testo dei pannelli danneggiato è stato spostato in {path}.",
 
   "crash.title": "QuickDeck non è riuscito a tenere aperta questa finestra",
   "crash.body": "Ricarica la finestra per ripristinarla. I riquadri e le istantanee salvati non sono cambiati.",

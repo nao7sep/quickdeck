@@ -173,7 +173,9 @@
   "load.panesDamaged": "ペインのテキストファイル（panes.json）が壊れているため、元の場所にそのまま残しています。診断情報はログにあります。",
   "load.panesNewer": "ペインのテキストファイル（panes.json）は新しいバージョンの QuickDeck（形式 {version}）で書かれているため、元の場所にそのまま残しています。開くには QuickDeck をアップデートしてください。",
   "load.snapshotsNewer": "スナップショットの保存ファイル（snapshots.sqlite3）は新しいバージョンの QuickDeck（形式 {version}）で書かれているため、元の場所にそのまま残しています。開くには QuickDeck をアップデートしてください。",
-  "load.setAsideFailed": "壊れたペインファイルを退避できませんでした。既存のファイルは変更されていません。",
+  "load.setAsideFailed": "QuickDeck はテキストペインファイルの退避を完了できませんでした。再試行する前に、ここに示されたファイルを確認してください。",
+  "load.settingsSetAside": "読み取れない設定ファイルを {path} に移動しました。",
+  "load.panesSetAside": "破損したテキストペインファイルを {path} に移動しました。",
 
   "crash.title": "QuickDeck はこのウインドウを表示し続けられませんでした",
   "crash.body": "ウインドウを再読み込みすると回復します。保存済みのペインとスナップショットは変わっていません。",

@@ -22,6 +22,7 @@ export function ErrorModal({ error, onClose }: ErrorModalProps) {
       }
     >
       <p className="errorText">{text(error.message)}</p>
+      {error.details?.map((detail, index) => <p key={index}>{text(detail)}</p>)}
     </ModalBase>
   );
 }

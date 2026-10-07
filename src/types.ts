@@ -54,6 +54,7 @@ export type Toast = {
 };
 
 export type BlockingError = {
+  details?: Message[];
   title: Message;
   message: Message;
 };

@@ -916,6 +916,63 @@ fn a_write_leaves_another_writers_in_flight_temp_alone() {
 }
 
 #[test]
+fn recovery_boundary_reevaluates_repaired_and_newer_targets() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join(CONFIG_FILE_NAME);
+    for replacement in [r#"{"formatVersion":1,"zen":true}"#, NEWER] {
+        fs::write(&path, "{broken").unwrap();
+        assert!(matches!(read_json_store(&path, format_version::CONFIG).unwrap(), JsonRead::Corrupt(_)));
+        fs::write(&path, replacement).unwrap();
+        let _guard = JSON_STORE_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let recovered = quarantine_rebuildable_store(&path, format_version::CONFIG).unwrap();
+        assert!(recovered.quarantined_to.is_none());
+        assert_eq!(fs::read_to_string(&path).unwrap(), replacement);
+        assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 1);
+    }
+}
+
+#[test]
+fn pane_reset_reevaluates_repaired_newer_and_missing_targets() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join(PANES_FILE_NAME);
+    let repaired = r##"{"formatVersion":1,"panes":[{"id":"p","title":"","content":"authored","headerColor":"#ABCDEF","backgroundColor":"#123456"}]}"##;
+    for replacement in [repaired, NEWER] {
+        fs::write(&path, replacement).unwrap();
+        assert_eq!(quarantine_corrupt_panes_in(dir.path()).unwrap(), None);
+        assert_eq!(fs::read_to_string(&path).unwrap(), replacement);
+        assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 1);
+    }
+    fs::remove_file(&path).unwrap();
+    assert_eq!(quarantine_corrupt_panes_in(dir.path()).unwrap(), None);
+}
+
+#[test]
+fn pane_reset_preserves_corrupt_bytes_and_consumed_shape_failures() {
+    for bytes in ["{broken", r#"{"formatVersion":1,"panes":[{"id":"p","content":"authored"}]}"#] {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(PANES_FILE_NAME);
+        fs::write(&path, bytes).unwrap();
+        let moved = quarantine_corrupt_panes_in(dir.path()).unwrap().unwrap();
+        assert!(!path.exists());
+        assert_eq!(fs::read_to_string(moved).unwrap(), bytes);
+        assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 1);
+    }
+}
+
+#[test]
+fn failed_required_load_retains_completed_settings_quarantine() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::write(dir.path().join(CONFIG_FILE_NAME), "{broken settings").unwrap();
+    let snapshots = dir.path().join(SNAPSHOTS_DB_FILE_NAME);
+    fs::create_dir(&snapshots).unwrap();
+    let failure = load_app_data_in(dir.path()).unwrap_err();
+    assert_eq!(failure.path.as_deref(), snapshots.to_str());
+    let moved = failure.config_quarantined_to.unwrap();
+    assert_eq!(fs::read_to_string(moved).unwrap(), "{broken settings");
+    assert!(!dir.path().join(CONFIG_FILE_NAME).exists());
+}
+
+#[test]
 fn rebuildable_store_quarantines_corrupt_and_continues() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("config.json");

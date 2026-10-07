@@ -31,6 +31,7 @@ import {
   createSnapshots,
   loadAppData,
   loadFailurePath,
+  loadFailureRecovery,
   quarantineCorruptPanes,
   saveConfig,
   savePanes,
@@ -78,6 +79,7 @@ type AppStateContextValue = {
   // The file a halt names, resolved by the Rust core; null when the load
   // stopped before reaching a store.
   loadErrorPath: string | null;
+  loadRecovery: Message[];
   loadErrorIsCorruptPanes: boolean;
   snapshotCount: number;
   snapshotJustSavedAt: number | null;
@@ -102,7 +104,7 @@ type AppStateContextValue = {
   dismissToast: (toastId: string) => void;
   // A later success of the same operation clears its outstanding result.
   clearToast: (owner: string) => void;
-  showBlockingError: (title: Message, message: Message) => void;
+  showBlockingError: (title: Message, message: Message, details?: Message[]) => void;
   dismissBlockingError: () => void;
 };
 
@@ -124,6 +126,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const [loadStatus, setLoadStatus] = useState<LoadStatus>("loading");
   const [loadError, setLoadError] = useState<Message | null>(null);
   const [loadErrorPath, setLoadErrorPath] = useState<string | null>(null);
+  const [loadRecovery, setLoadRecovery] = useState<Message[]>([]);
   // True when the failure is specifically a corrupt panes.json — the one halt
   // whose screen offers the explicit set-aside reset.
   const [loadErrorIsCorruptPanes, setLoadErrorIsCorruptPanes] = useState(false);
@@ -181,8 +184,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     setToasts((current) => current.filter((toast) => toast.owner !== owner));
   }, []);
 
-  const showBlockingError = useCallback((title: Message, text: Message) => {
-    setBlockingError({ title, message: text });
+  const showBlockingError = useCallback((title: Message, text: Message, details?: Message[]) => {
+    setBlockingError({ title, message: text, ...(details?.length ? { details } : {}) });
   }, []);
 
   const dismissBlockingError = useCallback(() => {
@@ -190,13 +193,34 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const canceledRef = useRef(false);
+  const loadGenerationRef = useRef(0);
+  const resetInFlightRef = useRef(false);
+  const loadReadyRef = useRef(false);
+  const recoveryFactsRef = useRef<Message[]>([]);
 
-  const loadPersistedState = useCallback(async () => {
+  // Disk moves are completed facts even when their load response is stale.
+  // Only those facts survive; obsolete settings and pane data never apply.
+  const retainRecovery = useCallback((fact: Message) => {
+    if (canceledRef.current || recoveryFactsRef.current.some((prior) =>
+      prior.key === fact.key && prior.values?.path === fact.values?.path)) return;
+    recoveryFactsRef.current = [...recoveryFactsRef.current, fact];
+    setLoadRecovery(recoveryFactsRef.current);
+    if (loadReadyRef.current) {
+      setBlockingError((prior) => prior === null
+        ? { title: message("settingsReset.title"), message: fact }
+        : { ...prior, details: [...(prior.details ?? []), fact] });
+    }
+  }, []);
+
+  const loadPersistedState = useCallback(async (panesSetAsideTo: string | null = null): Promise<{ recoveries: Message[]; emptyPanes: boolean } | null> => {
+    const generation = ++loadGenerationRef.current;
+    const current = () => !canceledRef.current && generation === loadGenerationRef.current;
+    loadReadyRef.current = false;
+    if (panesSetAsideTo !== null) retainRecovery(message("load.panesSetAside", { path: panesSetAsideTo }));
     try {
       const data = await loadAppData();
-      if (canceledRef.current) {
-        return;
-      }
+      if (data.configQuarantinedTo !== null) retainRecovery(message("load.settingsSetAside", { path: data.configQuarantinedTo }));
+      if (!current()) return null;
 
       // Adopt the authoritative debug gate before logging anything else.
       setDebugEnabled(data.debugEnabled);
@@ -208,8 +232,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       const loadedSettings = readSettingsSets(data.config);
       const loadedLanguage = effectiveLanguage(loadedSettings.language, loadedSystemLanguage);
       await loadCatalogue(loadedLanguage);
-      if (canceledRef.current) {
-        return;
+      if (!current()) {
+        return null;
       }
       setSystemLanguage(loadedSystemLanguage);
       setSystemLocale(data.systemLocale);
@@ -227,7 +251,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         setLoadError(message("load.panesUnreadable"));
         setLoadErrorPath(data.panesPath);
         setLoadStatus("failed");
-        return;
+        return null;
       }
 
       // A store from a newer build is intact data this build cannot read: the
@@ -243,7 +267,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         setLoadError(newer.error);
         setLoadErrorPath(newer.path);
         setLoadStatus("failed");
-        return;
+        return null;
       }
 
       if (data.panes !== null) {
@@ -254,7 +278,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
           setLoadError(message("load.panesDamaged"));
           setLoadErrorPath(data.panesPath);
           setLoadStatus("failed");
-          return;
+          return null;
         }
       }
 
@@ -283,7 +307,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
 
       try {
         const initialCount = await countSnapshots();
-        if (!canceledRef.current) {
+        if (current()) {
           setSnapshotCount(initialCount);
         }
       } catch (error) {
@@ -292,6 +316,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         logWarn("snapshot count failed", { error: serializeError(error) });
       }
 
+      if (!current()) return null;
       setZoomLevelState(normalizeZoomLevel(data.state?.zoomLevel));
 
       const defaultTitle = loadTranslator.t("pane.defaultTitle");
@@ -308,8 +333,18 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
 
       setSaveState("saved");
       setLoadStatus("ready");
+      loadReadyRef.current = true;
+      {
+        const settingsMoves = recoveryFactsRef.current.filter((fact) =>
+          fact.key === "load.settingsSetAside" && fact.values?.path !== data.configQuarantinedTo);
+        if (settingsMoves.length > 0) setBlockingError((prior) => prior === null
+          ? { title: message("settingsReset.title"), message: settingsMoves[0], details: settingsMoves.slice(1) }
+          : { ...prior, details: [...(prior.details ?? []), ...settingsMoves] });
+      }
+      return { recoveries: [...recoveryFactsRef.current], emptyPanes: loadedPanes.length === 0 };
     } catch (error) {
-      if (!canceledRef.current) {
+      for (const fact of loadFailureRecovery(error)) retainRecovery(fact);
+      if (current()) {
         // Halt: do not transition into a state where any write path can run.
         // The App shell renders a non-dismissible error screen for "failed",
         // so the user's existing files on disk are never overwritten by the
@@ -320,8 +355,9 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         setLoadErrorPath(loadFailurePath(error));
         setLoadStatus("failed");
       }
+      return null;
     }
-  }, [firstPane, showBlockingError]);
+  }, [firstPane, retainRecovery, showBlockingError]);
 
   useEffect(() => {
     if (chosenLanguage === language) return undefined;
@@ -342,30 +378,38 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     void loadPersistedState();
     return () => {
       canceledRef.current = true;
+      loadGenerationRef.current += 1;
     };
   }, [loadPersistedState]);
 
-  // The reset the corrupt-panes halt screen offers: quarantine panes.json on
-  // the user's command (the rename either lands or the error surfaces), then
-  // reload — the absent store comes back as the default single pane — and say
-  // where the file went.
+  // Reset rechecks the named target; a repaired or newer file is reloaded in
+  // place. Completed set-aside facts survive a later required-load failure.
   const resetCorruptPanes = useCallback(async () => {
+    if (resetInFlightRef.current) return;
+    resetInFlightRef.current = true;
     try {
       const quarantinedTo = await quarantineCorruptPanes();
-      logInfo("corrupt panes.json set aside on user command", { quarantinedTo });
+      if (canceledRef.current) return;
+      if (quarantinedTo !== null) logInfo("corrupt panes.json set aside on user command", { quarantinedTo });
       setLoadErrorIsCorruptPanes(false);
       setLoadError(null);
       setLoadErrorPath(null);
       setLoadStatus("loading");
-      await loadPersistedState();
-      showBlockingError(
-        message("panesSetAside.title"),
-        message("panesSetAside.body", { path: quarantinedTo }),
-      );
+      const recovery = await loadPersistedState(quarantinedTo);
+      if (quarantinedTo !== null && recovery !== null) {
+        const paneMove = message(recovery.emptyPanes ? "panesSetAside.body" : "load.panesSetAside", { path: quarantinedTo });
+        setBlockingError((prior) => prior === null
+          ? { title: message("panesSetAside.title"), message: paneMove,
+              details: recovery.recoveries.filter((fact) => fact.key !== "load.panesSetAside") }
+          : { ...prior, details: [...(prior.details ?? []), paneMove] });
+      }
     } catch (error) {
+      if (canceledRef.current) return;
       logError("panes reset failed", { error: serializeError(error) });
       setLoadError(message("load.setAsideFailed"));
       setLoadStatus("failed");
+    } finally {
+      resetInFlightRef.current = false;
     }
   }, [loadPersistedState, showBlockingError]);
 
@@ -624,6 +668,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       loadStatus,
       loadError,
       loadErrorPath,
+      loadRecovery,
       loadErrorIsCorruptPanes,
       snapshotCount,
       snapshotJustSavedAt,
@@ -660,6 +705,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       dismissToast,
       loadError,
       loadErrorPath,
+      loadRecovery,
       loadErrorIsCorruptPanes,
       loadStatus,
       movePane,

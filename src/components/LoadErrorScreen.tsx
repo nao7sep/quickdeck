@@ -14,6 +14,7 @@ import { logWarn, serializeError } from "../services/logger";
 
 type LoadErrorScreenProps = {
   error: Message;
+  recovery?: Message[];
   // The file the halt names; null when the load stopped before reaching a
   // store, and the hint then names the data folder instead.
   path: string | null;
@@ -24,7 +25,7 @@ type LoadErrorScreenProps = {
   onSetAsideAndReset?: () => void;
 };
 
-export function LoadErrorScreen({ error, path, onSetAsideAndReset }: LoadErrorScreenProps) {
+export function LoadErrorScreen({ error, path, recovery = [], onSetAsideAndReset }: LoadErrorScreenProps) {
   const { t, rich, text } = useI18n();
   function quit() {
     if (isTauri()) {
@@ -46,6 +47,7 @@ export function LoadErrorScreen({ error, path, onSetAsideAndReset }: LoadErrorSc
       <div className="loadErrorPanel">
         <h1 className="loadErrorTitle">{t("load.title")}</h1>
         <p className="loadErrorMessage">{text(error)}</p>
+        {recovery.map((fact, index) => <p key={index} role="status">{text(fact)}</p>)}
         <p className="loadErrorHint">
           {path !== null
             ? rich("load.hint", { path: <code>{path}</code> })

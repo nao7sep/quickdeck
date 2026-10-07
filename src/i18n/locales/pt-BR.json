@@ -173,7 +173,9 @@
   "load.panesDamaged": "O arquivo de texto dos seus painéis (panes.json) está danificado e foi deixado exatamente onde estava. Os detalhes de diagnóstico estão no log.",
   "load.panesNewer": "O arquivo de texto dos seus painéis (panes.json) foi gravado por uma versão mais recente do QuickDeck (formato {version}) e foi deixado exatamente onde estava. Atualize o QuickDeck para abri-lo.",
   "load.snapshotsNewer": "O arquivo dos seus instantâneos (snapshots.sqlite3) foi gravado por uma versão mais recente do QuickDeck (formato {version}) e foi deixado exatamente onde estava. Atualize o QuickDeck para abri-lo.",
-  "load.setAsideFailed": "Não foi possível deixar de lado o arquivo de painéis danificado. Seus arquivos não foram alterados.",
+  "load.setAsideFailed": "O QuickDeck não conseguiu concluir a separação do arquivo de texto dos painéis. Verifique os arquivos indicados aqui antes de tentar novamente.",
+  "load.settingsSetAside": "O arquivo de configurações ilegível foi movido para {path}.",
+  "load.panesSetAside": "O arquivo de texto dos painéis danificado foi movido para {path}.",
 
   "crash.title": "O QuickDeck não conseguiu manter esta janela aberta",
   "crash.body": "Recarregue a janela para recuperá-la. Seus painéis e instantâneos salvos não foram alterados.",

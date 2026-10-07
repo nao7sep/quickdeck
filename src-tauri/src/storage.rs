@@ -54,6 +54,8 @@ pub const RECORDS_DB_FILE_NAME: &str = "records.sqlite3";
 // it over (window conventions: the width is saved only when a drag ends).
 pub const RECORDS_LIST_WIDTH_KEY: &str = "recordsListWidth";
 static STATE_LOCK: Mutex<()> = Mutex::new(());
+// Recovery and managed JSON writes share admission (store-recovery conventions).
+static JSON_STORE_LOCK: Mutex<()> = Mutex::new(());
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -133,13 +135,15 @@ pub struct SnapshotListResult {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LoadFailure {
+    pub config_quarantined_to: Option<String>,
     pub path: Option<String>,
     pub message: String,
 }
 
 impl LoadFailure {
-    fn at(path: &Path) -> impl FnOnce(String) -> Self + '_ {
+    fn at<'a>(path: &'a Path, config_quarantined_to: Option<&'a str>) -> impl FnOnce(String) -> Self + 'a {
         move |message| Self {
+            config_quarantined_to: config_quarantined_to.map(str::to_owned),
             path: Some(path.to_string_lossy().into_owned()),
             message,
         }
@@ -149,6 +153,7 @@ impl LoadFailure {
 impl From<String> for LoadFailure {
     fn from(message: String) -> Self {
         Self {
+            config_quarantined_to: None,
             path: None,
             message,
         }
@@ -165,7 +170,10 @@ impl std::fmt::Display for LoadFailure {
 }
 
 pub fn load_app_data(app: &AppHandle) -> Result<LoadedAppData, LoadFailure> {
-    let data_dir = app_data_dir(app)?;
+    load_app_data_in(&app_data_dir(app)?)
+}
+
+fn load_app_data_in(data_dir: &Path) -> Result<LoadedAppData, LoadFailure> {
     // Per-store failure isolation (persisted-store-separation, Independent
     // recovery): each store takes its own branch, so a corrupt settings file
     // can never make the panes' text unreachable. Config and state are
@@ -174,13 +182,13 @@ pub fn load_app_data(app: &AppHandle) -> Result<LoadedAppData, LoadFailure> {
     // stores still load and the halt surface can offer a reset.
     let config_path = data_dir.join(CONFIG_FILE_NAME);
     let config = read_rebuildable_store(&config_path, format_version::CONFIG)
-        .map_err(LoadFailure::at(&config_path))?;
+        .map_err(LoadFailure::at(&config_path, None))?;
     // state.json contains only the active pane and zoom. Preserve and log corrupt
     // bytes, or a newer format, but do not surface a dialog for disposable view
     // state.
     let state_path = data_dir.join(STATE_FILE_NAME);
     let state = read_rebuildable_store(&state_path, format_version::STATE)
-        .map_err(LoadFailure::at(&state_path))?;
+        .map_err(LoadFailure::at(&state_path, config.quarantined_to.as_deref()))?;
     let panes_path = data_dir.join(PANES_FILE_NAME);
     let (panes, panes_error, panes_newer) =
         match read_json_store(&panes_path, format_version::PANES) {
@@ -191,7 +199,7 @@ pub fn load_app_data(app: &AppHandle) -> Result<LoadedAppData, LoadFailure> {
         };
     let snapshots_path = data_dir.join(SNAPSHOTS_DB_FILE_NAME);
     let snapshots_newer =
-        match open_snapshot_store(&data_dir).map_err(LoadFailure::at(&snapshots_path))? {
+        match open_snapshot_store(&data_dir).map_err(LoadFailure::at(&snapshots_path, config.quarantined_to.as_deref()))? {
             SnapshotStore::Ready(_) => None,
             SnapshotStore::Newer(recorded) => Some(recorded),
         };
@@ -401,19 +409,42 @@ fn save_panes_in(data_dir: &Path, panes: &JsonValue) -> Result<(), SaveFailure> 
 // report can name it. The rename either lands or its failure propagates —
 // never a silent fall-through to defaults over the preserved bytes
 // (storage-path conventions: halting requires exactly this reset offer).
-pub fn quarantine_corrupt_panes(app: &AppHandle) -> Result<String, String> {
-    let data_dir = app_data_dir(app)?;
+pub fn quarantine_corrupt_panes(app: &AppHandle) -> Result<Option<String>, String> {
+    quarantine_corrupt_panes_in(&app_data_dir(app)?)
+}
+
+fn quarantine_corrupt_panes_in(data_dir: &Path) -> Result<Option<String>, String> {
+    let _guard = JSON_STORE_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     let path = data_dir.join(PANES_FILE_NAME);
+    match read_json_store(&path, format_version::PANES)? {
+        JsonRead::Absent | JsonRead::Newer(_) => return Ok(None),
+        JsonRead::Readable(fields) if valid_panes_shape(&fields) => return Ok(None),
+        _ => {}
+    }
     let quarantined = quarantine_name(&path);
     fs::rename(&path, &quarantined).map_err(to_string_error)?;
     crate::logging::warn(
         "corrupt panes.json set aside on user command",
-        serde_json::json!({
-            "file": path.to_string_lossy(),
-            "quarantinedTo": quarantined.to_string_lossy(),
-        }),
+        serde_json::json!({ "file": path.to_string_lossy(), "quarantinedTo": quarantined.to_string_lossy() }),
     );
-    Ok(quarantined.to_string_lossy().into_owned())
+    Ok(Some(quarantined.to_string_lossy().into_owned()))
+}
+
+// The reset checks the same consumed shape as panesShapeIssues in the editor.
+fn valid_panes_shape(fields: &serde_json::Map<String, JsonValue>) -> bool {
+    let Some(panes) = fields.get("panes").and_then(JsonValue::as_array) else { return false; };
+    let mut ids = std::collections::HashSet::new();
+    panes.iter().all(|pane| {
+        let Some(pane) = pane.as_object() else { return false; };
+        let Some(id) = pane.get("id").and_then(JsonValue::as_str) else { return false; };
+        !id.is_empty() && ids.insert(id)
+            && ["title", "content"].iter().all(|key| pane.get(*key).is_some_and(JsonValue::is_string))
+            && ["headerColor", "backgroundColor"].iter().all(|key| {
+                pane.get(*key).and_then(JsonValue::as_str).is_some_and(|color| {
+                    color.len() == 7 && color.starts_with('#') && color.as_bytes()[1..].iter().all(u8::is_ascii_hexdigit)
+                })
+            })
+    })
 }
 
 pub fn create_snapshot(
@@ -731,6 +762,7 @@ struct Rebuildable {
 // conventions). panes.json never takes this path — it holds the user's text
 // and halts instead.
 fn read_rebuildable_store(path: &Path, version: u32) -> Result<Rebuildable, String> {
+    let _guard = JSON_STORE_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     Ok(match read_json_store(path, version)? {
         JsonRead::Absent => Rebuildable::default(),
         JsonRead::Readable(fields) => Rebuildable {
@@ -741,7 +773,7 @@ fn read_rebuildable_store(path: &Path, version: u32) -> Result<Rebuildable, Stri
             newer: Some(recorded),
             ..Rebuildable::default()
         },
-        JsonRead::Corrupt(reason) => quarantine_rebuildable_store(path, &reason)?,
+        JsonRead::Corrupt(_) => quarantine_rebuildable_store(path, version)?,
     })
 }
 
@@ -756,7 +788,15 @@ pub fn launch_config(text: &str) -> Option<serde_json::Map<String, JsonValue>> {
     }
 }
 
-fn quarantine_rebuildable_store(path: &Path, reason: &str) -> Result<Rebuildable, String> {
+fn quarantine_rebuildable_store(path: &Path, version: u32) -> Result<Rebuildable, String> {
+    // Classification is fresh at the destructive boundary, under the caller's
+    // write/recovery admission. Repaired and newer targets are never set aside.
+    let reason = match read_json_store(path, version)? {
+        JsonRead::Absent => return Ok(Rebuildable::default()),
+        JsonRead::Readable(fields) => return Ok(Rebuildable { value: Some(fields), ..Rebuildable::default() }),
+        JsonRead::Newer(recorded) => return Ok(Rebuildable { newer: Some(recorded), ..Rebuildable::default() }),
+        JsonRead::Corrupt(reason) => reason,
+    };
     let quarantined = quarantine_name(path);
     fs::rename(path, &quarantined).map_err(|rename_err| {
         format!(
@@ -859,6 +899,7 @@ fn write_json_atomically(
     value: &JsonValue,
     version: u32,
 ) -> Result<JsonWrite, String> {
+    let _guard = JSON_STORE_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     let parent = path
         .parent()
         .ok_or_else(|| format!("missing parent directory for {}", path.display()))?;

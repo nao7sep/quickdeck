@@ -32,3 +32,15 @@ it("names the file the halt left in place", async () => {
 it("names the data folder when the load stopped before reaching a file", async () => {
   expect(await render(null)).toEqual([".quickdeck", "QUICKDECK_DATA_DIR"]);
 });
+
+it("presents completed recovery facts beside the terminal halt", async () => {
+  const container = document.createElement("div"); document.body.append(container); root = createRoot(container);
+  await act(async () => root?.render(<LoadErrorScreen error={message("load.failed")} path="/actual/snapshots.sqlite3" recovery={[
+    message("load.settingsSetAside", { path: "/actual/config.invalid" }),
+    message("load.panesSetAside", { path: "/actual/panes.invalid" }),
+  ]} />));
+  expect(container.textContent).toContain("moved to /actual/config.invalid");
+  expect(container.textContent).toContain("moved to /actual/panes.invalid");
+  expect(container.textContent).toContain("/actual/snapshots.sqlite3");
+  expect(container.textContent).not.toContain("started with");
+});

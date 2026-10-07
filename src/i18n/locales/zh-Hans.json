@@ -173,7 +173,9 @@
   "load.panesDamaged": "你的窗格文本文件（panes.json）已损坏，该文件已原样留在原处。诊断详情记录在日志中。",
   "load.panesNewer": "你的窗格文本文件（panes.json）由较新版本的 QuickDeck（格式 {version}）写入，已原样留在原处。请更新 QuickDeck 后再打开。",
   "load.snapshotsNewer": "你的快照存储文件（snapshots.sqlite3）由较新版本的 QuickDeck（格式 {version}）写入，已原样留在原处。请更新 QuickDeck 后再打开。",
-  "load.setAsideFailed": "无法将损坏的窗格文件移到一旁。你现有的文件没有被更改。",
+  "load.setAsideFailed": "QuickDeck 无法完成文本窗格文件的移出操作。请先检查此处列出的文件，再重试。",
+  "load.settingsSetAside": "无法读取的设置文件已移至 {path}。",
+  "load.panesSetAside": "损坏的文本窗格文件已移至 {path}。",
 
   "crash.title": "QuickDeck 无法让此窗口保持打开",
   "crash.body": "重新载入窗口即可恢复。你已保存的窗格和快照没有变化。",

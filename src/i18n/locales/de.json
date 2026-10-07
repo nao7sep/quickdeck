@@ -173,7 +173,9 @@
   "load.panesDamaged": "Die Textdatei Ihrer Bereiche (panes.json) ist beschädigt und wurde unverändert an ihrem Ort belassen. Die Diagnosedetails stehen im Protokoll.",
   "load.panesNewer": "Die Textdatei Ihrer Bereiche (panes.json) wurde von einer neueren Version von QuickDeck (Format {version}) geschrieben und unverändert an ihrem Ort belassen. Aktualisieren Sie QuickDeck, um sie zu öffnen.",
   "load.snapshotsNewer": "Ihr Snapshot-Speicher (snapshots.sqlite3) wurde von einer neueren Version von QuickDeck (Format {version}) geschrieben und unverändert an seinem Ort belassen. Aktualisieren Sie QuickDeck, um ihn zu öffnen.",
-  "load.setAsideFailed": "Die beschädigte Datei der Bereiche konnte nicht beiseitegelegt werden. Ihre vorhandenen Dateien wurden nicht geändert.",
+  "load.setAsideFailed": "QuickDeck konnte die Textdatei der Puffer nicht vollständig beiseitelegen. Prüfen Sie die hier genannten Dateien, bevor Sie es erneut versuchen.",
+  "load.settingsSetAside": "Die unlesbare Einstellungsdatei wurde nach {path} verschoben.",
+  "load.panesSetAside": "Die beschädigte Textdatei der Puffer wurde nach {path} verschoben.",
 
   "crash.title": "QuickDeck konnte dieses Fenster nicht offen halten",
   "crash.body": "Laden Sie das Fenster neu, um es wiederherzustellen. Ihre gespeicherten Bereiche und Snapshots sind unverändert.",

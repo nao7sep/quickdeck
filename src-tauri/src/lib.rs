@@ -215,7 +215,7 @@ async fn save_panes(app: AppHandle, panes: JsonValue) -> Result<(), SaveFailure>
 }
 
 #[tauri::command]
-async fn quarantine_corrupt_panes(app: AppHandle) -> Result<String, String> {
+async fn quarantine_corrupt_panes(app: AppHandle) -> Result<Option<String>, String> {
     off_main_thread(move || {
         logging::boundary(
             "quarantine_corrupt_panes",

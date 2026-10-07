@@ -126,6 +126,12 @@ export function loadFailurePath(error: unknown): string | null {
   return typeof error.path === "string" ? error.path : null;
 }
 
+export function loadFailureRecovery(error: unknown): Message[] {
+  if (typeof error !== "object" || error === null || !("configQuarantinedTo" in error)) return [];
+  return typeof error.configQuarantinedTo === "string"
+    ? [message("load.settingsSetAside", { path: error.configQuarantinedTo })] : [];
+}
+
 // Named native refusal; diagnostic text is never presented as product copy.
 export function saveFailureMessage(error: unknown): Message | null {
   if (typeof error !== "object" || error === null || !("path" in error) || !("newer" in error)) return null;
@@ -187,8 +193,8 @@ export async function savePanes(panes: PanesFile): Promise<void> {
 
 // The user-commanded reset behind the corrupt-panes halt: the Rust core sets
 // panes.json aside to its `.invalid` name and returns where it went.
-export async function quarantineCorruptPanes(): Promise<string> {
-  return invoke<string>("quarantine_corrupt_panes");
+export async function quarantineCorruptPanes(): Promise<string | null> {
+  return invoke<string | null>("quarantine_corrupt_panes");
 }
 
 export async function createSnapshot(input: SnapshotWriteInput): Promise<SnapshotWriteResult> {
