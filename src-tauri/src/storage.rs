@@ -528,13 +528,13 @@ fn create_snapshot_with_connection(
     }
 
     // A copy is new when it differs from the pane's latest snapshot, so text the
-    // pane held before and returned to is recorded again. Latest is newest in the
-    // order the window lists, with insertion order breaking a same-instant tie.
+    // pane held before and returned to is recorded again. Latest follows insertion
+    // order even when the wall clock moves backward; display keeps its own order.
     let content_hash = hash_content(&snapshot.content);
     let latest = conn
         .query_row(
             "select id, content_hash from snapshots where pane_id = ?1
-             order by created_at_utc desc, rowid desc limit 1",
+             order by rowid desc limit 1",
             params![snapshot.pane_id],
             |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
         )

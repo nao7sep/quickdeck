@@ -201,6 +201,19 @@ fn the_latest_of_same_instant_snapshots_is_the_one_stored_last() {
 }
 
 #[test]
+fn dedup_uses_insertion_order_when_the_clock_moves_backward() {
+    let conn = mem_db();
+    insert_row(&conn, "first", "p1", "2026-01-01T12:00:00.000Z", "A");
+    insert_row(&conn, "second", "p1", "2026-01-01T11:59:00.000Z", "B");
+    let repeat = create_snapshot_with_connection(&conn, input("p1", "B")).unwrap();
+    assert!(!repeat.inserted);
+    assert_eq!(repeat.id.as_deref(), Some("second"));
+    let back = create_snapshot_with_connection(&conn, input("p1", "A")).unwrap();
+    assert!(back.inserted);
+    assert_eq!(count_rows(&conn), 3);
+}
+
+#[test]
 fn same_content_in_different_panes_both_insert() {
     let conn = mem_db();
     let a = create_snapshot_with_connection(&conn, input("p1", "shared")).unwrap();
