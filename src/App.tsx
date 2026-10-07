@@ -522,7 +522,8 @@ export function App() {
     const appWindow = isTauri() ? getCurrentWindow() : null;
     let closeUnlisten: (() => void) | undefined;
     let sessionEndUnlisten: (() => void) | undefined;
-    let closeInFlight = false;
+    let closing: Promise<boolean> | null = null;
+    let sessionEnding = false;
 
     const quitSteps = {
       snapshot: () => snapshotAllPanesRef.current("app_close"),
@@ -548,6 +549,7 @@ export function App() {
     async function saveBeforeClose(): Promise<boolean> {
       for (;;) {
         if (await saveForQuit(quitSteps)) return true;
+        if (sessionEnding) return false;
         const choice = await askAfterQuitSaveFailure();
         if (choice === "quitAnyway") {
           logWarn("quit without saving", {});
@@ -570,12 +572,10 @@ export function App() {
         // arriving during a slow save would let Tauri tear the window down
         // mid-write.
         event.preventDefault();
-        if (closeInFlight) {
-          return;
-        }
-        closeInFlight = true;
+        if (closing || sessionEnding) return;
+        closing = saveBeforeClose();
         try {
-          if (!(await saveBeforeClose())) {
+          if (!(await closing) || sessionEnding) {
             return;
           }
           appDestroyingRef.current = true;
@@ -584,7 +584,7 @@ export function App() {
           logError("close window failed", { error: serializeError(error) });
           showToastRef.current("window-close:destroy", "error", message("toast.closeFailed"));
         } finally {
-          closeInFlight = false;
+          closing = null;
         }
       }).then((unlisten) => {
         closeUnlisten = unlisten;
@@ -601,9 +601,17 @@ export function App() {
       // its failures are logged, and the Rust core exits once it hears back or
       // its own bound passes (unsaved-edits conventions, Quitting).
       void onSessionEnding(() => {
-        void saveForQuit(quitSteps)
+        if (sessionEnding) return;
+        sessionEnding = true;
+        // Take over the admitted attempt. A question follows a failed save,
+        // so settle it as Retry within this owner, with further prompts off.
+        if (quitChoiceRef.current) chooseAfterQuitSaveFailure("retry");
+        const saving = closing ?? saveBeforeClose();
+        closing = saving;
+        void saving
           .then(() => reportSessionEndSaved())
-          .catch((error) => logWarn("session end report failed", { error: serializeError(error) }));
+          .catch((error) => logWarn("session end report failed", { error: serializeError(error) }))
+          .finally(() => { sessionEnding = false; if (closing === saving) closing = null; });
       }).then((unlisten) => {
         sessionEndUnlisten = unlisten;
       }).catch((error) => {

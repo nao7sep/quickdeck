@@ -7,7 +7,6 @@
 //! The computer's language is read once, at launch, before anything can
 //! override it; System resolves against that reading for the whole session.
 
-use std::path::Path;
 use std::sync::Mutex;
 
 use serde_json::{Map, Value as JsonValue};
@@ -68,13 +67,6 @@ pub fn saved_preference(config: &str) -> Option<&'static str> {
     normalize_preference(value.get("language")?.as_str())
 }
 
-/// Reads the saved choice without touching the file. A missing or unreadable
-/// config is System; recovery of a corrupt one stays with the load path.
-pub fn read_saved_preference(config_path: &Path) -> Option<&'static str> {
-    let text = std::fs::read_to_string(config_path).ok()?;
-    saved_preference(&text)
-}
-
 /// The language the computer and the saved choice settle on at launch, and the
 /// language the native menu currently speaks.
 pub struct LanguageState {
@@ -89,10 +81,10 @@ impl LanguageState {
     /// Reads the computer's languages and the saved choice. Must run before
     /// the macOS override in `align_appkit`, which would otherwise be read back
     /// as the computer's language.
-    pub fn detect(config_path: Option<&Path>) -> Self {
+    pub fn detect(config: Option<&str>) -> Self {
         let locales: Vec<String> = sys_locale::get_locales().collect();
         let system_language = system_language(locales.iter().map(String::as_str));
-        let preference = config_path.and_then(read_saved_preference);
+        let preference = config.and_then(saved_preference);
         LanguageState {
             system_language,
             system_locale: locales.into_iter().next(),

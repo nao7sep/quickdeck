@@ -8,6 +8,7 @@ mod menu;
 mod nanoid;
 mod paths;
 mod quit;
+mod startup;
 pub mod records;
 mod records_window;
 pub mod storage;
@@ -475,11 +476,10 @@ pub fn run() {
     let managed_placement_state = placement_state.clone();
     // The interface language is settled before Tauri builds the app: macOS fixes
     // AppKit's language when the application object is created.
-    let language = LanguageState::detect(
-        paths::data_dir_before_launch()
-            .map(|dir| dir.join(storage::CONFIG_FILE_NAME))
-            .as_deref(),
-    );
+    let config_path = paths::data_dir_before_launch().map(|dir| dir.join(storage::CONFIG_FILE_NAME));
+    let config = startup::saved_config(config_path);
+    let saved_theme = config.as_deref().and_then(theme::saved_window_theme);
+    let language = LanguageState::detect(config.as_deref());
     #[cfg(target_os = "macos")]
     i18n::align_appkit(language.current());
     let app = tauri::Builder::default()
@@ -521,9 +521,6 @@ pub fn run() {
             // The saved theme is applied before the window is shown so the first
             // frame and title bar already match it; the frontend re-applies it on
             // every Save.
-            let saved_theme = paths::app_data_dir(app.handle()).ok().and_then(|dir| {
-                theme::read_saved_window_theme(&dir.join(storage::CONFIG_FILE_NAME))
-            });
             app.manage(WindowTheme(Mutex::new(saved_theme)));
             window_placement::load(app.handle(), &setup_placement_state);
             let main_window = app.get_webview_window("main");

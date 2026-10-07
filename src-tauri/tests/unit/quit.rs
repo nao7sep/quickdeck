@@ -21,7 +21,8 @@ fn a_terminate_without_a_quit_event_is_the_users() {
 #[test]
 fn the_windows_report_settles_the_session_end_it_answers() {
     let session_end = SessionEnd::default();
-    let saved = session_end.begin();
+    let (saved, first) = session_end.begin();
+    assert!(first);
     assert!(saved.try_recv().is_err());
 
     session_end.finish();
@@ -33,19 +34,23 @@ fn a_report_with_no_session_end_in_flight_does_nothing() {
     let session_end = SessionEnd::default();
     session_end.finish();
 
-    let saved = session_end.begin();
+    let (saved, first) = session_end.begin();
+    assert!(first);
     assert!(saved.try_recv().is_err());
 }
 
 #[test]
-fn a_late_report_settles_only_the_newest_session_end() {
+fn repeated_session_requests_join_the_admitted_save() {
     let session_end = SessionEnd::default();
-    let first = session_end.begin();
-    let second = session_end.begin();
-
+    let (first, first_owner) = session_end.begin();
+    let (second, second_owner) = session_end.begin();
+    assert!(first_owner);
+    assert!(!second_owner);
     session_end.finish();
-    assert!(first.try_recv().is_err());
+    assert!(first.try_recv().is_ok());
     assert!(second.try_recv().is_ok());
+    let (_, next_owner) = session_end.begin();
+    assert!(next_owner);
 }
 
 // Windows gives each end-session message 5 s before it offers to end the app;

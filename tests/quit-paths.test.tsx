@@ -411,7 +411,23 @@ describe("an OS logout, restart or shutdown", () => {
     expect(mocks.invoke).toHaveBeenCalledExactlyOnceWith("session_end_saved");
   });
 
-  it("saves without prompting even while a cancelled quit is still asking", async () => {
+  it.each([true, false])("joins a user save already in flight without a second save or a prompt (saved: %s)", async (saved) => {
+    let settle!: () => void;
+    const saveNow = vi.fn(() => new Promise<boolean>((resolve) => { settle = () => resolve(saved); }));
+    await renderApp(createAppState({ saveNow }));
+    const closing = await requestClose();
+    try {
+      await endSession();
+      await endSession();
+      expect(saveNow).toHaveBeenCalledOnce();
+      expect(mocks.invoke).not.toHaveBeenCalled();
+    } finally { await act(async () => { settle(); await closing.done; await vi.advanceTimersByTimeAsync(0); }); }
+    expect(dialog()).toBeNull();
+    expect(mocks.destroy).not.toHaveBeenCalled();
+    expect(mocks.invoke).toHaveBeenCalledExactlyOnceWith("session_end_saved");
+  });
+
+  it("takes over the existing quit question and retries without another prompt", async () => {
     const saveNow = vi.fn()
       .mockRejectedValueOnce(new Error("read-only"))
       .mockResolvedValueOnce(true);
@@ -423,7 +439,8 @@ describe("an OS logout, restart or shutdown", () => {
     await endSession();
 
     expect(saveNow).toHaveBeenCalledTimes(2);
-    expect(document.querySelectorAll('[role="dialog"]')).toHaveLength(1);
+    expect(dialog()).toBeNull();
+    expect(mocks.destroy).not.toHaveBeenCalled();
     expect(mocks.invoke).toHaveBeenCalledExactlyOnceWith("session_end_saved");
   });
 });

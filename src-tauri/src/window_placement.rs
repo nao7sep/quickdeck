@@ -10,7 +10,7 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
-use tauri::{AppHandle, PhysicalPosition, PhysicalSize, Window, WindowEvent, Wry};
+use tauri::{AppHandle, Manager, PhysicalPosition, PhysicalSize, Window, WindowEvent, Wry};
 
 use crate::{logging, storage};
 
@@ -127,11 +127,12 @@ fn replace_state(state: &PlacementState, label: &str, placement: Option<Placemen
     }
 }
 
-// Reads window.json once, in setup, on the main thread: the main window's
-// placement must be applied before it is first shown (window conventions), and
-// the Records window, opened later, takes its own from what was read here.
+// Prepare on a worker before showing the first frame (window conventions).
+// A late result never mutates the live placement state.
 pub(crate) fn load(app: &AppHandle, state: &PlacementState) {
-    let saved = match storage::load_window_state(app) {
+    let root = app.state::<crate::archive::ArchiveSession>().root.clone();
+    let saved = match crate::startup::prepare("window placement", crate::startup::PREPARE_WAIT,
+        move || storage::load_window_state_in(&root)).and_then(|result| result) {
         Ok(value) => placements_from(value),
         Err(error) => {
             logging::warn(

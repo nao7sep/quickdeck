@@ -3,6 +3,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useI18n } from "../../src/i18n/I18nContext";
 import { AppStateProvider, useAppState } from "../../src/state/AppStateContext";
+import { STARTUP_LOAD_BOUND_MS } from "../../src/services/startup";
 import { defaultSettings } from "../../src/state/defaults";
 import type { LoadedAppData } from "../../src/services/persistence";
 
@@ -319,6 +320,41 @@ describe("startup invocation and recovery truth", () => {
       expect(latestStartup!.blockingError?.message.key).toBe("settingsNewer.body");
       expect(latestStartup!.blockingError?.details).toContainEqual(paneMove);
     }
+  });
+
+  it("halts a timed-out required load and retains its late move without adopting its panes", async () => {
+    vi.useFakeTimers();
+    let settle!: () => void;
+    persistence.loadAppData.mockImplementationOnce(() => new Promise<LoadedAppData>((resolve) => {
+      settle = () => resolve(loadedAppData({ configQuarantinedTo: "/actual/config.invalid", panes: { panes: [
+        { id: "late", title: "Late", content: "must not adopt", headerColor: "#112233", backgroundColor: "#ffffff" },
+      ] } }));
+    }));
+    try {
+      await renderStartupState();
+      await act(async () => vi.advanceTimersByTimeAsync(STARTUP_LOAD_BOUND_MS));
+      expect(latestStartup!.loadStatus).toBe("failed");
+      expect(latestStartup!.loadError?.key).toBe("load.failed");
+      expect(persistence.savePanes).not.toHaveBeenCalled();
+    } finally { await act(async () => settle()); vi.useRealTimers(); }
+    expect(latestStartup!.loadStatus).toBe("failed");
+    expect(latestStartup!.panes[0].content).not.toBe("must not adopt");
+    expect(latestStartup!.loadRecovery).toContainEqual({ key: "load.settingsSetAside", values: { path: "/actual/config.invalid" } });
+  });
+
+  it("bounds informational startup count without allowing its late value to replace a current count", async () => {
+    vi.useFakeTimers();
+    let settle!: () => void;
+    persistence.countSnapshots.mockImplementationOnce(() => new Promise<number>((resolve) => { settle = () => resolve(999); }));
+    try {
+      await renderStartupState();
+      await act(async () => vi.advanceTimersByTimeAsync(STARTUP_LOAD_BOUND_MS));
+      expect(latestStartup!.loadStatus).toBe("ready");
+      persistence.countSnapshots.mockResolvedValueOnce(7);
+      await act(async () => latestStartup!.refreshSnapshotCount());
+      expect(latestStartup!.snapshotCount).toBe(7);
+    } finally { await act(async () => settle()); vi.useRealTimers(); }
+    expect(latestStartup!.snapshotCount).toBe(7);
   });
 
   it("retains a completed settings move on a later native required-load failure", async () => {

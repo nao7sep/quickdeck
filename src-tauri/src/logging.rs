@@ -17,11 +17,11 @@ use std::{
 use chrono::{SecondsFormat, Utc};
 use rusqlite::{params, Connection};
 use serde_json::{json, Map, Value};
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
 
 use crate::{
     format_version::{self, SqliteFormat},
-    paths, records,
+    records,
     storage::RECORDS_DB_FILE_NAME,
 };
 
@@ -121,7 +121,7 @@ pub fn init(app: &AppHandle, version: &str) {
             .unwrap_or(false);
 
     let started = Utc::now();
-    let root = paths::app_data_dir(app);
+    let root = Ok::<_, String>(app.state::<crate::archive::ArchiveSession>().root.clone());
     let session = Session {
         started: started.to_rfc3339_opts(SecondsFormat::Millis, true),
         stamp: session_stamp(started),

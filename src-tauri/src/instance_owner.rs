@@ -114,8 +114,13 @@ fn listen<R: Runtime>(listener: TcpListener, app: tauri::AppHandle<R>) {
 pub fn init() -> tauri::plugin::TauriPlugin<tauri::Wry> {
     tauri::plugin::Builder::<tauri::Wry>::new("instance-owner")
         .setup(|app, _api| {
-            let root = crate::paths::app_data_dir(app.app_handle())?;
-            match claim(&root)? {
+            let handle = app.app_handle().clone();
+            let (root, claimed) = crate::startup::prepare("instance ownership", crate::startup::PREPARE_WAIT, move || {
+                let root = crate::paths::app_data_dir(&handle)?;
+                let claimed = claim(&root)?;
+                Ok::<_, String>((root, claimed))
+            })??;
+            match claimed {
                 Claim::Primary { lock, listener } => {
                     app.manage(crate::archive::start_session(root));
                     listen(listener, app.app_handle().clone());
@@ -123,7 +128,7 @@ pub fn init() -> tauri::plugin::TauriPlugin<tauri::Wry> {
                     Ok(())
                 }
                 Claim::Secondary { endpoint_path } => {
-                    let _ = notify_primary(&endpoint_path);
+                    let _ = crate::startup::prepare("existing instance activation", NOTIFY_TIMEOUT, move || notify_primary(&endpoint_path));
                     std::process::exit(0);
                 }
             }

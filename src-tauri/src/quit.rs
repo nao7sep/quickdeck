@@ -59,17 +59,19 @@ fn quit_origin(event_id: Option<u32>, has_quit_reason: bool) -> QuitOrigin {
 
 /// The session-end save in flight: the window's report settles it.
 #[derive(Default)]
-pub struct SessionEnd(Mutex<Option<mpsc::SyncSender<()>>>);
+pub struct SessionEnd(Mutex<Vec<mpsc::SyncSender<()>>>);
 
 impl SessionEnd {
-    fn begin(&self) -> mpsc::Receiver<()> {
+    fn begin(&self) -> (mpsc::Receiver<()>, bool) {
         let (saved, report) = mpsc::sync_channel(1);
-        *self.0.lock().unwrap_or_else(PoisonError::into_inner) = Some(saved);
-        report
+        let mut pending = self.0.lock().unwrap_or_else(PoisonError::into_inner);
+        let first = pending.is_empty();
+        pending.push(saved);
+        (report, first)
     }
 
     fn finish(&self) {
-        if let Some(saved) = self.0.lock().unwrap_or_else(PoisonError::into_inner).take() {
+        for saved in self.0.lock().unwrap_or_else(PoisonError::into_inner).drain(..) {
             let _ = saved.try_send(());
         }
     }
@@ -77,16 +79,18 @@ impl SessionEnd {
 
 /// Asks the main window to save for an OS session end. The receiver hears when
 /// it has; `None` when there is no window to ask.
-fn begin_session_end<R: Runtime>(app: &AppHandle<R>) -> Option<mpsc::Receiver<()>> {
+fn begin_session_end<R: Runtime>(app: &AppHandle<R>) -> Option<(mpsc::Receiver<()>, bool)> {
     app.get_webview_window("main")?;
-    let saved = app.state::<SessionEnd>().begin();
+    let (saved, first) = app.state::<SessionEnd>().begin();
+    if !first { return Some((saved, false)); }
     match app.emit_to("main", SESSION_ENDING_EVENT, ()) {
-        Ok(()) => Some(saved),
+        Ok(()) => Some((saved, true)),
         Err(error) => {
             logging::warn(
                 "session end save not requested",
                 json!({ "error": error.to_string() }),
             );
+            app.state::<SessionEnd>().finish();
             None
         }
     }
@@ -190,9 +194,11 @@ mod macos {
                 TERMINATE_CANCEL
             }
             QuitOrigin::SessionEnd => {
-                let Some(saved) = begin_session_end(app) else {
+                let Some((saved, first)) = begin_session_end(app) else {
                     return TERMINATE_NOW;
                 };
+                // The first request already owns the termination reply and budget.
+                if !first { return TERMINATE_LATER; }
                 let app = app.clone();
                 std::thread::spawn(move || {
                     if let Err(RecvTimeoutError::Timeout) = saved.recv_timeout(SESSION_SAVE_WAIT) {
@@ -304,7 +310,7 @@ mod windows_session {
         if message == WM_QUERYENDSESSION {
             // SAFETY: `data` is the AppHandle `install` leaked for this window.
             let app = unsafe { &*(data as *const AppHandle) };
-            if let Some(saved) = begin_session_end(app) {
+            if let Some((saved, true)) = begin_session_end(app) {
                 pump_until_saved(&saved);
             }
         }

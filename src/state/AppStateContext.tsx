@@ -38,6 +38,7 @@ import {
   saveFailureMessage,
   saveState as persistState,
 } from "../services/persistence";
+import { awaitStartup, STARTUP_LOAD_BOUND_MS } from "../services/startup";
 import { logError, logInfo, logWarn, serializeError, setDebugEnabled } from "../services/logger";
 import { I18nProvider } from "../i18n/I18nContext";
 import {
@@ -217,9 +218,17 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     const current = () => !canceledRef.current && generation === loadGenerationRef.current;
     loadReadyRef.current = false;
     if (panesSetAsideTo !== null) retainRecovery(message("load.panesSetAside", { path: panesSetAsideTo }));
+    const deadline = Date.now() + STARTUP_LOAD_BOUND_MS;
     try {
-      const data = await loadAppData();
-      if (data.configQuarantinedTo !== null) retainRecovery(message("load.settingsSetAside", { path: data.configQuarantinedTo }));
+      const loading = loadAppData().then((data) => {
+        // A timed-out native operation can still complete a material move.
+        if (data.configQuarantinedTo !== null) retainRecovery(message("load.settingsSetAside", { path: data.configQuarantinedTo }));
+        return data;
+      }, (error: unknown) => {
+        for (const fact of loadFailureRecovery(error)) retainRecovery(fact);
+        throw error;
+      });
+      const data = await awaitStartup(loading, deadline);
       if (!current()) return null;
 
       // Adopt the authoritative debug gate before logging anything else.
@@ -231,7 +240,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       const loadedSystemLanguage = isLanguage(data.systemLanguage) ? data.systemLanguage : "en";
       const loadedSettings = readSettingsSets(data.config);
       const loadedLanguage = effectiveLanguage(loadedSettings.language, loadedSystemLanguage);
-      await loadCatalogue(loadedLanguage);
+      await awaitStartup(loadCatalogue(loadedLanguage), deadline);
       if (!current()) {
         return null;
       }
@@ -306,7 +315,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       }
 
       try {
-        const initialCount = await countSnapshots();
+        const initialCount = await awaitStartup(countSnapshots(), deadline);
         if (current()) {
           setSnapshotCount(initialCount);
         }
