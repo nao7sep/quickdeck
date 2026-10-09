@@ -7,15 +7,26 @@ fn map(value: Value) -> Map<String, Value> {
 // --- session_stamp ------------------------------------------------------
 
 #[test]
-fn session_stamp_is_yyyymmdd_hhmmss_fff_utc() {
+fn session_stamp_is_yyyymmdd_hhmmss_utc() {
     let now: chrono::DateTime<Utc> = "2026-06-10T03:15:42.123Z".parse().unwrap();
-    assert_eq!(session_stamp(now), "20260610-031542-123-utc");
+    assert_eq!(session_stamp(now), "20260610-031542-utc");
 }
 
 #[test]
-fn session_stamp_zero_pads_milliseconds() {
+fn session_stamp_zero_pads_each_field() {
     let now: chrono::DateTime<Utc> = "2026-01-05T03:04:09.007Z".parse().unwrap();
-    assert_eq!(session_stamp(now), "20260105-030409-007-utc");
+    assert_eq!(session_stamp(now), "20260105-030409-utc");
+}
+
+#[test]
+fn a_fallback_file_from_the_same_second_is_appended_to() {
+    let dir = tempfile::tempdir().unwrap();
+    append_fallback(dir.path(), "20260105-030409-utc", "first").unwrap();
+    append_fallback(dir.path(), "20260105-030409-utc", "second").unwrap();
+    assert_eq!(
+        fs::read_to_string(dir.path().join("logs/20260105-030409-utc.log")).unwrap(),
+        "first\nsecond\n"
+    );
 }
 
 #[test]

@@ -130,7 +130,7 @@ fn replace_state(state: &PlacementState, label: &str, placement: Option<Placemen
 // Prepare on a worker before showing the first frame (window conventions).
 // A late result never mutates the live placement state.
 pub(crate) fn load(app: &AppHandle, state: &PlacementState) {
-    let root = app.state::<crate::archive::ArchiveSession>().root.clone();
+    let root = app.state::<crate::paths::DataRoot>().0.clone();
     let saved = match crate::startup::prepare("window placement", crate::startup::PREPARE_WAIT,
         move || storage::load_window_state_in(&root)).and_then(|result| result) {
         Ok(value) => placements_from(value),

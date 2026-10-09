@@ -1,7 +1,7 @@
 // The format-version marker every store records (store-recovery conventions).
 
 use quickdeck_lib::format_version::{
-    check_sqlite, create_sqlite, read_json, stamp_json, JsonFormat, SqliteFormat, ARCHIVE_MANIFEST,
+    check_sqlite, create_sqlite, read_json, stamp_json, JsonFormat, SqliteFormat,
     BACKUPS, CONFIG, PANES, RECORDS, SNAPSHOTS, STATE, WINDOW,
 };
 use rusqlite::{Connection, OpenFlags};
@@ -19,20 +19,14 @@ fn user_version(conn: &Connection) -> i64 {
         .unwrap()
 }
 
+// Each format changes only with a migration for the stores already on disk.
+// The backup store gained per-session rows in format 2 (backup_store.rs).
 #[test]
-fn every_format_is_at_1_before_the_data_is_durable() {
-    for version in [
-        CONFIG,
-        STATE,
-        WINDOW,
-        PANES,
-        SNAPSHOTS,
-        BACKUPS,
-        RECORDS,
-        ARCHIVE_MANIFEST,
-    ] {
+fn every_format_is_at_its_current_version() {
+    for version in [CONFIG, STATE, WINDOW, PANES, SNAPSHOTS, RECORDS] {
         assert_eq!(version, 1);
     }
+    assert_eq!(BACKUPS, 2);
 }
 
 #[test]

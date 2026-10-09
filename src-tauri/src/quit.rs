@@ -6,7 +6,10 @@
 //! `SESSION_SAVE_WAIT`.
 
 use std::{
-    sync::{mpsc, Mutex, PoisonError},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        mpsc, Mutex, PoisonError,
+    },
     time::Duration,
 };
 
@@ -57,23 +60,33 @@ fn quit_origin(event_id: Option<u32>, has_quit_reason: bool) -> QuitOrigin {
     }
 }
 
-/// The session-end save in flight: the window's report settles it.
+/// The session-end save in flight: the window's report settles it. Once an OS
+/// session end has begun, exit skips its waits that are not the user's save.
 #[derive(Default)]
-pub struct SessionEnd(Mutex<Vec<mpsc::SyncSender<()>>>);
+pub struct SessionEnd {
+    pending: Mutex<Vec<mpsc::SyncSender<()>>>,
+    ending: AtomicBool,
+}
 
 impl SessionEnd {
     fn begin(&self) -> (mpsc::Receiver<()>, bool) {
+        self.ending.store(true, Ordering::Relaxed);
         let (saved, report) = mpsc::sync_channel(1);
-        let mut pending = self.0.lock().unwrap_or_else(PoisonError::into_inner);
+        let mut pending = self.pending.lock().unwrap_or_else(PoisonError::into_inner);
         let first = pending.is_empty();
         pending.push(saved);
         (report, first)
     }
 
     fn finish(&self) {
-        for saved in self.0.lock().unwrap_or_else(PoisonError::into_inner).drain(..) {
+        for saved in self.pending.lock().unwrap_or_else(PoisonError::into_inner).drain(..) {
             let _ = saved.try_send(());
         }
+    }
+
+    /// Whether this exit is an OS logout, restart or shutdown.
+    pub fn ending(&self) -> bool {
+        self.ending.load(Ordering::Relaxed)
     }
 }
 

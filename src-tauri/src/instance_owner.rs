@@ -122,7 +122,7 @@ pub fn init() -> tauri::plugin::TauriPlugin<tauri::Wry> {
             })??;
             match claimed {
                 Claim::Primary { lock, listener } => {
-                    app.manage(crate::archive::start_session(root));
+                    app.manage(crate::paths::DataRoot(root));
                     listen(listener, app.app_handle().clone());
                     app.manage(Owner { _lock: lock });
                     Ok(())

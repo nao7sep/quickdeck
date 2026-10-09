@@ -6,6 +6,12 @@ use std::{
 use tauri::{AppHandle, Manager};
 
 const DATA_DIR_NAME: &str = ".quickdeck";
+
+// The storage root this process claimed at launch (instance_owner), for work
+// that must not resolve it again: the logger's fallback file, and window
+// placement at launch and exit, when a data folder deleted while the app runs
+// stays deleted.
+pub struct DataRoot(pub PathBuf);
 const DATA_DIR_ENV_VAR: &str = "QUICKDECK_DATA_DIR";
 
 // Resolves (creating if missing) the app's data directory.

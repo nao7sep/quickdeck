@@ -53,14 +53,21 @@ fn repeated_session_requests_join_the_admitted_save() {
     assert!(next_owner);
 }
 
+#[test]
+fn only_a_begun_os_session_end_marks_the_exit_as_one() {
+    let session_end = SessionEnd::default();
+    assert!(!session_end.ending());
+    session_end.begin();
+    session_end.finish();
+    assert!(session_end.ending());
+}
+
 // Windows gives each end-session message 5 s before it offers to end the app;
-// macOS documents no figure, so the same bound serves both.
+// macOS documents no figure, so the same bound serves both. The backup drain
+// is skipped at an OS session end (lib.rs).
 #[test]
 fn an_os_session_end_fits_under_the_kill_delay() {
     let kill_delay = Duration::from_secs(5);
-    let quit = SESSION_SAVE_WAIT
-        + crate::window_placement::SAVE_WAIT
-        + crate::archive::EXIT_WAIT
-        + crate::logging::FLUSH_WAIT;
+    let quit = SESSION_SAVE_WAIT + crate::window_placement::SAVE_WAIT + crate::logging::FLUSH_WAIT;
     assert!(quit < kill_delay, "{quit:?} is not under {kill_delay:?}");
 }

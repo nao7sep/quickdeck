@@ -1,4 +1,3 @@
-pub mod archive;
 pub mod backup_store;
 pub mod format_version;
 mod i18n;
@@ -76,7 +75,6 @@ async fn off_main_thread<T: Send + 'static, E: From<String> + Send + 'static>(
 #[tauri::command]
 async fn load_app_data(app: AppHandle) -> Result<LoadedAppData, LoadFailure> {
     off_main_thread(move || {
-        archive::wait_for_launch(&app.state::<archive::ArchiveSession>().launch);
         let language = app.state::<LanguageState>();
         logging::boundary(
             "load_app_data",
@@ -189,15 +187,12 @@ async fn save_config(app: AppHandle, config: JsonValue) -> Result<Option<String>
     .await
 }
 
+// Like save_config, an autosave that changes nothing writes nothing and logs
+// nothing; a write or a failure is logged.
 #[tauri::command]
 async fn save_state(app: AppHandle, state: JsonValue) -> Result<(), String> {
     off_main_thread(move || {
-        logging::boundary(
-            "save_state",
-            json!({}),
-            || storage::save_state(&app, state),
-            |_| json!({}),
-        )
+        logging::write_boundary("save_state", json!({}), || storage::save_state(&app, state))
     })
     .await
 }
@@ -205,12 +200,7 @@ async fn save_state(app: AppHandle, state: JsonValue) -> Result<(), String> {
 #[tauri::command]
 async fn save_panes(app: AppHandle, panes: JsonValue) -> Result<(), SaveFailure> {
     off_main_thread(move || {
-        logging::boundary(
-            "save_panes",
-            json!({}),
-            || storage::save_panes(&app, panes),
-            |_| json!({}),
-        )
+        logging::write_boundary("save_panes", json!({}), || storage::save_panes(&app, panes))
     })
     .await
 }
@@ -486,6 +476,7 @@ pub fn run() {
         .manage(language)
         .manage(managed_placement_state)
         .manage(quit::SessionEnd::default())
+        .manage(storage::SnapshotConnection::default())
         .plugin(instance_owner::init())
         .plugin(tauri_plugin_opener::init())
         .on_window_event(move |window, event| {
@@ -594,9 +585,12 @@ pub fn run() {
             logging::log_shutdown();
         }
         if matches!(event, RunEvent::Exit) {
-            let session = app.state::<archive::ArchiveSession>();
-            window_placement::save(&session.root, &placement_state);
-            archive::finish_session(session.root.clone(), &session.launch);
+            window_placement::save(&app.state::<paths::DataRoot>().0, &placement_state);
+            // Pending backup history gets a short wait at an ordinary quit and
+            // none at an OS session end (data-backup conventions).
+            if !app.state::<quit::SessionEnd>().ending() {
+                backup_store::drain(backup_store::DRAIN_WAIT);
+            }
             logging::flush();
         }
     });

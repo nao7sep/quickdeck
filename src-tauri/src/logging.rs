@@ -121,7 +121,7 @@ pub fn init(app: &AppHandle, version: &str) {
             .unwrap_or(false);
 
     let started = Utc::now();
-    let root = Ok::<_, String>(app.state::<crate::archive::ArchiveSession>().root.clone());
+    let root = Ok::<_, String>(app.state::<crate::paths::DataRoot>().0.clone());
     let session = Session {
         started: started.to_rfc3339_opts(SecondsFormat::Millis, true),
         stamp: session_stamp(started),
@@ -226,8 +226,7 @@ pub fn flush() {
 }
 
 // not recorded: records.sqlite3 is written only here, never through the
-// managed-text atomic path, and is not archived (data-backup and data-lifecycle
-// conventions). A store in a newer format, or without its format marker, is left
+// managed-text atomic path (data-backup and data-lifecycle conventions). A store in a newer format, or without its format marker, is left
 // untouched, and every line takes the fallback.
 fn open_records(file: &Path) -> Result<Connection, String> {
     let to_string = |error: rusqlite::Error| error.to_string();
@@ -256,15 +255,13 @@ fn open_records(file: &Path) -> Result<Connection, String> {
     Ok(conn)
 }
 
-// Formats `now` as `yyyymmdd-hhmmss-fff-utc`, the machine-paced millisecond form
-// (timestamp-conventions): the fallback file's name, and the moment discriminator
-// for other derived-sibling names (storage's quarantine `<stem>-<stamp>.invalid`).
+// Formats `now` as `yyyymmdd-hhmmss-utc` (timestamp-conventions): the fallback
+// file's name, and the moment discriminator for storage's set-aside
+// `<stem>-<stamp>.invalid`. Launches in one second share a fallback file, which
+// is appended to; a second set-aside in one second fails rather than replace the
+// first (storage.rs).
 pub(crate) fn session_stamp(now: chrono::DateTime<Utc>) -> String {
-    format!(
-        "{}-{:03}-utc",
-        now.format("%Y%m%d-%H%M%S"),
-        now.timestamp_subsec_millis()
-    )
+    now.format("%Y%m%d-%H%M%S-utc").to_string()
 }
 
 // The authoritative debug gate, exposed so the command layer can hand the
@@ -324,6 +321,33 @@ pub fn warn(message: &str, fields: Value) {
 }
 
 // --- Boundary instrumentation --------------------------------------------------
+
+// A save's boundary, logged only when it wrote: `body` returns whether it did.
+// A save that changed nothing crosses no boundary; a failure is always logged.
+pub fn write_boundary<E: std::fmt::Display>(
+    op: &str,
+    params: Value,
+    body: impl FnOnce() -> Result<bool, E>,
+) -> Result<(), E> {
+    let started = Instant::now();
+    let result = body();
+    if !matches!(result, Ok(false)) {
+        let mut fields = into_map(params);
+        fields.insert("op".to_string(), Value::String(op.to_string()));
+        fields.insert(
+            "ms".to_string(),
+            json!(started.elapsed().as_millis() as u64),
+        );
+        match &result {
+            Ok(_) => write_event(Level::Info, "boundary ok", now_iso(), fields),
+            Err(err) => {
+                fields.insert("error".to_string(), Value::String(err.to_string()));
+                write_event(Level::Error, "boundary failed", now_iso(), fields);
+            }
+        }
+    }
+    result.map(|_| ())
+}
 
 // Wraps an external-boundary operation (file / database / IPC command) with the
 // standard logging: a `debug` line at the start, then exactly one `info` line on

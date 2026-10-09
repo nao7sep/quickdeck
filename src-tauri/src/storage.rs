@@ -13,7 +13,7 @@ use rusqlite::{
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use sha2::{Digest, Sha256};
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
 
 use crate::format_version::{self, JsonFormat, SqliteFormat};
 use crate::paths::app_data_dir;
@@ -25,26 +25,25 @@ use crate::paths::app_data_dir;
 // - `state.json`       — UI/session state (view only).        not recorded (volatile state)
 // - `window.json`      — native window state (view only).     not recorded (volatile state)
 // - `panes.json`       — the panes' TEXT — the user's work.   RECORDED (managed text)
-// - `snapshots.sqlite3` — the snapshot store.                 not recorded (binary + append-safe)
-// - `backups.sqlite3`   — the write-through backup store.     not recorded (the store itself)
-// - `backups/`          — archive zips, `.lock`, `.running`.  not recorded (binary; archive.rs)
-// - `records.sqlite3`   — log lines (logging.rs).             not recorded (binary; never archived)
+// - `snapshots.sqlite3` — the snapshot store.                 not recorded (convenience copies)
+// - `backups.sqlite3`   — the backup history.                 not recorded (the store itself)
+// - `records.sqlite3`   — log lines (logging.rs).             not recorded (records)
 // - `logs/`             — log lines whose record write failed. not recorded (append-mode, by construction)
+//
+// `backups/` may still hold ZIP archives, `.lock` and `.running` files an earlier
+// build wrote. Nothing reads, writes or deletes them; they stay for manual use.
 //
 // Every managed-*text* write goes through `write_json_atomically`, which skips a
 // write whose bytes equal the file's (content-lifecycle conventions). The recorded
-// files (config.json, panes.json) use `atomic_write_json`, which — strictly AFTER
-// the atomic rename lands — records the exact bytes it just wrote into
-// `backups.sqlite3` (see backup_store.rs); the volatile-state files (state.json,
-// window.json) use `atomic_write_json_unrecorded`. Only these four managed-text files
-// reach that choke point; the enumeration of every write site under ~/.quickdeck and
-// its record/no-record decision lives beside each write below.
+// files (config.json, panes.json) pass the data dir, and the bytes each save wrote
+// are handed to the backup history (see backup_store.rs); the volatile-state files
+// (state.json, window.json) pass none. Only these four managed-text files reach
+// that choke point; the enumeration of every write site under ~/.quickdeck and its
+// record/no-record decision lives beside each write below.
 pub const CONFIG_FILE_NAME: &str = "config.json";
 pub const STATE_FILE_NAME: &str = "state.json";
 pub const WINDOW_FILE_NAME: &str = "window.json";
 pub const PANES_FILE_NAME: &str = "panes.json";
-// Original relative path and archive-root entry name, beside the store paths.
-pub const ARCHIVED_STORES: &[(&str, &str)] = &[(SNAPSHOTS_DB_FILE_NAME, SNAPSHOTS_DB_FILE_NAME)];
 pub const SNAPSHOTS_DB_FILE_NAME: &str = "snapshots.sqlite3";
 pub const RECORDS_DB_FILE_NAME: &str = "records.sqlite3";
 
@@ -170,10 +169,10 @@ impl std::fmt::Display for LoadFailure {
 }
 
 pub fn load_app_data(app: &AppHandle) -> Result<LoadedAppData, LoadFailure> {
-    load_app_data_in(&app_data_dir(app)?)
+    load_app_data_in(&app_data_dir(app)?, &app.state::<SnapshotConnection>())
 }
 
-fn load_app_data_in(data_dir: &Path) -> Result<LoadedAppData, LoadFailure> {
+fn load_app_data_in(data_dir: &Path, snapshots: &SnapshotConnection) -> Result<LoadedAppData, LoadFailure> {
     // Per-store failure isolation (persisted-store-separation, Independent
     // recovery): each store takes its own branch, so a corrupt settings file
     // can never make the panes' text unreachable. Config and state are
@@ -198,11 +197,9 @@ fn load_app_data_in(data_dir: &Path) -> Result<LoadedAppData, LoadFailure> {
             Ok(JsonRead::Corrupt(message)) | Err(message) => (None, Some(message), None),
         };
     let snapshots_path = data_dir.join(SNAPSHOTS_DB_FILE_NAME);
-    let snapshots_newer =
-        match open_snapshot_store(&data_dir).map_err(LoadFailure::at(&snapshots_path, config.quarantined_to.as_deref()))? {
-            SnapshotStore::Ready(_) => None,
-            SnapshotStore::Newer(recorded) => Some(recorded),
-        };
+    let snapshots_newer = snapshots
+        .open(data_dir)
+        .map_err(LoadFailure::at(&snapshots_path, config.quarantined_to.as_deref()))?;
     for (path, newer) in [
         (&config_path, config.newer),
         (&state_path, state.newer),
@@ -268,21 +265,23 @@ pub fn config_to_write(data_dir: &Path, sets: JsonValue) -> Result<ConfigToWrite
 }
 
 pub fn write_config(data_dir: &Path, config: &JsonValue) -> Result<(), String> {
-    // records: config.json is durable user settings — managed text, recorded on
-    // every save that changes it (data-backup conventions).
+    // records: config.json is the user's settings — protected, recorded on every
+    // save that changes it (data-backup conventions).
     atomic_write_json(
         data_dir,
         &data_dir.join(CONFIG_FILE_NAME),
         config,
         format_version::CONFIG,
     )
+    .map(|_| ())
 }
 
-pub fn save_state(app: &AppHandle, state: JsonValue) -> Result<(), String> {
+// Returns whether the file was written; a save equal to the file writes nothing.
+pub fn save_state(app: &AppHandle, state: JsonValue) -> Result<bool, String> {
     save_state_in(&app_data_dir(app)?, state)
 }
 
-fn save_state_in(data_dir: &Path, mut state: JsonValue) -> Result<(), String> {
+fn save_state_in(data_dir: &Path, mut state: JsonValue) -> Result<bool, String> {
     // not recorded: state.json is pure view/session state (active pane, zoom, the
     // Records list width) — volatile state, kept out of the backup history
     // (data-backup conventions).
@@ -332,7 +331,7 @@ fn save_records_list_width_in(data_dir: &Path, width: u32) -> Result<(), String>
         JsonRead::Corrupt(reason) => return Err(reason),
     };
     state.insert(RECORDS_LIST_WIDTH_KEY.to_string(), JsonValue::from(width));
-    atomic_write_json_unrecorded(&path, &JsonValue::Object(state), format_version::STATE)
+    atomic_write_json_unrecorded(&path, &JsonValue::Object(state), format_version::STATE).map(|_| ())
 }
 
 // state.json as an object, or None when it is missing, unreadable or newer; its
@@ -365,6 +364,7 @@ pub fn save_window_state(data_dir: &Path, state: JsonValue) -> Result<(), String
         &state,
         format_version::WINDOW,
     )
+    .map(|_| ())
 }
 
 #[derive(Debug, Serialize)]
@@ -387,13 +387,15 @@ impl std::fmt::Display for SaveFailure {
     }
 }
 
-pub fn save_panes(app: &AppHandle, panes: JsonValue) -> Result<(), SaveFailure> {
+// Returns whether the file was written; a save equal to the file writes nothing.
+pub fn save_panes(app: &AppHandle, panes: JsonValue) -> Result<bool, SaveFailure> {
     save_panes_in(&app_data_dir(app)?, &panes)
 }
 
-fn save_panes_in(data_dir: &Path, panes: &JsonValue) -> Result<(), SaveFailure> {
+fn save_panes_in(data_dir: &Path, panes: &JsonValue) -> Result<bool, SaveFailure> {
+    // records: panes.json is the user's text — protected (data-backup conventions).
     let path = data_dir.join(PANES_FILE_NAME);
-    let outcome = write_json_atomically(&path, panes, format_version::PANES).map_err(|message| SaveFailure {
+    let outcome = write_json_atomically(&path, panes, format_version::PANES, Some(data_dir)).map_err(|message| SaveFailure {
         path: Some(path.to_string_lossy().into_owned()), newer: None, message,
     })?;
     match outcome {
@@ -402,8 +404,8 @@ fn save_panes_in(data_dir: &Path, panes: &JsonValue) -> Result<(), SaveFailure> 
             newer: Some(recorded),
             message: format_version::newer_message(PANES_FILE_NAME, recorded),
         }),
-        JsonWrite::Written(bytes) => { record_written_json(data_dir, &path, &bytes); Ok(()) },
-        JsonWrite::Unchanged => Ok(()),
+        JsonWrite::Written => Ok(true),
+        JsonWrite::Unchanged => Ok(false),
     }
 }
 
@@ -425,8 +427,7 @@ fn quarantine_corrupt_panes_in(data_dir: &Path) -> Result<Option<String>, String
         JsonRead::Readable(fields) if valid_panes_shape(&fields) => return Ok(None),
         _ => {}
     }
-    let quarantined = quarantine_name(&path);
-    fs::rename(&path, &quarantined).map_err(to_string_error)?;
+    let quarantined = set_aside(&path)?;
     crate::logging::warn(
         "corrupt panes.json set aside on user command",
         serde_json::json!({ "file": path.to_string_lossy(), "quarantinedTo": quarantined.to_string_lossy() }),
@@ -473,15 +474,15 @@ pub fn create_snapshots(
     app: &AppHandle,
     snapshots: Vec<SnapshotInput>,
 ) -> Result<Vec<SnapshotWriteResult>, String> {
-    let data_dir = app_data_dir(app)?;
-    let mut conn = open_snapshot_db(&data_dir)?;
-    let transaction = begin_snapshot_write(&mut conn)?;
-    let results = snapshots
-        .into_iter()
-        .map(|snapshot| create_snapshot_with_connection(&transaction, snapshot))
-        .collect::<Result<Vec<_>, _>>()?;
-    transaction.commit().map_err(to_string_error)?;
-    Ok(results)
+    app.state::<SnapshotConnection>().with(|conn| {
+        let transaction = begin_snapshot_write(conn)?;
+        let results = snapshots
+            .into_iter()
+            .map(|snapshot| create_snapshot_with_connection(&transaction, snapshot))
+            .collect::<Result<Vec<_>, _>>()?;
+        transaction.commit().map_err(to_string_error)?;
+        Ok(results)
+    })
 }
 
 pub fn list_snapshots(
@@ -490,9 +491,8 @@ pub fn list_snapshots(
     limit: u32,
     offset: u32,
 ) -> Result<SnapshotListResult, String> {
-    let data_dir = app_data_dir(app)?;
-    let conn = open_snapshot_db(&data_dir)?;
-    list_snapshots_with_connection(&conn, &query, limit, offset)
+    app.state::<SnapshotConnection>()
+        .with(|conn| list_snapshots_with_connection(conn, &query, limit, offset))
 }
 
 // A blank query lists the whole store newest-first; terms narrow that list. The
@@ -562,17 +562,16 @@ fn create_snapshot_from_input(
         });
     }
 
-    let data_dir = app_data_dir(app)?;
-    let mut conn = open_snapshot_db(&data_dir)?;
-    let transaction = begin_snapshot_write(&mut conn)?;
-    let result = create_snapshot_with_connection(&transaction, snapshot)?;
-    transaction.commit().map_err(to_string_error)?;
-    Ok(result)
+    app.state::<SnapshotConnection>().with(|conn| {
+        let transaction = begin_snapshot_write(conn)?;
+        let result = create_snapshot_with_connection(&transaction, snapshot)?;
+        transaction.commit().map_err(to_string_error)?;
+        Ok(result)
+    })
 }
 
-// Snapshot commands run concurrently, so a write takes SQLite's write lock before
-// its duplicate check: two copies of the same text then cannot both pass the
-// check and store it twice.
+// A write's duplicate check and insert, or a batch's, commit together: a failure
+// part-way leaves none of them. The write lock is taken first, before the check.
 fn begin_snapshot_write(conn: &mut Connection) -> Result<Transaction<'_>, String> {
     conn.transaction_with_behavior(TransactionBehavior::Immediate)
         .map_err(to_string_error)
@@ -625,11 +624,9 @@ fn create_snapshot_with_connection(
         crate::nanoid::generate()?
     );
 
-    // not recorded: this writes into snapshots.sqlite3, a binary SQLite file that is
-    // effectively appended (near-zero accidental-truncation risk) and is itself the
-    // app's own recovery mechanism — two independent reasons it is not written through
-    // the managed-text backup layer (data-backup conventions). It also never touches
-    // atomic_write_json, so it never reaches the record hook by construction.
+    // not recorded: snapshots are convenience copies the user keeps or deletes in
+    // the app, not protected content (data-backup conventions). This never touches
+    // write_json_atomically, so it never reaches the backup history by construction.
     conn.execute(
         "insert into snapshots (id, pane_id, pane_title, created_at_utc, trigger, content_hash, content)
          values (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
@@ -652,20 +649,19 @@ fn create_snapshot_with_connection(
 }
 
 pub fn count_snapshots(app: &AppHandle) -> Result<u64, String> {
-    let data_dir = app_data_dir(app)?;
-    let conn = open_snapshot_db(&data_dir)?;
-    let count: i64 = conn
-        .query_row("select count(*) from snapshots", [], |row| row.get(0))
-        .map_err(to_string_error)?;
-    Ok(count.max(0) as u64)
+    app.state::<SnapshotConnection>().with(|conn| {
+        let count: i64 = conn
+            .query_row("select count(*) from snapshots", [], |row| row.get(0))
+            .map_err(to_string_error)?;
+        Ok(count.max(0) as u64)
+    })
 }
 
 /// Removes one snapshot. Returns whether a row was there to remove, so a copy deleted from
 /// two windows at once reports honestly rather than twice.
 pub fn delete_snapshot(app: &AppHandle, id: String) -> Result<bool, String> {
-    let data_dir = app_data_dir(app)?;
-    let conn = open_snapshot_db(&data_dir)?;
-    delete_snapshot_with_connection(&conn, &id)
+    app.state::<SnapshotConnection>()
+        .with(|conn| delete_snapshot_with_connection(conn, &id))
 }
 
 fn delete_snapshot_with_connection(conn: &Connection, id: &str) -> Result<bool, String> {
@@ -675,12 +671,11 @@ fn delete_snapshot_with_connection(conn: &Connection, id: &str) -> Result<bool, 
     Ok(removed > 0)
 }
 
-/// Empties the store and returns how many copies went. The file itself stays: it is the
-/// app's own recovery store, and an empty one is the normal state on a first run.
+/// Empties the store and returns how many copies went. The file itself stays: an empty
+/// one is the normal state on a first run.
 pub fn delete_all_snapshots(app: &AppHandle) -> Result<u64, String> {
-    let data_dir = app_data_dir(app)?;
-    let conn = open_snapshot_db(&data_dir)?;
-    delete_all_snapshots_with_connection(&conn)
+    app.state::<SnapshotConnection>()
+        .with(|conn| delete_all_snapshots_with_connection(conn))
 }
 
 fn delete_all_snapshots_with_connection(conn: &Connection) -> Result<u64, String> {
@@ -734,7 +729,7 @@ fn report_newer(path: &Path, recorded: u32) {
     );
 }
 
-// `<stem>-<yyyymmdd-hhmmss-fff-utc>.invalid` beside the source — the
+// `<stem>-<yyyymmdd-hhmmss-utc>.invalid` beside the source — the
 // derived-filename grammar with a moment discriminator (storage-path
 // conventions' quarantine name), stamped by the one shared formatter.
 fn quarantine_name(path: &Path) -> PathBuf {
@@ -743,6 +738,20 @@ fn quarantine_name(path: &Path) -> PathBuf {
         "{stem}-{}.invalid",
         crate::logging::session_stamp(Utc::now())
     ))
+}
+
+// Moves `path` to its `.invalid` name and returns where it went. A copy set aside
+// earlier in the same second is never replaced (on Unix a rename would replace it
+// silently): the set-aside fails instead and takes its caller's error path. Runs
+// under JSON_STORE_LOCK in the root's one process, so nothing appears between the
+// check and the rename.
+fn set_aside(path: &Path) -> Result<PathBuf, String> {
+    let quarantined = quarantine_name(path);
+    if quarantined.try_exists().map_err(to_string_error)? {
+        return Err(format!("{} already exists", quarantined.display()));
+    }
+    fs::rename(path, &quarantined).map_err(to_string_error)?;
+    Ok(quarantined)
 }
 
 // A rebuildable store's load: its value, where a corrupt file was set aside, or
@@ -801,8 +810,7 @@ fn quarantine_rebuildable_store(path: &Path, version: u32) -> Result<Rebuildable
         JsonRead::Newer(recorded) => return Ok(Rebuildable { newer: Some(recorded), ..Rebuildable::default() }),
         JsonRead::Corrupt(reason) => reason,
     };
-    let quarantined = quarantine_name(path);
-    fs::rename(path, &quarantined).map_err(|rename_err| {
+    let quarantined = set_aside(path).map_err(|rename_err| {
         format!(
             "could not quarantine corrupt {}: {rename_err} ({reason})",
             path.display()
@@ -839,69 +847,53 @@ fn temp_path_for(path: &Path) -> Result<PathBuf, String> {
 }
 
 // The single managed-text atomic-write choke point for config.json, state.json,
-// window.json and panes.json (`write_json_atomically`), and — crucially — the ONE
-// place the data-backup hook lives (`atomic_write_json`). A recorded managed-text
-// write that bypasses `atomic_write_json` is a silent backup gap; the volatile-state
-// stores opt out of recording through `atomic_write_json_unrecorded`, which shares
-// the same atomic write.
+// window.json and panes.json, and the ONE place the backup history is fed. A
+// protected write passes its data dir (`atomic_write_json`, `save_panes_in`); the
+// volatile-state stores pass none (`atomic_write_json_unrecorded`). A protected
+// write that bypasses this is a silent backup gap.
 //
 // Writes `value` to a same-directory `<stem>-<nanoid>.tmp` (the derived-filename
 // grammar), then atomically renames it over `path`, so a crash mid-write cannot
 // corrupt the target; bytes equal to the file's are not written at all, so neither
 // the file nor the backup history sees a save that changed nothing. STRICTLY AFTER
-// the rename lands — the file is exactly where it belongs — it best-effort records
-// the exact bytes just written into `backups.sqlite3`
-// under `data_dir` (the caller's resolved root, from the single resolver). Recording
-// before the rename would risk a "backup of a save that never happened": if the rename
-// then failed, the history would hold a version that never reached disk. The recorded
-// `bytes` is the same buffer written above — never a re-read of the file (which would
-// risk capturing a concurrent writer's content). The record never throws back into
-// this write and never affects the save's success (see backup_store.rs).
+// the rename lands, and still under the lock so history follows save order, a
+// protected write hands the exact bytes it wrote — never a re-read of the file —
+// to `backup_store::record`, which only queues them. Recording before the rename
+// would risk a backup of a save that never reached disk. The history never throws
+// back into this write, never delays it and never affects its success.
 fn atomic_write_json(
     data_dir: &Path,
     path: &Path,
     value: &JsonValue,
     version: u32,
-) -> Result<(), String> {
-    if let JsonWrite::Written(bytes) = write_json_atomically(path, value, version)? {
-        record_written_json(data_dir, path, &bytes);
-    }
-    Ok(())
-}
-
-fn record_written_json(data_dir: &Path, path: &Path, bytes: &[u8]) {
-    // After the rename: the file is exactly where it belongs, so record the bytes we
-    // just wrote. Best-effort — record() catches, logs once, and swallows every
-    // failure, so a backup problem can never break the save that already succeeded.
-    crate::backup_store::record(
-        &data_dir.join(crate::backup_store::BACKUPS_DB_FILE_NAME),
-        path,
-        bytes,
-    );
+) -> Result<bool, String> {
+    write_json_atomically(path, value, version, Some(data_dir)).map(|outcome| matches!(outcome, JsonWrite::Written))
 }
 
 // The same atomic write without the backup record, for volatile state (state.json,
-// window.json) that stays out of the backup history.
+// window.json) that stays out of the backup history. Returns whether it wrote.
 fn atomic_write_json_unrecorded(
     path: &Path,
     value: &JsonValue,
     version: u32,
-) -> Result<(), String> {
-    write_json_atomically(path, value, version).map(|_| ())
+) -> Result<bool, String> {
+    write_json_atomically(path, value, version, None).map(|outcome| matches!(outcome, JsonWrite::Written))
 }
 
 enum JsonWrite {
     Unchanged,
     Newer(u32),
-    Written(Vec<u8>),
+    Written,
 }
 
 // The writer distinguishes an exact no-op from a protected newer destination
 // (store-recovery conventions); each store owns how it reports that refusal.
+// `backups_in` is the data dir whose backup history records this file, or None.
 fn write_json_atomically(
     path: &Path,
     value: &JsonValue,
     version: u32,
+    backups_in: Option<&Path>,
 ) -> Result<JsonWrite, String> {
     let _guard = JSON_STORE_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     let parent = path
@@ -927,8 +919,7 @@ fn write_json_atomically(
     let tmp_path = temp_path_for(path)?;
 
     // A failed write or rename removes its own temp, best-effort, on each error
-    // path. Nothing else ever removes a temp: a startup sweep could delete a
-    // concurrent instance's in-flight one, so a crash-stranded temp is left as
+    // path. Nothing else ever removes a temp: a crash-stranded temp is left as
     // harmless debris (storage-path-conventions).
     let mut file = create_private_stage(&tmp_path).map_err(to_string_error)?;
     let write_tmp = (|| -> std::io::Result<()> {
@@ -952,7 +943,14 @@ fn write_json_atomically(
         let _ = directory.sync_all();
     }
 
-    Ok(JsonWrite::Written(bytes))
+    if let Some(data_dir) = backups_in {
+        crate::backup_store::record(
+            &data_dir.join(crate::backup_store::BACKUPS_DB_FILE_NAME),
+            path,
+            &bytes,
+        );
+    }
+    Ok(JsonWrite::Written)
 }
 
 fn create_private_stage(path: &Path) -> std::io::Result<File> {
@@ -984,40 +982,61 @@ enum SnapshotStore {
     Newer(u32),
 }
 
-fn open_snapshot_db(data_dir: &Path) -> Result<Connection, String> {
-    match open_snapshot_store(data_dir)? {
-        SnapshotStore::Ready(conn) => Ok(conn),
-        SnapshotStore::Newer(recorded) => Err(format_version::newer_message(
-            SNAPSHOTS_DB_FILE_NAME,
-            recorded,
-        )),
+// The snapshot store's one connection for this process, opened and checked by the
+// launch's load; instance_owner makes this process the store's only one. Every
+// snapshot command runs on it behind one lock, which serializes their writes, and
+// opening under that lock leaves a new store's WAL switch to a single opener:
+// React's development StrictMode sends load_app_data twice together.
+#[derive(Default)]
+pub struct SnapshotConnection(Mutex<SnapshotSlot>);
+
+#[derive(Default)]
+enum SnapshotSlot {
+    #[default]
+    Unopened,
+    Ready(Connection),
+    Newer(u32),
+}
+
+impl SnapshotConnection {
+    // Opens the store unless an earlier load already did. Returns the newer
+    // format a store records, which the load reports and halts on.
+    fn open(&self, data_dir: &Path) -> Result<Option<u32>, String> {
+        let mut slot = self.0.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        if let SnapshotSlot::Ready(_) = *slot {
+            return Ok(None);
+        }
+        let (opened, newer) = match open_snapshot_store(data_dir)? {
+            SnapshotStore::Ready(conn) => (SnapshotSlot::Ready(conn), None),
+            SnapshotStore::Newer(recorded) => (SnapshotSlot::Newer(recorded), Some(recorded)),
+        };
+        *slot = opened;
+        Ok(newer)
+    }
+
+    fn with<T>(&self, work: impl FnOnce(&mut Connection) -> Result<T, String>) -> Result<T, String> {
+        let mut slot = self.0.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        match &mut *slot {
+            SnapshotSlot::Ready(conn) => work(conn),
+            SnapshotSlot::Newer(recorded) => Err(format_version::newer_message(
+                SNAPSHOTS_DB_FILE_NAME,
+                *recorded,
+            )),
+            SnapshotSlot::Unopened => Err(format!("{SNAPSHOTS_DB_FILE_NAME} is not open")),
+        }
     }
 }
 
-// Openers read the format marker and prepare a new store one at a time. Two
-// connections switching the same new database to WAL at once can fail with
-// SQLITE_BUSY that the busy timeout does not wait out, and opens do race: React's
-// development StrictMode sends load_app_data twice together. instance_owner makes
-// this process the store's only one, so an in-process lock leaves the switch to a
-// single opener; the next one finds the store Readable.
-static SNAPSHOT_STORE_PREPARE_LOCK: Mutex<()> = Mutex::new(());
-
 fn open_snapshot_store(data_dir: &Path) -> Result<SnapshotStore, String> {
-    // not recorded: snapshots.sqlite3 (+ its -wal/-shm sidecars) is a binary,
-    // append-safe store and the app's own recovery mechanism — excluded from the
-    // managed-text backup layer, and separate from backups.sqlite3 (data-backup
-    // conventions).
+    // not recorded: snapshots.sqlite3 (+ its -wal/-shm sidecars) holds convenience
+    // copies, not protected content, and is separate from backups.sqlite3
+    // (data-backup conventions).
     fs::create_dir_all(data_dir).map_err(to_string_error)?;
     let conn = Connection::open(data_dir.join(SNAPSHOTS_DB_FILE_NAME)).map_err(to_string_error)?;
-    // WAL alone only orders writers; without this a second writer contending for
-    // the write lock (e.g. two panes' copy/paste snapshots, or a close-time batch
-    // racing an in-flight single snapshot) fails immediately with SQLITE_BUSY
-    // instead of waiting, exactly as backup_store::open_store's comment explains.
+    // Only this process writes the store; the timeout covers a reader such as a
+    // developer inspecting it.
     conn.pragma_update(None, "busy_timeout", 5000)
         .map_err(to_string_error)?;
-    let _guard = SNAPSHOT_STORE_PREPARE_LOCK
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
     match format_version::check_sqlite(&conn, SNAPSHOTS_DB_FILE_NAME, format_version::SNAPSHOTS)? {
         SqliteFormat::Newer(recorded) => return Ok(SnapshotStore::Newer(recorded)),
         SqliteFormat::New => init_schema(&conn)?,
@@ -1079,7 +1098,7 @@ fn to_string_error(error: impl std::fmt::Display) -> String {
 
 #[cfg(test)]
 // EXCEPTION to tests-folder conventions: the tests drive private helpers only —
-// `atomic_write_json`, `create_snapshot_with_connection`, `escape_like`, `hash_content` and the
-// connection-taking deletes — which promoting would widen the crate's API for.
+// `atomic_write_json`, `SnapshotConnection`, `create_snapshot_with_connection`, `escape_like`,
+// `hash_content` and the connection-taking deletes — which promoting would widen the crate's API for.
 #[path = "../tests/unit/storage.rs"]
 mod tests;

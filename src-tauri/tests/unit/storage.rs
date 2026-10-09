@@ -248,21 +248,21 @@ fn batch_insert_dedupes_within_transaction() {
 #[test]
 fn concurrent_writes_of_the_same_copy_store_it_once_without_failing() {
     let dir = tempfile::tempdir().unwrap();
+    let snapshots = std::sync::Arc::new(SnapshotConnection::default());
+    assert_eq!(snapshots.open(dir.path()).unwrap(), None);
     let start = std::sync::Arc::new(std::sync::Barrier::new(8));
     let writers: Vec<_> = (0..8)
         .map(|_| {
-            let data_dir = dir.path().to_path_buf();
+            let snapshots = snapshots.clone();
             let start = start.clone();
             std::thread::spawn(move || {
-                // Every writer reaches the barrier, so a failed open fails the
-                // test rather than leaving the others waiting.
-                let opened = open_snapshot_db(&data_dir);
                 start.wait();
-                let mut conn = opened?;
-                let transaction = begin_snapshot_write(&mut conn)?;
-                let result = create_snapshot_with_connection(&transaction, input("p1", "same"))?;
-                transaction.commit().map_err(to_string_error)?;
-                Ok::<_, String>(result)
+                snapshots.with(|conn| {
+                    let transaction = begin_snapshot_write(conn)?;
+                    let result = create_snapshot_with_connection(&transaction, input("p1", "same"))?;
+                    transaction.commit().map_err(to_string_error)?;
+                    Ok(result)
+                })
             })
         })
         .collect();
@@ -602,6 +602,7 @@ fn atomic_write_records_byte_identical_bytes_through_the_choke_point() {
     let value = serde_json::json!({ "zoomLevel": 1.2, "zen": true });
 
     atomic_write_json(dir.path(), &path, &value, format_version::CONFIG).unwrap();
+    crate::backup_store::close_backup_store();
 
     let on_disk = fs::read(&path).unwrap();
     let store = dir.path().join(crate::backup_store::BACKUPS_DB_FILE_NAME);
@@ -658,22 +659,62 @@ fn a_write_that_changes_nothing_leaves_the_file_and_the_backups_alone() {
     let path = dir.path().join(PANES_FILE_NAME);
     let value = serde_json::json!({ "panes": [] });
 
-    atomic_write_json(dir.path(), &path, &value, format_version::PANES).unwrap();
+    assert!(atomic_write_json(dir.path(), &path, &value, format_version::PANES).unwrap());
     let old = backdate(&path);
-    atomic_write_json(dir.path(), &path, &value, format_version::PANES).unwrap();
+    assert!(!atomic_write_json(dir.path(), &path, &value, format_version::PANES).unwrap());
+    crate::backup_store::close_backup_store();
     assert_eq!(fs::metadata(&path).unwrap().modified().unwrap(), old);
     assert_eq!(backup_rows(dir.path(), &path), 1);
 
+    // A change in the same session replaces that session's row.
     let changed = serde_json::json!({ "panes": [{ "id": "p1" }] });
-    atomic_write_json(dir.path(), &path, &changed, format_version::PANES).unwrap();
+    assert!(atomic_write_json(dir.path(), &path, &changed, format_version::PANES).unwrap());
+    crate::backup_store::close_backup_store();
     assert_ne!(fs::metadata(&path).unwrap().modified().unwrap(), old);
     assert_eq!(
         read_json_store(&path, format_version::PANES).unwrap(),
         JsonRead::Readable(fields(changed))
     );
-    assert_eq!(backup_rows(dir.path(), &path), 2);
+    assert_eq!(backup_rows(dir.path(), &path), 1);
+    assert_eq!(latest_backup(dir.path(), &path), fs::read(&path).unwrap());
+}
 
+fn latest_backup(data_dir: &Path, path: &Path) -> Vec<u8> {
+    Connection::open(data_dir.join(crate::backup_store::BACKUPS_DB_FILE_NAME))
+        .unwrap()
+        .query_row(
+            "SELECT content FROM backups WHERE path = ?1 ORDER BY id DESC LIMIT 1",
+            params![path.to_string_lossy()],
+            |row| row.get(0),
+        )
+        .unwrap()
+}
+
+#[test]
+#[serial(backup_store)]
+fn saves_report_whether_they_wrote() {
     crate::backup_store::close_backup_store();
+    let dir = tempfile::tempdir().unwrap();
+    let panes = serde_json::json!({ "panes": [] });
+    assert!(save_panes_in(dir.path(), &panes).unwrap());
+    assert!(!save_panes_in(dir.path(), &panes).unwrap());
+    let state = serde_json::json!({ "activePaneId": "p1" });
+    assert!(save_state_in(dir.path(), state.clone()).unwrap());
+    assert!(!save_state_in(dir.path(), state).unwrap());
+    crate::backup_store::close_backup_store();
+}
+
+#[test]
+#[serial(backup_store)]
+fn a_panes_save_is_recorded_and_a_state_save_is_not() {
+    crate::backup_store::close_backup_store();
+    let dir = tempfile::tempdir().unwrap();
+    save_panes_in(dir.path(), &serde_json::json!({ "panes": [] })).unwrap();
+    save_state_in(dir.path(), serde_json::json!({ "activePaneId": "p1" })).unwrap();
+    crate::backup_store::close_backup_store();
+    let panes = dir.path().join(PANES_FILE_NAME);
+    assert_eq!(latest_backup(dir.path(), &panes), fs::read(&panes).unwrap());
+    assert_eq!(backup_rows(dir.path(), &dir.path().join(STATE_FILE_NAME)), 0);
 }
 
 #[test]
@@ -935,7 +976,7 @@ fn failed_required_load_retains_completed_settings_quarantine() {
     fs::write(dir.path().join(CONFIG_FILE_NAME), "{broken settings").unwrap();
     let snapshots = dir.path().join(SNAPSHOTS_DB_FILE_NAME);
     fs::create_dir(&snapshots).unwrap();
-    let failure = load_app_data_in(dir.path()).unwrap_err();
+    let failure = load_app_data_in(dir.path(), &SnapshotConnection::default()).unwrap_err();
     assert_eq!(failure.path.as_deref(), snapshots.to_str());
     let moved = failure.config_quarantined_to.unwrap();
     assert_eq!(fs::read_to_string(moved).unwrap(), "{broken settings");
@@ -951,11 +992,38 @@ fn rebuildable_store_quarantines_corrupt_and_continues() {
     let loaded = read_rebuildable_store(&path, format_version::CONFIG).unwrap();
     assert_eq!(loaded.value, None);
     let quarantined_to = loaded.quarantined_to.expect("quarantine path reported");
-    assert!(quarantined_to.ends_with("-utc.invalid"), "{quarantined_to}");
+    let name = Path::new(&quarantined_to).file_name().unwrap().to_str().unwrap();
+    // config-yyyymmdd-hhmmss-utc.invalid
+    assert_eq!(name.len(), "config-20261009-120000-utc.invalid".len(), "{name}");
+    assert!(name.starts_with("config-") && name.ends_with("-utc.invalid"), "{name}");
 
     // The original was renamed aside with its exact bytes, never reset.
     assert!(!path.exists());
     assert_eq!(fs::read(&quarantined_to).unwrap(), b"{ corrupt bytes");
+}
+
+#[test]
+fn a_set_aside_never_replaces_one_from_the_same_second() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join(CONFIG_FILE_NAME);
+    fs::write(&path, b"{ second").unwrap();
+    // Copies already at the names this second's and the next second's set-aside
+    // would take, so the clock turning over cannot make room.
+    let now = Utc::now();
+    let earlier: Vec<_> = [now, now + chrono::TimeDelta::seconds(1)]
+        .into_iter()
+        .map(|moment| dir.path().join(format!("config-{}.invalid", crate::logging::session_stamp(moment))))
+        .collect();
+    for copy in &earlier {
+        fs::write(copy, b"{ first").unwrap();
+    }
+
+    let refused = read_rebuildable_store(&path, format_version::CONFIG).unwrap_err();
+    assert!(refused.contains("already exists"), "{refused}");
+    for copy in &earlier {
+        assert_eq!(fs::read(copy).unwrap(), b"{ first");
+    }
+    assert_eq!(fs::read(&path).unwrap(), b"{ second");
 }
 
 #[test]
@@ -1291,6 +1359,36 @@ fn launch_reads_of_config_skip_a_newer_unmarked_or_corrupt_file() {
     assert_eq!(launch_config("{ not json"), None);
 }
 
+#[test]
+fn concurrent_loads_open_a_new_snapshot_store_once() {
+    // React's development StrictMode sends load_app_data twice together.
+    let dir = tempfile::tempdir().unwrap();
+    let snapshots = std::sync::Arc::new(SnapshotConnection::default());
+    let start = std::sync::Arc::new(std::sync::Barrier::new(4));
+    let loads: Vec<_> = (0..4)
+        .map(|_| {
+            let (snapshots, start, root) = (snapshots.clone(), start.clone(), dir.path().to_path_buf());
+            std::thread::spawn(move || {
+                start.wait();
+                snapshots.open(&root)
+            })
+        })
+        .collect();
+    for load in loads {
+        assert_eq!(load.join().unwrap().unwrap(), None);
+    }
+    let count = snapshots
+        .with(|conn| Ok(count_rows(conn)))
+        .unwrap();
+    assert_eq!(count, 0);
+}
+
+#[test]
+fn snapshot_commands_before_the_load_are_refused() {
+    let refused = SnapshotConnection::default().with(|_| Ok(())).unwrap_err();
+    assert!(refused.contains(SNAPSHOTS_DB_FILE_NAME), "{refused}");
+}
+
 fn snapshot_user_version(path: &Path) -> i64 {
     Connection::open(path)
         .unwrap()
@@ -1326,7 +1424,9 @@ fn a_newer_snapshot_store_is_left_untouched_and_refused() {
         open_snapshot_store(dir.path()).unwrap(),
         SnapshotStore::Newer(2)
     ));
-    let refused = open_snapshot_db(dir.path()).err().unwrap();
+    let snapshots = SnapshotConnection::default();
+    assert_eq!(snapshots.open(dir.path()).unwrap(), Some(2));
+    let refused = snapshots.with(|_| Ok(())).unwrap_err();
     assert!(refused.contains(SNAPSHOTS_DB_FILE_NAME), "{refused}");
     assert_eq!(fs::read(&path).unwrap(), before);
     let tables: i64 = Connection::open(&path)

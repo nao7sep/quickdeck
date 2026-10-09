@@ -111,10 +111,10 @@ export function App() {
     return () => window.clearTimeout(timeoutId);
   }, [snapshotJustSavedAt]);
 
-  // The just-in-case data backup is now a write-through store owned entirely by
-  // the Rust core (see src-tauri/src/backup_store.rs): every managed-text save
-  // records its bytes strictly after the atomic rename lands. There is no startup
-  // scan and no frontend backup edge — the old startup-scan ZIP engine is retired.
+  // The backup history is owned entirely by the Rust core (see
+  // src-tauri/src/backup_store.rs): each save of panes.json or config.json hands
+  // its bytes to it after the atomic rename lands, without waiting on it. There
+  // is no frontend backup edge.
 
   const openMenuModal = useCallback((modal: OpenModal) => {
     setOpenModal(modal);
