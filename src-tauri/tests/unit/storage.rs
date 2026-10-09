@@ -834,6 +834,41 @@ fn failed_rename_cleans_up_the_temp_file() {
     crate::backup_store::close_backup_store();
 }
 
+// On Windows a file held open without delete-sharing cannot be replaced: the
+// save fails, the file keeps its bytes and the temp is removed.
+#[cfg(windows)]
+#[test]
+#[serial(backup_store)]
+fn a_target_held_open_without_delete_sharing_fails_cleanly() {
+    use std::os::windows::fs::OpenOptionsExt;
+    const FILE_SHARE_READ: u32 = 0x1;
+    const FILE_SHARE_WRITE: u32 = 0x2;
+
+    crate::backup_store::close_backup_store();
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join(CONFIG_FILE_NAME);
+    atomic_write_json(dir.path(), &path, &serde_json::json!({ "a": 1 }), format_version::CONFIG).unwrap();
+    let before = fs::read(&path).unwrap();
+
+    let held = File::options()
+        .read(true)
+        .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE)
+        .open(&path)
+        .unwrap();
+    let result = atomic_write_json(dir.path(), &path, &serde_json::json!({ "a": 2 }), format_version::CONFIG);
+    drop(held);
+
+    assert!(result.is_err(), "the replace should fail while the file is held");
+    assert_eq!(fs::read(&path).unwrap(), before);
+    let temps: Vec<_> = fs::read_dir(dir.path())
+        .unwrap()
+        .flatten()
+        .filter(|entry| entry.file_name().to_string_lossy().ends_with(".tmp"))
+        .collect();
+    assert!(temps.is_empty(), "temp files left: {temps:?}");
+    crate::backup_store::close_backup_store();
+}
+
 #[test]
 fn temp_path_for_uses_stem_discriminator_dot_tmp_shape_in_the_same_directory() {
     // <stem>-<discriminator>.tmp — the derived-filename grammar: one final

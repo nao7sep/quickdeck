@@ -18,6 +18,7 @@ const LOCK_FILE_NAME: &str = "instance.lock";
 const ENDPOINT_FILE_NAME: &str = "instance.endpoint";
 const NOTIFY_TIMEOUT: Duration = Duration::from_secs(2);
 const RETRY_DELAY: Duration = Duration::from_millis(20);
+const ACTIVATION_READ_WAIT: Duration = Duration::from_secs(1);
 
 struct Owner {
     _lock: File,
@@ -98,8 +99,7 @@ fn listen<R: Runtime>(listener: TcpListener, app: tauri::AppHandle<R>) {
     std::thread::spawn(move || loop {
         match listener.accept() {
             Ok((mut stream, _)) => {
-                let mut request = [0u8; 8];
-                if stream.read(&mut request).is_ok() && request.starts_with(b"activate") {
+                if is_activation(&mut stream) {
                     crate::bring_main_forward(&app);
                 }
             }
@@ -111,27 +111,45 @@ fn listen<R: Runtime>(listener: TcpListener, app: tauri::AppHandle<R>) {
     });
 }
 
+// Whether an accepted connection asks for activation. The stream inherits the
+// listener's non-blocking mode, where a read before the bytes arrive fails and
+// the activation would be lost, so it is read blocking, briefly.
+fn is_activation(stream: &mut TcpStream) -> bool {
+    let mut request = [0u8; 8];
+    stream
+        .set_nonblocking(false)
+        .and_then(|()| stream.set_read_timeout(Some(ACTIVATION_READ_WAIT)))
+        .and_then(|()| stream.read_exact(&mut request))
+        .is_ok_and(|()| &request == b"activate")
+}
+
 pub fn init() -> tauri::plugin::TauriPlugin<tauri::Wry> {
     tauri::plugin::Builder::<tauri::Wry>::new("instance-owner")
         .setup(|app, _api| {
             let handle = app.app_handle().clone();
-            let (root, claimed) = crate::startup::prepare("instance ownership", crate::startup::PREPARE_WAIT, move || {
+            let prepared = crate::startup::prepare("instance ownership", crate::startup::PREPARE_WAIT, move || {
                 let root = crate::paths::app_data_dir(&handle)?;
                 let claimed = claim(&root)?;
                 Ok::<_, String>((root, claimed))
-            })??;
-            match claimed {
-                Claim::Primary { lock, listener } => {
+            });
+            match prepared.and_then(|claimed| claimed) {
+                Ok((root, Claim::Primary { lock, listener })) => {
                     app.manage(crate::paths::DataRoot(root));
                     listen(listener, app.app_handle().clone());
                     app.manage(Owner { _lock: lock });
-                    Ok(())
                 }
-                Claim::Secondary { endpoint_path } => {
+                Ok((_, Claim::Secondary { endpoint_path })) => {
                     let _ = crate::startup::prepare("existing instance activation", NOTIFY_TIMEOUT, move || notify_primary(&endpoint_path));
                     std::process::exit(0);
                 }
+                Err(error) => {
+                    // Before logging starts, so stderr is all there is; the
+                    // load-error screen tells the user.
+                    let _ = writeln!(std::io::stderr(), "[quickdeck] {error}");
+                    app.manage(crate::paths::ClaimFailure(error));
+                }
             }
+            Ok(())
         })
         .build()
 }

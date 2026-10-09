@@ -88,6 +88,13 @@ impl SessionEnd {
     pub fn ending(&self) -> bool {
         self.ending.load(Ordering::Relaxed)
     }
+
+    /// The session end did not happen (Windows: another app cancelled it), so
+    /// a later exit is an ordinary one again.
+    #[cfg_attr(not(windows), allow(dead_code))]
+    fn cancel(&self) {
+        self.ending.store(false, Ordering::Relaxed);
+    }
 }
 
 /// Asks the main window to save for an OS session end. The receiver hears when
@@ -277,12 +284,13 @@ mod windows_session {
             Shell::{DefSubclassProc, SetWindowSubclass},
             WindowsAndMessaging::{
                 DispatchMessageW, MsgWaitForMultipleObjects, PeekMessageW, PostQuitMessage,
-                TranslateMessage, MSG, PM_REMOVE, QS_ALLINPUT, WM_QUERYENDSESSION, WM_QUIT,
+                TranslateMessage, MSG, PM_REMOVE, QS_ALLINPUT, WM_ENDSESSION, WM_QUERYENDSESSION,
+                WM_QUIT,
             },
         },
     };
 
-    use super::{begin_session_end, log_session_save_expired, SESSION_SAVE_WAIT};
+    use super::{begin_session_end, log_session_save_expired, SessionEnd, SESSION_SAVE_WAIT};
     use crate::logging;
 
     const SUBCLASS_ID: usize = 1;
@@ -326,12 +334,16 @@ mod windows_session {
             if let Some((saved, true)) = begin_session_end(app) {
                 pump_until_saved(&saved);
             }
+        } else if message == WM_ENDSESSION && wparam.0 == 0 {
+            // SAFETY: as above.
+            let app = unsafe { &*(data as *const AppHandle) };
+            app.state::<SessionEnd>().cancel();
         }
         // SAFETY: forwards the message this subclass received.
         unsafe { DefSubclassProc(hwnd, message, wparam, lparam) }
     }
 
-    fn pump_until_saved(saved: &mpsc::Receiver<()>) {
+    pub(super) fn pump_until_saved(saved: &mpsc::Receiver<()>) {
         let deadline = Instant::now() + SESSION_SAVE_WAIT;
         loop {
             if !matches!(saved.try_recv(), Err(TryRecvError::Empty)) {

@@ -12,6 +12,12 @@ const DATA_DIR_NAME: &str = ".quickdeck";
 // placement at launch and exit, when a data folder deleted while the app runs
 // stays deleted.
 pub struct DataRoot(pub PathBuf);
+
+// Why this process could not claim its storage root at launch: the folder is
+// unreachable or unwritable, or the claim outlasted its bound. The app then
+// opens on its load-error screen (load_app_data reports this) and writes
+// nothing into the folder, instead of closing with no window and no message.
+pub struct ClaimFailure(pub String);
 const DATA_DIR_ENV_VAR: &str = "QUICKDECK_DATA_DIR";
 
 // Resolves (creating if missing) the app's data directory.

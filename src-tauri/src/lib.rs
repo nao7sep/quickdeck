@@ -80,6 +80,9 @@ async fn load_app_data(app: AppHandle) -> Result<LoadedAppData, LoadFailure> {
             "load_app_data",
             json!({}),
             || {
+                if let Some(failure) = app.try_state::<paths::ClaimFailure>() {
+                    return Err(LoadFailure::from(failure.0.clone()));
+                }
                 // The frontend gates its debug logging on this resolved flag.
                 storage::load_app_data(&app).map(|mut data| {
                     data.debug_enabled = logging::debug_enabled();
@@ -103,6 +106,25 @@ async fn load_app_data(app: AppHandle) -> Result<LoadedAppData, LoadFailure> {
         )
     })
     .await
+}
+
+// The language the native menu speaks, for a halt screen shown when the load
+// failed or timed out: no file access, so it answers at once.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LaunchLanguage {
+    language: &'static str,
+    system_language: &'static str,
+    system_locale: Option<String>,
+}
+
+#[tauri::command]
+fn launch_language(language: State<LanguageState>) -> LaunchLanguage {
+    LaunchLanguage {
+        language: language.current(),
+        system_language: language.system_language,
+        system_locale: language.system_locale.clone(),
+    }
 }
 
 // Applies the saved theme to every open window; a Records window opened later
@@ -536,6 +558,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             apply_language,
             apply_theme,
+            launch_language,
             load_app_data,
             open_records_window,
             records_window_setup,
@@ -585,7 +608,9 @@ pub fn run() {
             logging::log_shutdown();
         }
         if matches!(event, RunEvent::Exit) {
-            window_placement::save(&app.state::<paths::DataRoot>().0, &placement_state);
+            if let Some(root) = app.try_state::<paths::DataRoot>() {
+                window_placement::save(&root.0, &placement_state);
+            }
             // Pending backup history gets a short wait at an ordinary quit and
             // none at an OS session end (data-backup conventions).
             if !app.state::<quit::SessionEnd>().ending() {

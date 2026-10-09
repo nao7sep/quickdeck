@@ -63,6 +63,10 @@ objc2-foundation = { version = "0.3.2", default-features = false, features = ["s
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.61.3", features = ["Win32_Foundation", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
 
+# The session-end wait's test posts thread messages to itself (tests/unit/quit.rs).
+[target.'cfg(windows)'.dev-dependencies]
+windows = { version = "0.61.3", features = ["Win32_System_Threading"] }
+
 [dev-dependencies]
 # Serializes the tests that share process-global state — the backup-store
 # singleton (`static STORE` in backup_store.rs) and the process-global env vars

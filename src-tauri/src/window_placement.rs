@@ -130,7 +130,9 @@ fn replace_state(state: &PlacementState, label: &str, placement: Option<Placemen
 // Prepare on a worker before showing the first frame (window conventions).
 // A late result never mutates the live placement state.
 pub(crate) fn load(app: &AppHandle, state: &PlacementState) {
-    let root = app.state::<crate::paths::DataRoot>().0.clone();
+    let Some(root) = app.try_state::<crate::paths::DataRoot>().map(|root| root.0.clone()) else {
+        return;
+    };
     let saved = match crate::startup::prepare("window placement", crate::startup::PREPARE_WAIT,
         move || storage::load_window_state_in(&root)).and_then(|result| result) {
         Ok(value) => placements_from(value),
@@ -294,6 +296,14 @@ fn write_placements(root: &Path, placements: Placements) {
                 "window placement could not be saved",
                 serde_json::json!({ "error": error.to_string() }),
             )
+        }
+    }
+    // A window not captured this run keeps its saved placement: a launch read
+    // that failed or timed out left it out of the live state.
+    let mut placements = placements;
+    if let Ok(saved) = storage::load_window_state_in(root) {
+        for (label, placement) in placements_from(saved) {
+            placements.entry(label).or_insert(placement);
         }
     }
     match serde_json::to_value(placements) {

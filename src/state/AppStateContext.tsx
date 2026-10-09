@@ -32,6 +32,7 @@ import {
   loadAppData,
   loadFailurePath,
   loadFailureRecovery,
+  launchLanguage,
   quarantineCorruptPanes,
   saveConfig,
   savePanes,
@@ -213,6 +214,19 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  // Mutations refresh the authoritative count; older reads cannot replace a
+  // later read issued after another committed mutation.
+  const refreshSnapshotCount = useCallback(() => {
+    const request = ++snapshotCountRequestRef.current;
+    void countSnapshots()
+      .then((count) => {
+        if (!canceledRef.current && request === snapshotCountRequestRef.current) {
+          setSnapshotCount(count);
+        }
+      })
+      .catch((error) => logWarn("snapshot count not read", { error: serializeError(error) }));
+  }, []);
+
   const loadPersistedState = useCallback(async (panesSetAsideTo: string | null = null): Promise<{ recoveries: Message[]; emptyPanes: boolean } | null> => {
     const generation = ++loadGenerationRef.current;
     const current = () => !canceledRef.current && generation === loadGenerationRef.current;
@@ -314,6 +328,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         showBlockingError(message("settingsNewer.title"), message("settingsNewer.body"));
       }
 
+      let countLate = false;
       try {
         const initialCount = await awaitStartup(countSnapshots(), deadline);
         if (current()) {
@@ -321,8 +336,10 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         }
       } catch (error) {
         // Snapshot count is informational only — recover and continue — but a
-        // failure here is still an unexpected error worth recording.
+        // failure here is still an unexpected error worth recording. It is
+        // read again once the app is ready, so it does not stay at 0.
         logWarn("snapshot count failed", { error: serializeError(error) });
+        countLate = true;
       }
 
       if (!current()) return null;
@@ -343,6 +360,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       setSaveState("saved");
       setLoadStatus("ready");
       loadReadyRef.current = true;
+      if (countLate) refreshSnapshotCount();
       {
         const settingsMoves = recoveryFactsRef.current.filter((fact) =>
           fact.key === "load.settingsSetAside" && fact.values?.path !== data.configQuarantinedTo);
@@ -353,6 +371,24 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       return { recoveries: [...recoveryFactsRef.current], emptyPanes: loadedPanes.length === 0 };
     } catch (error) {
       for (const fact of loadFailureRecovery(error)) retainRecovery(fact);
+      // The halt screen speaks the language the native menu does, as on every
+      // other halt; English stays when even that cannot be had.
+      if (current()) {
+        try {
+          const launch = await launchLanguage();
+          const launchSystem = isLanguage(launch.systemLanguage) ? launch.systemLanguage : "en";
+          const launchChosen = isLanguage(launch.language) ? launch.language : launchSystem;
+          await loadCatalogue(launchChosen);
+          if (current()) {
+            setSystemLanguage(launchSystem);
+            setSystemLocale(launch.systemLocale);
+            setSettings((prior) => ({ ...prior, language: launchChosen }));
+            setLanguage(launchChosen);
+          }
+        } catch (languageError) {
+          logWarn("halt screen language unavailable", { error: serializeError(languageError) });
+        }
+      }
       if (current()) {
         // Halt: do not transition into a state where any write path can run.
         // The App shell renders a non-dismissible error screen for "failed",
@@ -366,7 +402,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       }
       return null;
     }
-  }, [firstPane, retainRecovery, showBlockingError]);
+  }, [firstPane, refreshSnapshotCount, retainRecovery, showBlockingError]);
 
   useEffect(() => {
     if (chosenLanguage === language) return undefined;
@@ -522,19 +558,6 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     },
     [markUnsaved, panes],
   );
-
-  // Mutations refresh the authoritative count; older reads cannot replace a
-  // later read issued after another committed mutation.
-  const refreshSnapshotCount = useCallback(() => {
-    const request = ++snapshotCountRequestRef.current;
-    void countSnapshots()
-      .then((count) => {
-        if (!canceledRef.current && request === snapshotCountRequestRef.current) {
-          setSnapshotCount(count);
-        }
-      })
-      .catch((error) => logWarn("snapshot count not read", { error: serializeError(error) }));
-  }, []);
 
   const recordSnapshot = useCallback(
     (paneId: string, trigger: SnapshotTrigger, content: string) => {

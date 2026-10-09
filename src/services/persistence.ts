@@ -117,6 +117,19 @@ export async function loadAppData(): Promise<LoadedAppData> {
   return invoke<LoadedAppData>("load_app_data");
 }
 
+export type LaunchLanguage = {
+  language: string;
+  systemLanguage: string;
+  systemLocale: string | null;
+};
+
+// The language the native menu speaks, read without touching the data folder,
+// for a halt screen after a load that failed or timed out.
+export async function launchLanguage(): Promise<LaunchLanguage> {
+  if (!isTauri()) return { language: "en", systemLanguage: "en", systemLocale: null };
+  return invoke<LaunchLanguage>("launch_language");
+}
+
 // The store a failed load stopped at, when the Rust core named one: the path is
 // presentation data, and the failure's message stays diagnostic.
 export function loadFailurePath(error: unknown): string | null {

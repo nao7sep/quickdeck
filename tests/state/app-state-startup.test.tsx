@@ -14,6 +14,7 @@ const persistence = vi.hoisted(() => ({
   countSnapshots: vi.fn(),
   saveState: vi.fn(),
   savePanes: vi.fn(),
+  launchLanguage: vi.fn(),
 }));
 
 vi.mock("../../src/services/persistence", async (importOriginal) => {
@@ -28,6 +29,7 @@ vi.mock("../../src/services/persistence", async (importOriginal) => {
     saveState: persistence.saveState,
     savePanes: persistence.savePanes,
     countSnapshots: persistence.countSnapshots,
+    launchLanguage: persistence.launchLanguage,
   };
 });
 
@@ -80,6 +82,7 @@ beforeEach(() => {
   persistence.loadAppData.mockResolvedValue(loadedAppData());
   persistence.saveConfig.mockResolvedValue(null);
   persistence.countSnapshots.mockResolvedValue(0);
+  persistence.launchLanguage.mockResolvedValue({ language: "en", systemLanguage: "en", systemLocale: null });
 });
 
 afterEach(async () => {
@@ -357,6 +360,19 @@ describe("startup invocation and recovery truth", () => {
     expect(latestStartup!.snapshotCount).toBe(7);
   });
 
+  it("reads the snapshot count again once ready when the startup count was late", async () => {
+    vi.useFakeTimers();
+    persistence.countSnapshots
+      .mockImplementationOnce(() => new Promise<number>(() => undefined))
+      .mockResolvedValueOnce(5);
+    try {
+      await renderStartupState();
+      await act(async () => vi.advanceTimersByTimeAsync(STARTUP_LOAD_BOUND_MS));
+      expect(latestStartup!.loadStatus).toBe("ready");
+      expect(latestStartup!.snapshotCount).toBe(5);
+    } finally { vi.useRealTimers(); }
+  });
+
   it("retains a completed settings move on a later native required-load failure", async () => {
     persistence.loadAppData.mockRejectedValueOnce({ path: "/actual/snapshots.sqlite3", configQuarantinedTo: "/actual/config.invalid", message: "HOSTILE" });
     const host = await renderStartupState();
@@ -483,6 +499,16 @@ describe("interface language", () => {
 
     expect(host.querySelector('[data-testid="language"]')?.textContent).toBe("ja");
     expect(host.querySelector('[data-testid="settings-title"]')?.textContent).toBe("設定");
+    expect(document.documentElement.lang).toBe("ja");
+  });
+
+  it("shows a failed load's halt screen in the language the menu speaks", async () => {
+    persistence.loadAppData.mockRejectedValueOnce("the data folder was not claimed");
+    persistence.launchLanguage.mockResolvedValueOnce({ language: "ja", systemLanguage: "ko", systemLocale: "ko-KR" });
+
+    const host = await renderLanguageProbe();
+
+    expect(host.querySelector('[data-testid="language"]')?.textContent).toBe("ja");
     expect(document.documentElement.lang).toBe("ja");
   });
 

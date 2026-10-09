@@ -73,3 +73,36 @@ fn secondary_activation_uses_the_published_endpoint() {
     notify_primary(&endpoint_path).unwrap();
     assert_eq!(receiver.join().unwrap(), "activate");
 }
+
+#[test]
+fn an_activation_that_arrives_after_the_connection_is_still_read() {
+    let listener = TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0)).unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let address = listener.local_addr().unwrap();
+    let sender = std::thread::spawn(move || {
+        let mut stream = TcpStream::connect(address).unwrap();
+        std::thread::sleep(Duration::from_millis(100));
+        stream.write_all(b"activate").unwrap();
+    });
+    let mut accepted = loop {
+        match listener.accept() {
+            Ok((stream, _)) => break stream,
+            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => std::thread::sleep(RETRY_DELAY),
+            Err(error) => panic!("{error}"),
+        }
+    };
+    assert!(is_activation(&mut accepted));
+    sender.join().unwrap();
+}
+
+#[test]
+fn a_connection_that_sends_something_else_is_not_an_activation() {
+    let listener = TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0)).unwrap();
+    let address = listener.local_addr().unwrap();
+    let sender = std::thread::spawn(move || {
+        TcpStream::connect(address).unwrap().write_all(b"hello").unwrap();
+    });
+    let (mut accepted, _) = listener.accept().unwrap();
+    sender.join().unwrap();
+    assert!(!is_activation(&mut accepted));
+}

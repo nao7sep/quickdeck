@@ -121,7 +121,12 @@ pub fn init(app: &AppHandle, version: &str) {
             .unwrap_or(false);
 
     let started = Utc::now();
-    let root = Ok::<_, String>(app.state::<crate::paths::DataRoot>().0.clone());
+    // No root when the launch could not claim one (paths::ClaimFailure): lines
+    // then go to stderr only.
+    let root = app
+        .try_state::<crate::paths::DataRoot>()
+        .map(|root| root.0.clone())
+        .ok_or_else(|| "the data folder was not claimed".to_string());
     let session = Session {
         started: started.to_rfc3339_opts(SecondsFormat::Millis, true),
         stamp: session_stamp(started),

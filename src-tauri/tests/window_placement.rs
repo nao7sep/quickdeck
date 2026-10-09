@@ -133,3 +133,36 @@ fn the_exit_save_writes_window_json_into_the_launch_root() {
     let placements = placements_from(Some(serde_json::Value::Object(written)));
     assert_eq!(placements.get("main"), Some(&placement));
 }
+
+#[test]
+fn the_exit_save_keeps_a_window_it_did_not_capture() {
+    // A launch whose placement read failed knows only the windows it captured
+    // this run; the other window's saved placement survives the exit save.
+    let root = tempfile::tempdir().unwrap();
+    let records = Placement {
+        normal: rectangle(900, 40, 600, 700),
+        maximized: false,
+    };
+    let saved = new_state();
+    saved.lock().unwrap().insert("records".into(), records);
+    save(root.path(), &saved);
+
+    let main = Placement {
+        normal: rectangle(10, 20, 800, 600),
+        maximized: true,
+    };
+    let this_run = new_state();
+    this_run.lock().unwrap().insert("main".into(), main);
+    save(root.path(), &this_run);
+
+    let written: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(root.path().join("window.json")).unwrap()).unwrap();
+    let Ok(JsonFormat::Readable(written)) =
+        format_version::read_json(written, format_version::WINDOW)
+    else {
+        panic!("window.json reads in this build's format");
+    };
+    let placements = placements_from(Some(serde_json::Value::Object(written)));
+    assert_eq!(placements.get("main"), Some(&main));
+    assert_eq!(placements.get("records"), Some(&records));
+}
