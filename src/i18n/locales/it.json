@@ -61,7 +61,8 @@
   "settings.snapshotPageSize": "Istantanee per pagina",
 
   "discard.title": "Scartare le modifiche?",
-  "discard.body": "Questa finestra di dialogo contiene modifiche non salvate. Se la chiudi, andranno perse.",
+  "discard.body": "Hai modifiche non salvate. Scartarle e chiudere?",
+  "discard.keepEditing": "Continua a modificare",
   "discard.confirm": "Scarta",
 
   "error.details": "Dettagli: {title}",

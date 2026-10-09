@@ -60,8 +60,9 @@
   "settings.autosaveDelay": "Autosave delay after edits (seconds)",
   "settings.snapshotPageSize": "Snapshots per page",
 
-  "discard.title": "Discard Changes?",
-  "discard.body": "This modal has unsaved changes. Closing it will discard them.",
+  "discard.title": "Discard changes?",
+  "discard.body": "You have unsaved changes. Discard them and close?",
+  "discard.keepEditing": "Keep editing",
   "discard.confirm": "Discard",
 
   "error.details": "{title} details",

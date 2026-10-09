@@ -61,7 +61,8 @@
   "settings.snapshotPageSize": "Instantanés par page",
 
   "discard.title": "Abandonner les modifications\u00a0?",
-  "discard.body": "Cette boîte de dialogue contient des modifications non enregistrées. Si vous la fermez, elles seront perdues.",
+  "discard.body": "Des modifications ne sont pas enregistrées. Les abandonner et fermer\u00a0?",
+  "discard.keepEditing": "Continuer à modifier",
   "discard.confirm": "Abandonner",
 
   "error.details": "Détails\u00a0: {title}",

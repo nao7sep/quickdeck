@@ -1,5 +1,5 @@
 {
-  "common.cancel": "Отменить",
+  "common.cancel": "Отмена",
   "common.close": "Закрыть",
   "common.ok": "ОК",
   "common.closeModal": "Закрыть диалоговое окно",
@@ -60,9 +60,10 @@
   "settings.autosaveDelay": "Задержка автосохранения после правок (секунды)",
   "settings.snapshotPageSize": "Снимков на странице",
 
-  "discard.title": "Закрыть без сохранения?",
-  "discard.body": "В этом окне есть несохранённые изменения. Если закрыть его, они будут потеряны.",
-  "discard.confirm": "Не сохранять",
+  "discard.title": "Отказаться от изменений?",
+  "discard.body": "Есть несохранённые изменения. Отказаться от них и закрыть?",
+  "discard.keepEditing": "Продолжить редактирование",
+  "discard.confirm": "Отказаться",
 
   "error.details": "Подробности: {title}",
 

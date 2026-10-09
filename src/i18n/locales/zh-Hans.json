@@ -61,7 +61,8 @@
   "settings.snapshotPageSize": "每页快照数",
 
   "discard.title": "放弃更改？",
-  "discard.body": "此对话框有未保存的更改。关闭它将放弃这些更改。",
+  "discard.body": "你有未保存的更改。要放弃这些更改并关闭吗？",
+  "discard.keepEditing": "继续编辑",
   "discard.confirm": "放弃",
 
   "error.details": "{title}详情",

@@ -61,7 +61,8 @@
   "settings.snapshotPageSize": "Instantáneas por página",
 
   "discard.title": "¿Descartar los cambios?",
-  "discard.body": "Este cuadro de diálogo tiene cambios sin guardar. Si lo cierras, se descartarán.",
+  "discard.body": "Tienes cambios sin guardar. ¿Descartarlos y cerrar?",
+  "discard.keepEditing": "Seguir editando",
   "discard.confirm": "Descartar",
 
   "error.details": "Detalles: {title}",

@@ -61,7 +61,8 @@
   "settings.snapshotPageSize": "Snapshots pro Seite",
 
   "discard.title": "Änderungen verwerfen?",
-  "discard.body": "Dieser Dialog enthält nicht gespeicherte Änderungen. Wenn Sie ihn schließen, gehen sie verloren.",
+  "discard.body": "Sie haben nicht gespeicherte Änderungen. Verwerfen und schließen?",
+  "discard.keepEditing": "Weiter bearbeiten",
   "discard.confirm": "Verwerfen",
 
   "error.details": "Details: {title}",

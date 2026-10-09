@@ -14,13 +14,13 @@ afterEach(async () => {
   document.body.innerHTML = "";
 });
 
-it("opens on Cancel, never on the destructive action", async () => {
+it("opens on Keep editing, never on the destructive action", async () => {
   const container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
   await act(async () => root?.render(<ConfirmCloseModal onCancel={vi.fn()} onDiscard={vi.fn()} />));
 
   const cancel = document.querySelector("[data-initial-focus]");
-  expect(cancel?.textContent).toBe("Cancel");
+  expect(cancel?.textContent).toBe("Keep editing");
   expect(document.activeElement).toBe(cancel);
 });

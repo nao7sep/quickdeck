@@ -61,7 +61,8 @@
   "settings.snapshotPageSize": "1 ページあたりのスナップショット件数",
 
   "discard.title": "変更を破棄しますか？",
-  "discard.body": "このダイアログには保存していない変更があります。閉じると変更は破棄されます。",
+  "discard.body": "保存していない変更があります。破棄して閉じますか？",
+  "discard.keepEditing": "編集を続ける",
   "discard.confirm": "破棄",
 
   "error.details": "{title} の詳細",
