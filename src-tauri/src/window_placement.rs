@@ -91,23 +91,49 @@ fn current_normal_rectangle(window: &Window<Wry>) -> tauri::Result<NormalRectang
     })
 }
 
-fn is_usable(window: &Window<Wry>, rectangle: NormalRectangle) -> tauri::Result<bool> {
-    if rectangle.width == 0 || rectangle.height == 0 {
-        return Ok(false);
-    }
+// How much of a window's top edge must lie inside one monitor's work area for
+// the window to be grabbed and moved: its title bar's height, and enough of its
+// width to aim at (physical pixels). Overlap alone is not enough — a one-pixel
+// sliver at a screen edge overlaps but cannot be dragged back.
+const TITLE_BAR_HEIGHT: i64 = 32;
+const TITLE_BAR_GRAB: i64 = 100;
 
+/// Whether a saved rectangle can be restored as is: some work area holds the
+/// top of the window, title bar included, with at least `TITLE_BAR_GRAB` of its
+/// width. A rectangle that fails is replaced with the default placement.
+pub fn usable_on(rectangle: NormalRectangle, work_areas: &[NormalRectangle]) -> bool {
+    if rectangle.width == 0 || rectangle.height == 0 {
+        return false;
+    }
     let left = i64::from(rectangle.x);
     let top = i64::from(rectangle.y);
     let right = left + i64::from(rectangle.width);
-    let bottom = top + i64::from(rectangle.height);
-    Ok(window.available_monitors()?.iter().any(|monitor| {
-        let area = monitor.work_area();
-        let area_left = i64::from(area.position.x);
-        let area_top = i64::from(area.position.y);
-        let area_right = area_left + i64::from(area.size.width);
-        let area_bottom = area_top + i64::from(area.size.height);
-        left < area_right && right > area_left && top < area_bottom && bottom > area_top
-    }))
+    work_areas.iter().any(|area| {
+        let area_left = i64::from(area.x);
+        let area_top = i64::from(area.y);
+        let area_right = area_left + i64::from(area.width);
+        let area_bottom = area_top + i64::from(area.height);
+        top >= area_top
+            && top + TITLE_BAR_HEIGHT <= area_bottom
+            && right.min(area_right) - left.max(area_left) >= TITLE_BAR_GRAB.min(i64::from(rectangle.width))
+    })
+}
+
+fn is_usable(window: &Window<Wry>, rectangle: NormalRectangle) -> tauri::Result<bool> {
+    let work_areas: Vec<NormalRectangle> = window
+        .available_monitors()?
+        .iter()
+        .map(|monitor| {
+            let area = monitor.work_area();
+            NormalRectangle {
+                x: area.position.x,
+                y: area.position.y,
+                width: area.size.width,
+                height: area.size.height,
+            }
+        })
+        .collect();
+    Ok(usable_on(rectangle, &work_areas))
 }
 
 fn replace_state(state: &PlacementState, label: &str, placement: Option<Placement>) {

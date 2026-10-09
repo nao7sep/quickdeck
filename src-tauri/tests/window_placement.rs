@@ -166,3 +166,53 @@ fn the_exit_save_keeps_a_window_it_did_not_capture() {
     assert_eq!(placements.get("main"), Some(&main));
     assert_eq!(placements.get("records"), Some(&records));
 }
+
+mod restore_usability {
+    use super::rectangle;
+    use quickdeck_lib::window_placement::usable_on;
+
+    const SCREEN: [quickdeck_lib::window_placement::NormalRectangle; 1] = [quickdeck_lib::window_placement::NormalRectangle {
+        x: 0,
+        y: 25,
+        width: 1440,
+        height: 875,
+    }];
+
+    #[test]
+    fn a_window_inside_the_work_area_is_restored() {
+        assert!(usable_on(rectangle(100, 100, 800, 600), &SCREEN));
+    }
+
+    #[test]
+    fn a_window_mostly_off_screen_with_its_title_bar_reachable_is_restored() {
+        assert!(usable_on(rectangle(1300, 600, 800, 600), &SCREEN));
+        assert!(usable_on(rectangle(-700, 100, 800, 600), &SCREEN));
+    }
+
+    #[test]
+    fn a_sliver_at_a_side_edge_is_not_restored() {
+        assert!(!usable_on(rectangle(1439, 100, 800, 600), &SCREEN));
+        assert!(!usable_on(rectangle(-799, 100, 800, 600), &SCREEN));
+    }
+
+    #[test]
+    fn a_title_bar_above_or_below_the_work_area_is_not_restored() {
+        assert!(!usable_on(rectangle(100, 0, 800, 600), &SCREEN));
+        assert!(!usable_on(rectangle(100, 890, 800, 600), &SCREEN));
+    }
+
+    #[test]
+    fn a_second_monitor_at_negative_coordinates_counts() {
+        let screens = [
+            SCREEN[0],
+            quickdeck_lib::window_placement::NormalRectangle { x: -1920, y: 0, width: 1920, height: 1040 },
+        ];
+        assert!(usable_on(rectangle(-1800, 50, 800, 600), &screens));
+        assert!(!usable_on(rectangle(-1800, 50, 800, 600), &SCREEN));
+    }
+
+    #[test]
+    fn an_empty_rectangle_is_not_restored() {
+        assert!(!usable_on(rectangle(100, 100, 0, 600), &SCREEN));
+    }
+}
