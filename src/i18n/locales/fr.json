@@ -148,8 +148,9 @@
 
   "saveError.title": "QuickDeck n’a pas pu enregistrer vos données",
   "saveError.autosave": "Vos dernières modifications restent ouvertes. Libérez de l’espace de stockage ou rétablissez l’accès au dossier de données, puis réessayez.",
-  "saveError.panesNewer": "Le fichier texte des volets à {path} utilise un format plus récent ({version}) et reste inchangé. Vos dernières modifications restent ouvertes. Mettez QuickDeck à jour avant d’enregistrer dans ce fichier.",
-  "saveError.onClose": "QuickDeck ne s’est pas fermé, donc vos dernières modifications restent ouvertes. Libérez de l’espace de stockage ou rétablissez l’accès au dossier de données, puis réessayez. Si vous quittez quand même, les modifications non enregistrées seront perdues.",
+  "saveError.panesNewer": "Le fichier texte des volets situé à {path} utilise un format plus récent (format {version}) et reste inchangé. Vos dernières modifications restent ouvertes. Mettez QuickDeck à jour avant d’enregistrer dans ce fichier.",
+  "saveError.onClose": "QuickDeck ne s’est pas fermé, donc vos dernières modifications restent ouvertes. Si vous quittez quand même, les modifications non enregistrées seront perdues.",
+  "saveError.retryHint": "Libérez de l’espace de stockage ou rétablissez l’accès au dossier de données, puis réessayez.",
   "saveError.retry": "Réessayer",
   "saveError.quitAnyway": "Quitter quand même",
 

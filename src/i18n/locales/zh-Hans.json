@@ -148,8 +148,9 @@
 
   "saveError.title": "QuickDeck 无法保存你的数据",
   "saveError.autosave": "你最近的更改仍保留在窗格中。请释放一些存储空间，或恢复对数据文件夹的访问权限，然后重试。",
-  "saveError.panesNewer": "{path} 处的文本窗格文件使用较新的格式（{version}），已保持不变。您最新的更改仍处于打开状态。保存到此文件前，请更新 QuickDeck。",
-  "saveError.onClose": "QuickDeck 没有退出，你最近的更改仍保留在窗格中。请释放一些存储空间，或恢复对数据文件夹的访问权限，然后重试。如果仍要退出，未保存的更改将会丢失。",
+  "saveError.panesNewer": "{path} 处的窗格文本文件使用较新的格式（格式 {version}），已保持不变。你最近的更改仍保留在窗格中。保存到此文件前，请更新 QuickDeck。",
+  "saveError.onClose": "QuickDeck 没有退出，你最近的更改仍保留在窗格中。如果仍要退出，未保存的更改将会丢失。",
+  "saveError.retryHint": "请释放一些存储空间，或恢复对数据文件夹的访问权限，然后重试。",
   "saveError.retry": "重试",
   "saveError.quitAnyway": "仍要退出",
 
@@ -173,9 +174,9 @@
   "load.panesDamaged": "你的窗格文本文件（panes.json）已损坏，该文件已原样留在原处。诊断详情记录在日志中。",
   "load.panesNewer": "你的窗格文本文件（panes.json）由较新版本的 QuickDeck（格式 {version}）写入，已原样留在原处。请更新 QuickDeck 后再打开。",
   "load.snapshotsNewer": "你的快照存储文件（snapshots.sqlite3）由较新版本的 QuickDeck（格式 {version}）写入，已原样留在原处。请更新 QuickDeck 后再打开。",
-  "load.setAsideFailed": "QuickDeck 无法完成文本窗格文件的移出操作。请先检查此处列出的文件，再重试。",
+  "load.setAsideFailed": "QuickDeck 未能完成将窗格文本文件移到一旁的操作。请先检查此处列出的文件，再重试。",
   "load.settingsSetAside": "无法读取的设置文件已移至 {path}。",
-  "load.panesSetAside": "损坏的文本窗格文件已移至 {path}。",
+  "load.panesSetAside": "损坏的窗格文本文件已移至 {path}。",
 
   "crash.title": "QuickDeck 无法让此窗口保持打开",
   "crash.body": "重新载入窗口即可恢复。你已保存的窗格和快照没有变化。",

@@ -148,8 +148,9 @@
 
   "saveError.title": "QuickDeck non è riuscito a salvare i tuoi dati",
   "saveError.autosave": "Le modifiche più recenti restano aperte. Libera spazio di archiviazione o ripristina l’accesso alla cartella dei dati, poi riprova.",
-  "saveError.panesNewer": "Il file di testo dei pannelli in {path} usa un formato più recente ({version}) ed è rimasto invariato. Le ultime modifiche restano aperte. Aggiorna QuickDeck prima di salvare in questo file.",
-  "saveError.onClose": "QuickDeck non è stato chiuso, quindi le modifiche più recenti restano aperte. Libera spazio di archiviazione o ripristina l’accesso alla cartella dei dati, poi riprova. Se esci comunque, le modifiche non salvate andranno perse.",
+  "saveError.panesNewer": "Il file di testo dei riquadri in {path} usa un formato più recente (formato {version}) ed è rimasto invariato. Le modifiche più recenti restano aperte. Aggiorna QuickDeck prima di salvare in questo file.",
+  "saveError.onClose": "QuickDeck non è stato chiuso, quindi le modifiche più recenti restano aperte. Se esci comunque, le modifiche non salvate andranno perse.",
+  "saveError.retryHint": "Libera spazio di archiviazione o ripristina l’accesso alla cartella dei dati, poi riprova.",
   "saveError.retry": "Riprova",
   "saveError.quitAnyway": "Esci comunque",
 
@@ -173,9 +174,9 @@
   "load.panesDamaged": "Il file di testo dei tuoi riquadri (panes.json) è danneggiato ed è rimasto esattamente dov’era. I dettagli diagnostici sono nel log.",
   "load.panesNewer": "Il file di testo dei tuoi riquadri (panes.json) è stato scritto da una versione più recente di QuickDeck (formato {version}) ed è rimasto esattamente dov’era. Aggiorna QuickDeck per aprirlo.",
   "load.snapshotsNewer": "L’archivio delle tue istantanee (snapshots.sqlite3) è stato scritto da una versione più recente di QuickDeck (formato {version}) ed è rimasto esattamente dov’era. Aggiorna QuickDeck per aprirlo.",
-  "load.setAsideFailed": "QuickDeck non è riuscito a completare lo spostamento del file di testo dei pannelli. Controlla i file indicati qui prima di riprovare.",
+  "load.setAsideFailed": "QuickDeck non è riuscito a completare lo spostamento del file di testo dei riquadri. Controlla i file indicati qui prima di riprovare.",
   "load.settingsSetAside": "Il file delle impostazioni illeggibile è stato spostato in {path}.",
-  "load.panesSetAside": "Il file di testo dei pannelli danneggiato è stato spostato in {path}.",
+  "load.panesSetAside": "Il file di testo dei riquadri danneggiato è stato spostato in {path}.",
 
   "crash.title": "QuickDeck non è riuscito a tenere aperta questa finestra",
   "crash.body": "Ricarica la finestra per ripristinarla. I riquadri e le istantanee salvati non sono cambiati.",

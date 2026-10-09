@@ -148,8 +148,9 @@
 
   "saveError.title": "QuickDeck はデータを保存できませんでした",
   "saveError.autosave": "最新の変更は画面上に残っています。ストレージの空きを増やすか、データフォルダへのアクセスを回復してから、もう一度お試しください。",
-  "saveError.panesNewer": "{path} のテキストペインファイルは新しい形式（{version}）のため、変更せずに残しました。最新の変更は開いたままです。このファイルに保存する前に QuickDeck を更新してください。",
-  "saveError.onClose": "QuickDeck は終了しなかったため、最新の変更は画面上に残っています。ストレージの空きを増やすか、データフォルダへのアクセスを回復してから、再試行してください。このまま終了すると、保存されていない変更は失われます。",
+  "saveError.panesNewer": "{path} のペインのテキストファイルは新しい形式（形式 {version}）のため、変更せずに残しました。最新の変更は画面上に残っています。このファイルに保存する前に QuickDeck をアップデートしてください。",
+  "saveError.onClose": "QuickDeck は終了しなかったため、最新の変更は画面上に残っています。このまま終了すると、保存されていない変更は失われます。",
+  "saveError.retryHint": "ストレージの空きを増やすか、データフォルダへのアクセスを回復してから、再試行してください。",
   "saveError.retry": "再試行",
   "saveError.quitAnyway": "このまま終了",
 
@@ -173,9 +174,9 @@
   "load.panesDamaged": "ペインのテキストファイル（panes.json）が壊れているため、元の場所にそのまま残しています。診断情報はログにあります。",
   "load.panesNewer": "ペインのテキストファイル（panes.json）は新しいバージョンの QuickDeck（形式 {version}）で書かれているため、元の場所にそのまま残しています。開くには QuickDeck をアップデートしてください。",
   "load.snapshotsNewer": "スナップショットの保存ファイル（snapshots.sqlite3）は新しいバージョンの QuickDeck（形式 {version}）で書かれているため、元の場所にそのまま残しています。開くには QuickDeck をアップデートしてください。",
-  "load.setAsideFailed": "QuickDeck はテキストペインファイルの退避を完了できませんでした。再試行する前に、ここに示されたファイルを確認してください。",
+  "load.setAsideFailed": "QuickDeck はペインのテキストファイルの退避を完了できませんでした。再試行する前に、ここに示されたファイルを確認してください。",
   "load.settingsSetAside": "読み取れない設定ファイルを {path} に移動しました。",
-  "load.panesSetAside": "破損したテキストペインファイルを {path} に移動しました。",
+  "load.panesSetAside": "ペインのテキストファイルが破損していたため、{path} に移動しました。",
 
   "crash.title": "QuickDeck はこのウインドウを表示し続けられませんでした",
   "crash.body": "ウインドウを再読み込みすると回復します。保存済みのペインとスナップショットは変わっていません。",

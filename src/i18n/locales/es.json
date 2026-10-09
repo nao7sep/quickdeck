@@ -148,8 +148,9 @@
 
   "saveError.title": "QuickDeck no pudo guardar tus datos",
   "saveError.autosave": "Tus últimos cambios siguen abiertos. Libera espacio de almacenamiento o restablece el acceso a la carpeta de datos y vuelve a intentarlo.",
-  "saveError.panesNewer": "El archivo de texto de los paneles en {path} usa un formato más reciente ({version}) y no se ha modificado. Tus últimos cambios siguen abiertos. Actualiza QuickDeck antes de guardar en este archivo.",
-  "saveError.onClose": "QuickDeck no se cerró, así que tus últimos cambios siguen abiertos. Libera espacio de almacenamiento o restablece el acceso a la carpeta de datos y vuelve a intentarlo. Si sales de todos modos, se perderán los cambios que no se guardaron.",
+  "saveError.panesNewer": "El archivo de texto de los paneles en {path} usa un formato más reciente (formato {version}) y no se ha modificado. Tus últimos cambios siguen abiertos. Actualiza QuickDeck antes de guardar en este archivo.",
+  "saveError.onClose": "QuickDeck no se cerró, así que tus últimos cambios siguen abiertos. Si sales de todos modos, se perderán los cambios que no se guardaron.",
+  "saveError.retryHint": "Libera espacio de almacenamiento o restablece el acceso a la carpeta de datos y vuelve a intentarlo.",
   "saveError.retry": "Reintentar",
   "saveError.quitAnyway": "Salir de todos modos",
 

@@ -38,7 +38,8 @@ export function QuitSaveErrorModal({ onChoose, reason }: QuitSaveErrorModalProps
       }
     >
       <p className="errorText">{t("saveError.onClose")}</p>
-      {reason ? <p className="errorText">{text(reason)}</p> : null}
+      {/* The named reason when the core gave one; otherwise the usual causes. */}
+      <p className="errorText">{reason ? text(reason) : t("saveError.retryHint")}</p>
     </ModalBase>
   );
 }

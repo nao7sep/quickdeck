@@ -288,7 +288,8 @@ describe("closing the window", () => {
     await renderApp(state);
     const { done } = await requestClose();
     expect(dialog()?.textContent).toContain("/actual/panes.json");
-    expect(dialog()?.textContent).toContain("newer format (2)");
+    expect(dialog()?.textContent).toContain("newer format (format 2)");
+    expect(dialog()?.textContent).not.toContain("Free some storage");
     expect(dialog()?.textContent).not.toContain("HOSTILE");
     await click("Cancel");
     await done;
