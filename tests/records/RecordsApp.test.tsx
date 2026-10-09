@@ -9,6 +9,8 @@ const mocks = vi.hoisted(() => ({
   languageChanged: null as ((language: string) => void) | null,
   setMinSize: vi.fn(() => Promise.resolve()),
   logWarn: vi.fn(),
+  // Catalogues whose load waits until the test releases it.
+  held: new Map<string, Promise<void>>(),
 }));
 
 vi.mock("@tauri-apps/api/core", () => ({ isTauri: () => true }));
@@ -32,6 +34,16 @@ vi.mock("../../src/services/records", async (importOriginal) => ({
   readRecordSources: () => Promise.resolve({ currentSession: "s", sessions: [] }),
   readRecordDetail: () => Promise.resolve(null),
 }));
+vi.mock("../../src/i18n/catalogues", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../../src/i18n/catalogues")>();
+  return {
+    ...original,
+    loadCatalogue: async (language: Parameters<typeof original.loadCatalogue>[0]) => {
+      await mocks.held.get(language);
+      await original.loadCatalogue(language);
+    },
+  };
+});
 vi.mock("../../src/services/logger", () => ({
   logWarn: mocks.logWarn,
   serializeError: (error: unknown) => ({ value: String(error) }),
@@ -62,6 +74,7 @@ beforeEach(() => {
   mocks.setMinSize.mockClear();
   mocks.logWarn.mockReset();
   mocks.languageChanged = null;
+  mocks.held.clear();
 });
 
 afterEach(async () => {
@@ -133,4 +146,47 @@ describe("RecordsApp", () => {
     expect(listWidth()).toBe(`${RECORDS_LIST_WIDTH.default}px`);
     expect(mocks.logWarn).toHaveBeenCalled();
   });
+
+  // Holds a language's catalogue load until the returned release is called.
+  function hold(language: string): () => void {
+    let release!: () => void;
+    mocks.held.set(language, new Promise((resolve) => (release = resolve)));
+    return release;
+  }
+
+  it("shows the latest language when an earlier one's catalogue loads last", async () => {
+    mocks.setup.mockResolvedValue({ language: "en", systemLocale: null, listWidth: null });
+    await mount();
+    const releaseJapanese = hold("ja");
+    await act(async () => mocks.languageChanged!("ja"));
+    await act(async () => mocks.languageChanged!("de"));
+    await act(async () => releaseJapanese());
+    await settleUntilText("Alle Starts");
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 50)));
+    expect(document.documentElement.lang).toBe("de");
+  });
+
+  it("keeps a language change that arrives while its setup is still loading", async () => {
+    let resolve!: (setup: RecordsWindowSetup) => void;
+    mocks.setup.mockReturnValue(new Promise((res) => (resolve = res)));
+    await mount();
+    await act(async () => mocks.languageChanged!("de"));
+    await act(async () => resolve({ language: "ja", systemLocale: "ja-JP", listWidth: 500 }));
+    await settleUntilText("Alle Starts");
+    expect(document.documentElement.lang).toBe("de");
+    expect(listWidth()).toBe("500px");
+  });
+
+  it("applies nothing after the window closes", async () => {
+    let resolve!: (setup: RecordsWindowSetup) => void;
+    mocks.setup.mockReturnValue(new Promise((res) => (resolve = res)));
+    await mount();
+    await act(async () => root?.unmount());
+    root = null;
+    await act(async () => resolve({ language: "ja", systemLocale: "ja-JP", listWidth: 500 }));
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 50)));
+    expect(document.body.textContent).toBe("");
+    expect(mocks.languageChanged).toBeNull();
+  });
 });
+

@@ -17,36 +17,42 @@ type Setup = { language: Language; systemLocale: string | null; listWidth: numbe
 export function RecordsApp() {
   const [setup, setSetup] = useState<Setup | null>(null);
 
+  // The setup and every later language change load a catalogue, and loads can
+  // settle in any order. Each step runs after the one before, so the last
+  // language asked for is the one shown: a change that arrives while the setup
+  // is still loading follows it rather than being lost to it.
   useEffect(() => {
     let cancelled = false;
-    void recordsWindowSetup()
-      .then(async (result) => {
+    const setupRequest = recordsWindowSetup();
+    let steps: Promise<void> = (async () => {
+      try {
+        const result = await setupRequest;
         const language = isLanguage(result.language) ? result.language : "en";
         await loadCatalogue(language);
         if (!cancelled) {
           setSetup({ language, systemLocale: result.systemLocale, listWidth: initialListWidth(result.listWidth) });
         }
-      })
-      .catch((error: unknown) => {
+      } catch (error: unknown) {
         logWarn("records window setup failed", { error: serializeError(error) });
         if (!cancelled) setSetup({ language: "en", systemLocale: null, listWidth: RECORDS_LIST_WIDTH.default });
-      });
+      }
+    })();
+    const stopListening = onLanguageChanged((tag) => {
+      if (!isLanguage(tag)) return;
+      steps = steps.then(() =>
+        loadCatalogue(tag).then(
+          () => {
+            if (!cancelled) setSetup((current) => (current === null ? current : { ...current, language: tag }));
+          },
+          (error: unknown) => logWarn("catalogue load failed", { language: tag, error: serializeError(error) }),
+        ),
+      );
+    });
     return () => {
       cancelled = true;
+      stopListening();
     };
   }, []);
-
-  useEffect(
-    () =>
-      onLanguageChanged((tag) => {
-        if (!isLanguage(tag)) return;
-        void loadCatalogue(tag).then(
-          () => setSetup((current) => (current === null ? current : { ...current, language: tag })),
-          (error: unknown) => logWarn("catalogue load failed", { language: tag, error: serializeError(error) }),
-        );
-      }),
-    [],
-  );
 
   // The window minimum is the panes' minimums plus the chrome (window-conventions).
   useEffect(() => {
