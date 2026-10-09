@@ -1114,6 +1114,10 @@ input[type="range"]:focus-visible {
 
 .modalFooter {
   justify-content: flex-end;
+  /* A narrow window moves actions to a new row rather than clipping their
+     labels (responsive-interface-conventions); the quit dialog's three
+     buttons wrap below about 420 px in the longest languages. */
+  flex-wrap: wrap;
   gap: 8px;
   /* Never fainter than the app's own control borders in either theme
      (modal-dialog-conventions): the divider token (--border) reads fainter

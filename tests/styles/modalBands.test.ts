@@ -30,6 +30,10 @@ describe("modal bands", () => {
     expect(rule(".modalFooter")).toContain("background:var(--surface)");
   });
 
+  it("moves footer actions to a new row instead of clipping them on a narrow window", () => {
+    expect(rule(".modalFooter")).toContain("flex-wrap:wrap");
+  });
+
   it("drops the header's line when its title is hidden", () => {
     expect(rule(".modalHeader-bare")).toContain("border-bottom:0");
   });
