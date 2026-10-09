@@ -1,7 +1,7 @@
 import type { LanguagePreference } from "./i18n/languages";
 import type { Message } from "./i18n/translate";
 
-export type SnapshotTrigger = "copy" | "paste" | "cut" | "app_close";
+export type SnapshotTrigger = "copy" | "paste" | "cut" | "app_close" | "before_paste" | "before_removal";
 
 export type Pane = {
   id: string;

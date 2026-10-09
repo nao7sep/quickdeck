@@ -6,6 +6,7 @@ import { getTextCounts } from "../utils/counts";
 import { darkPaneBackground, paneHeaderDeep } from "../utils/paneColors";
 import { shouldPullEditorFocus } from "../utils/paneFocus";
 import { panePanelDomId } from "../utils/paneDomIds";
+import { pasteReplacesText, removesLargeBlock } from "../utils/snapshotBoundaries";
 import { useI18n } from "../i18n/I18nContext";
 
 type PaneViewProps = {
@@ -110,6 +111,9 @@ export function PaneView({ pane }: PaneViewProps) {
         value={pane.content}
         onChange={(event) => {
           const next = event.target.value;
+          if (removesLargeBlock(pane.content, next)) {
+            recordSnapshot(pane.id, "before_removal", pane.content);
+          }
           updatePaneContent(pane.id, next);
           if (pendingPasteSnapshotRef.current) {
             pendingPasteSnapshotRef.current = false;
@@ -118,7 +122,11 @@ export function PaneView({ pane }: PaneViewProps) {
         }}
         onCopy={() => recordSnapshot(pane.id, "copy", pane.content)}
         onCut={() => recordSnapshot(pane.id, "cut", pane.content)}
-        onPaste={() => {
+        onPaste={(event) => {
+          const editor = event.currentTarget;
+          if (pasteReplacesText(editor.selectionStart, editor.selectionEnd)) {
+            recordSnapshot(pane.id, "before_paste", pane.content);
+          }
           // The matching change event fires next with the post-paste value;
           // snapshot there so we capture what the user actually pasted in.
           pendingPasteSnapshotRef.current = true;

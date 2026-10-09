@@ -5,7 +5,7 @@ Write in several plain-text panes side by side, and bring back earlier text from
 ## Features
 
 - Multiple equal-width panes with vivid, auto-distinct header colors, editable titles, and keyboard reordering and focus
-- Configurable-delay autosave, plus deduped SQLite recovery snapshots on copy, paste, cut, and close — browse the timestamped history newest-first, narrow it by search, and copy any snapshot's text back out
+- Configurable-delay autosave, plus deduped SQLite recovery snapshots on copy, paste, cut, and close, and of the text just before a paste replaces a selection or one edit deletes a large block — browse the timestamped history newest-first, narrow it by search, and copy any snapshot's text back out
 - Word, character, and X/Twitter-weighted character counts
 - Zen mode that focuses a single pane, and an always-on-top toggle
 - An interface in English, Japanese, Chinese, Korean, Spanish, Portuguese, French, German, Italian, and Russian that follows the computer's language by default
