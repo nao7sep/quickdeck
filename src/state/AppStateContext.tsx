@@ -75,7 +75,6 @@ type AppStateContextValue = {
   saveState: SaveState;
   toasts: Toast[];
   blockingError: BlockingError | null;
-  dataDir: string;
   loadStatus: LoadStatus;
   loadError: Message | null;
   // The file a halt names, resolved by the Rust core; null when the load
@@ -122,7 +121,6 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const [saveState, setSaveState] = useState<SaveState>("saved");
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [blockingError, setBlockingError] = useState<BlockingError | null>(null);
-  const [dataDir, setDataDir] = useState("");
   const [systemLanguage, setSystemLanguage] = useState<Language>("en");
   const [systemLocale, setSystemLocale] = useState<string | null>(null);
   const [loadStatus, setLoadStatus] = useState<LoadStatus>("loading");
@@ -247,7 +245,6 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
 
       // Adopt the authoritative debug gate before logging anything else.
       setDebugEnabled(data.debugEnabled);
-      setDataDir(data.dataDir);
 
       // The language is settled before anything renders, including a halt
       // screen: the saved choice if config.json could be read, else System.
@@ -696,7 +693,6 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       saveState,
       toasts,
       blockingError,
-      dataDir,
       loadStatus,
       loadError,
       loadErrorPath,
@@ -731,7 +727,6 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       blockingError,
       clearToast,
       commitPaneTitle,
-      dataDir,
       deletePane,
       dismissBlockingError,
       dismissToast,
