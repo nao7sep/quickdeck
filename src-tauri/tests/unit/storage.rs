@@ -1,6 +1,72 @@
 use super::*;
 use serial_test::serial;
 
+#[path = "../support/statement_work.rs"]
+mod statement_work;
+
+#[test]
+fn latest_snapshot_dedup_does_not_sort_retained_history() {
+    let conn = mem_db();
+    conn.execute(
+        "WITH RECURSIVE sequence(id) AS (VALUES(1) UNION ALL SELECT id + 1 FROM sequence WHERE id < 40000)
+         INSERT INTO snapshots(id, pane_id, pane_title, created_at_utc, trigger, content_hash, content)
+         SELECT CAST(id AS TEXT), 'pane', '', strftime('%Y-%m-%dT%H:%M:%fZ', '2026-01-01', (40000 - id) || ' seconds'), 'copy', ?1, 'kept' FROM sequence",
+        params![hash_content("kept")],
+    ).unwrap();
+    let (result, work) = statement_work::measure(&conn, || {
+        create_snapshot_with_connection(&conn, input("pane", "kept")).unwrap()
+    });
+    assert!(!result.inserted);
+    assert_eq!(result.id.as_deref(), Some("40000"));
+    assert_eq!(
+        work.sorts, 0,
+        "dedup must follow insertion order directly: {work:?}"
+    );
+    assert!(
+        work.steps < 1000,
+        "lookup should not grow with retained history: {work:?}"
+    );
+}
+
+#[test]
+fn opening_an_existing_snapshot_store_reconciles_its_lookup_index_without_changing_rows() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join(SNAPSHOTS_DB_FILE_NAME);
+    let conn = Connection::open(&path).unwrap();
+    init_schema(&conn).unwrap();
+    conn.execute_batch(
+        "DROP INDEX IF EXISTS snapshots_pane;
+         CREATE INDEX IF NOT EXISTS snapshots_pane_time ON snapshots(pane_id, created_at_utc DESC);"
+    ).unwrap();
+    insert_row(&conn, "kept-id", "pane", "2026-01-01T00:00:00.000Z", "kept");
+    drop(conn);
+
+    let SnapshotStore::Ready(conn) = open_snapshot_store(dir.path()).unwrap() else {
+        panic!("readable store")
+    };
+    let (result, work) = statement_work::measure(&conn, || {
+        create_snapshot_with_connection(&conn, input("pane", "kept")).unwrap()
+    });
+    assert!(!result.inserted);
+    assert_eq!(result.id.as_deref(), Some("kept-id"));
+    assert_eq!(count_rows(&conn), 1);
+    assert_eq!(
+        work.sorts, 0,
+        "existing stores need the same direct lookup: {work:?}"
+    );
+    assert_eq!(
+        snapshot_user_version(&path),
+        i64::from(format_version::SNAPSHOTS)
+    );
+    let obsolete: i64 = conn
+        .query_row(
+            "SELECT count(*) FROM sqlite_master WHERE name = 'snapshots_pane_time'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(obsolete, 0);
+}
 // A JSON object's fields, as a readable store holds them.
 fn fields(value: JsonValue) -> serde_json::Map<String, JsonValue> {
     match value {

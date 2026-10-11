@@ -1040,7 +1040,7 @@ fn open_snapshot_store(data_dir: &Path) -> Result<SnapshotStore, String> {
     match format_version::check_sqlite(&conn, SNAPSHOTS_DB_FILE_NAME, format_version::SNAPSHOTS)? {
         SqliteFormat::Newer(recorded) => return Ok(SnapshotStore::Newer(recorded)),
         SqliteFormat::New => init_schema(&conn)?,
-        SqliteFormat::Readable => {}
+        SqliteFormat::Readable => reconcile_snapshot_indexes(&conn)?,
     }
     Ok(SnapshotStore::Ready(conn))
 }
@@ -1060,6 +1060,18 @@ fn init_schema(conn: &Connection) -> Result<(), String> {
         .map_err(to_string_error)
 }
 
+// Indexes do not change stored facts or their format. Older readable stores
+// used time ordering here, which forced each insertion-order dedup lookup to
+// sort the pane's entire history. A pane-only index carries implicit rowid
+// order. Create it before dropping the obsolete index; newer stores stay untouched.
+fn reconcile_snapshot_indexes(conn: &Connection) -> Result<(), String> {
+    conn.execute_batch(
+        "create index if not exists snapshots_pane on snapshots(pane_id);
+         drop index if exists snapshots_pane_time;",
+    )
+    .map_err(to_string_error)
+}
+
 const SCHEMA: &str = "
         create table if not exists snapshots (
           id text primary key,
@@ -1070,8 +1082,8 @@ const SCHEMA: &str = "
           content_hash text not null,
           content text not null
         );
-        create index if not exists snapshots_pane_time
-          on snapshots(pane_id, created_at_utc desc);
+        create index if not exists snapshots_pane
+          on snapshots(pane_id);
         create index if not exists snapshots_time
           on snapshots(created_at_utc desc);
         ";

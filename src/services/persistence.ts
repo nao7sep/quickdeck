@@ -166,18 +166,24 @@ export async function applyLanguage(language: string): Promise<void> {
 // save always waits for an in-flight autosave of the same file to finish before
 // its own write starts — the file's final content then always reflects the more
 // recent call, whichever caller issued it (config/state/panes conventions).
-function makeWriteQueue<T, R = void>(command: string): (payload: T) => Promise<R> {
+function makeWriteQueue() {
   let queue: Promise<unknown> = Promise.resolve();
-  return (payload: T) => {
-    const write = queue.catch(() => {}).then(() => invoke<R>(command, payload as Record<string, unknown>));
+  return <R>(command: string, payload?: Record<string, unknown>): Promise<R> => {
+    // The returned rejection belongs to the caller; only queue advancement
+    // consumes it. A caller timeout does not release this ordering claim.
+    const write = queue.catch(() => {}).then(() => invoke<R>(command, payload));
     queue = write;
     return write;
   };
 }
 
-const enqueueConfigWrite = makeWriteQueue<{ config: Partial<ConfigSets> }, string | null>("save_config");
-const enqueueStateWrite = makeWriteQueue<{ state: StateFile }>("save_state");
-const enqueuePanesWrite = makeWriteQueue<{ panes: PanesFile }>("save_panes");
+const enqueueConfigWrite = makeWriteQueue();
+const enqueueStateWrite = makeWriteQueue();
+const enqueuePanesWrite = makeWriteQueue();
+// Pre/post-edit captures and deletion share submission order through physical
+// settlement. Native workers serialize the connection but can dispatch out of
+// order; letting them overtake changes latest-text dedup or repopulates deletion.
+const enqueueSnapshotMutation = makeWriteQueue();
 
 // Resolves to where an unreadable config.json found on the way was set aside.
 export async function saveConfig(config: Partial<ConfigSets>): Promise<string | null> {
@@ -185,7 +191,7 @@ export async function saveConfig(config: Partial<ConfigSets>): Promise<string | 
     return null;
   }
 
-  return enqueueConfigWrite({ config });
+  return enqueueConfigWrite<string | null>("save_config", { config });
 }
 
 export async function saveState(state: StateFile): Promise<void> {
@@ -193,7 +199,7 @@ export async function saveState(state: StateFile): Promise<void> {
     return;
   }
 
-  await enqueueStateWrite({ state });
+  await enqueueStateWrite<void>("save_state", { state });
 }
 
 export async function savePanes(panes: PanesFile): Promise<void> {
@@ -201,7 +207,7 @@ export async function savePanes(panes: PanesFile): Promise<void> {
     return;
   }
 
-  await enqueuePanesWrite({ panes });
+  await enqueuePanesWrite<void>("save_panes", { panes });
 }
 
 // The user-commanded reset behind the corrupt-panes halt: the Rust core sets
@@ -215,7 +221,7 @@ export async function createSnapshot(input: SnapshotWriteInput): Promise<Snapsho
     return { inserted: false, id: null };
   }
 
-  return invoke<SnapshotWriteResult>("create_snapshot", input);
+  return enqueueSnapshotMutation<SnapshotWriteResult>("create_snapshot", input);
 }
 
 export async function createSnapshots(inputs: SnapshotWriteInput[]): Promise<SnapshotWriteResult[]> {
@@ -223,7 +229,7 @@ export async function createSnapshots(inputs: SnapshotWriteInput[]): Promise<Sna
     return [];
   }
 
-  return invoke<SnapshotWriteResult[]>("create_snapshots", { snapshots: inputs });
+  return enqueueSnapshotMutation<SnapshotWriteResult[]>("create_snapshots", { snapshots: inputs });
 }
 
 // A blank query lists the whole store newest-first; terms narrow that list.
@@ -248,7 +254,7 @@ export async function deleteSnapshot(id: string): Promise<boolean> {
     return false;
   }
 
-  return invoke<boolean>("delete_snapshot", { id });
+  return enqueueSnapshotMutation<boolean>("delete_snapshot", { id });
 }
 
 export async function deleteAllSnapshots(): Promise<number> {
@@ -256,7 +262,7 @@ export async function deleteAllSnapshots(): Promise<number> {
     return 0;
   }
 
-  return invoke<number>("delete_all_snapshots");
+  return enqueueSnapshotMutation<number>("delete_all_snapshots");
 }
 
 export async function countSnapshots(): Promise<number> {
