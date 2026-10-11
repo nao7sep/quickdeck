@@ -8,6 +8,40 @@ use rusqlite::{params, Connection};
 const LAUNCH: &str = "2026-10-01T08:00:00.000Z";
 const LATER_LAUNCH: &str = "2026-10-02T08:00:00.000Z";
 
+mod support {
+    pub mod statement_work;
+}
+
+#[test]
+fn a_deep_cursor_seeks_without_rescanning_newer_records() {
+    let conn = database();
+    conn.execute_batch(
+        "WITH RECURSIVE sequence(id) AS (VALUES(1) UNION ALL SELECT id + 1 FROM sequence WHERE id < 100000)
+         INSERT INTO log_lines(id, session, time, level, message, fields)
+         SELECT id, 'launch', strftime('%Y-%m-%dT%H:%M:%fZ', '2026-01-01', (id / 2) || ' seconds'), 'info', 'line', '{}' FROM sequence;"
+    ).unwrap();
+    let (page, work) = support::statement_work::measure(&conn, || {
+        read_page(
+            &conn,
+            &RecordsQuery {
+                after: Some(Cursor {
+                    time: "2026-01-01T01:23:20.000Z".into(),
+                    id: 10000,
+                }),
+                ..query()
+            },
+        )
+        .unwrap()
+    });
+    assert_eq!(page.records[0].id, 9999);
+    assert_eq!(page.records.len(), PAGE_SIZE);
+    assert!(page.more);
+    assert_eq!(work.scans, 0, "cursor must seek: {work:?}");
+    assert!(
+        work.steps < 5000,
+        "work should follow page size, not cursor depth: {work:?}"
+    );
+}
 fn database() -> Connection {
     let conn = Connection::open_in_memory().unwrap();
     conn.execute_batch(SCHEMA).unwrap();

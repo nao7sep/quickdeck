@@ -5,6 +5,7 @@ import {
   isEmptyStoredValue,
   knownLevel,
   mergeNewestPage,
+  pageReachesRecord,
   prettyJson,
 } from "../../src/records/recordFormat";
 import type { RecordSummary } from "../../src/services/records";
@@ -65,5 +66,14 @@ describe("record format", () => {
   it("orders lines with the same time by id, newest first", () => {
     const merged = mergeNewestPage([record(1, "t")], false, { records: [record(2, "t")], more: false });
     expect(merged.records.map((row) => row.id)).toEqual([2, 1]);
+  });
+
+  it("requires a refresh to reach the prior newest row, including timestamp ties", () => {
+    const anchor = record(100, "t");
+    expect(pageReachesRecord({ records: [record(300, "t"), record(201, "t")], more: true }, anchor)).toBe(false);
+    expect(pageReachesRecord({ records: [record(200, "t"), anchor], more: true }, anchor)).toBe(true);
+    expect(pageReachesRecord({ records: [record(99, "t")], more: true }, anchor)).toBe(true);
+    expect(pageReachesRecord({ records: [record(300, "t")], more: false }, anchor)).toBe(true);
+    expect(pageReachesRecord({ records: [record(300, "t")], more: true }, null)).toBe(true);
   });
 });

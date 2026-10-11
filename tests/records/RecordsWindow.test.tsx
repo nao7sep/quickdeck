@@ -431,6 +431,67 @@ describe("RecordsWindow", () => {
     expect(mocks.readRecordDetail).toHaveBeenCalledOnce();
   });
 
+  it("keeps every intervening record reachable after more than a page arrives", async () => {
+    const row = (id: number): RecordSummary => ({ ...newer, id, message: `line ${id}`, time: SESSION });
+    let newestId = 150;
+    mocks.readRecordsPage.mockImplementation(async ({ after }) => {
+      const firstId = after === null ? newestId : after.id - 1;
+      const lastId = Math.max(1, firstId - 99);
+      return {
+        records: Array.from({ length: firstId - lastId + 1 }, (_, index) => row(firstId - index)),
+        more: lastId > 1,
+      };
+    });
+    await mount();
+    await act(async () => options()[0]!.click());
+    await scrollTo(300);
+    vi.useFakeTimers();
+    newestId = 350;
+    await signal();
+    await act(async () => vi.advanceTimersByTime(1000));
+    expect(options()).toHaveLength(100);
+
+    await scrollTo(0);
+    await scrollTo(800);
+    expect(titles()).toEqual(Array.from({ length: 350 }, (_, index) => `line ${350 - index}`));
+    expect(options().find((option) => option.getAttribute("aria-selected") === "true")?.textContent).toContain("line 150");
+    expect(mocks.readRecordDetail).toHaveBeenCalledOnce();
+  });
+
+  it("keeps the shown history and selection when a refresh bridge fails", async () => {
+    await mount();
+    await act(async () => options()[1]!.click());
+    vi.useFakeTimers();
+    mocks.readRecordsPage.mockResolvedValueOnce({ records: [newer], more: true });
+    mocks.readRecordsPage.mockRejectedValueOnce(new Error("bridge unavailable"));
+    await signal();
+    await act(async () => vi.advanceTimersByTime(1000));
+
+    expect(titles()).toEqual(["boundary failed", "set zoom failed"]);
+    expect(options()[1]!.getAttribute("aria-selected")).toBe("true");
+    expect(mocks.logWarn).toHaveBeenCalledWith("records read failed", expect.anything());
+    await signal();
+    await act(async () => vi.advanceTimersByTime(1000));
+    expect(mocks.readRecordsPage).toHaveBeenCalledTimes(3);
+  });
+
+  it("does not apply a late refresh bridge after filters change", async () => {
+    await mount();
+    vi.useFakeTimers();
+    const bridge = deferred<RecordsPage>();
+    mocks.readRecordsPage.mockResolvedValueOnce({ records: [newer], more: true });
+    mocks.readRecordsPage.mockReturnValueOnce(bridge.promise);
+    await signal();
+    await act(async () => vi.advanceTimersByTime(1000));
+    expect(lastQuery().after).toEqual(cursorOf(newer));
+
+    mocks.readRecordsPage.mockResolvedValueOnce({ records: [warning], more: false });
+    await choose(document.querySelectorAll("select")[1]!, "warn");
+    await act(async () => bridge.resolve({ records: [failure, warning], more: false }));
+    expect(titles()).toEqual(["set zoom failed"]);
+    expect(lastQuery().level).toBe("warn");
+  });
+
   it("stops reading on new-record signals after a failed read, until a read succeeds", async () => {
     await mount();
     vi.useFakeTimers();

@@ -65,6 +65,13 @@ function newestFirst(a: RecordSummary, b: RecordSummary): number {
   return b.id - a.id;
 }
 
+// A refresh must reach the prior newest row before it can join the shown
+// history. Otherwise the next ordinary page would skip the missing interval.
+export function pageReachesRecord(page: RecordsPage, priorNewest: RecordSummary | null): boolean {
+  const last = page.records.at(-1);
+  return priorNewest === null || !page.more || last === undefined || newestFirst(last, priorNewest) >= 0;
+}
+
 // The newest page read again, joined with the rows already shown: a row in both
 // takes the page's copy, and the rows shown beyond the page stay, so the pages
 // already read are kept and a page read out of order loses nothing.

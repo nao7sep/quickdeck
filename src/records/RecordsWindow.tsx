@@ -35,6 +35,7 @@ import {
   LEVEL_FILTER_LABELS,
   LEVEL_LABELS,
   mergeNewestPage,
+  pageReachesRecord,
   prettyJson,
 } from "./recordFormat";
 import { RECORDS_LIST_SIBLING_MIN, RECORDS_LIST_WIDTH } from "./recordsLayout";
@@ -87,6 +88,8 @@ export function RecordsWindow({ initialListWidth }: { initialListWidth: number }
   const fetchingMore = useRef(false);
   // The filters the current list was read for, for the live reads below.
   const filtersRef = useRef(filters);
+  // Anchor for the contiguous history already shown, read by the live callback.
+  const priorNewestRef = useRef<RecordSummary | null>(null);
   // New records arrived while the list was scrolled away from the top.
   const newestPending = useRef(false);
   // A failed read is itself logged as a record, whose signal would start the
@@ -102,6 +105,10 @@ export function RecordsWindow({ initialListWidth }: { initialListWidth: number }
   });
 
   const timeFormat = useMemo(() => new Intl.DateTimeFormat(locale, { dateStyle: "short", timeStyle: "medium" }), [locale]);
+
+  useEffect(() => {
+    priorNewestRef.current = list.status === "ready" ? list.records[0] ?? null : null;
+  }, [list]);
 
   // The search applies once typing pauses, and never on an unfinished IME
   // composition.
@@ -154,11 +161,21 @@ export function RecordsWindow({ initialListWidth }: { initialListWidth: number }
 
   // The newest page read again for new records. It joins the rows already shown
   // rather than replacing them, so the list never falls back to the loading note
-  // and the pages already read stay. It reads only refs, so one copy serves the
-  // live subscription below.
+  // and the pages already read stay. A burst can exceed one page: bridge back
+  // to the prior newest row before joining, so ordinary paging skips no interval.
   const readNewest = useCallback(() => {
     const generation = listGeneration.current;
-    void readRecordsPage({ ...filtersRef.current, after: null }).then(
+    const query = filtersRef.current;
+    const priorNewest = priorNewestRef.current;
+    void (async () => {
+      let page = await readRecordsPage({ ...query, after: null });
+      const records = [...page.records];
+      while (generation === listGeneration.current && !pageReachesRecord(page, priorNewest)) {
+        page = await readRecordsPage({ ...query, after: cursorAfter(page.records) });
+        records.push(...page.records);
+      }
+      return { records, more: page.more };
+    })().then(
       (page) => {
         if (generation !== listGeneration.current) return;
         liveSuspended.current = false;
