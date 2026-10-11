@@ -866,6 +866,10 @@ fn a_target_held_open_without_delete_sharing_fails_cleanly() {
         .filter(|entry| entry.file_name().to_string_lossy().ends_with(".tmp"))
         .collect();
     assert!(temps.is_empty(), "temp files left: {temps:?}");
+    // Releasing the external handle permits an ordinary retry; a failed
+    // publication must not poison ownership or require restarting the app.
+    atomic_write_json(dir.path(), &path, &serde_json::json!({ "a": 2 }), format_version::CONFIG).unwrap();
+    assert_eq!(on_disk(&path)["a"], 2);
     crate::backup_store::close_backup_store();
 }
 

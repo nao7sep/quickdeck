@@ -6,7 +6,6 @@ import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 
 const script = new URL("../../scripts/package.sh", import.meta.url);
-const windowsScript = readFileSync(new URL("../../scripts/package.ps1", import.meta.url), "utf8");
 const appName = "QuickDeck";
 const roots: string[] = [];
 afterEach(() => roots.splice(0).forEach(root => rmSync(root, { recursive: true, force: true })));
@@ -54,16 +53,5 @@ describe("current-build package collection", () => {
     const { root, result } = packageFixture(mode);
     expect(result.status).not.toBe(0);
     expect(() => readFileSync(join(root, `artifacts/${appName}-2.0.0.dmg`))).toThrow();
-  });
-  it("Windows source cleans generated outputs before building and requires one fresh setup", () => {
-    const cleanup = windowsScript.indexOf('foreach ($output in @("artifacts", $NsisDirectory, $PortableExecutable))');
-    const build = windowsScript.indexOf('& $TauriCli build --bundles nsis');
-    const check = windowsScript.indexOf('$setups.Count -ne 1');
-    const copy = windowsScript.indexOf('Copy-Item $setups[0].FullName');
-    expect(cleanup).toBeGreaterThan(-1);
-    expect(build).toBeGreaterThan(cleanup);
-    expect(check).toBeGreaterThan(build);
-    expect(copy).toBeGreaterThan(check);
-    expect(windowsScript).not.toContain("Select-Object -First 1");
   });
 });

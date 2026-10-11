@@ -81,6 +81,25 @@ fn cancellation_retires_an_unanswered_attempt_and_ignores_its_late_report() {
     assert!(new_report.try_recv().is_ok());
 }
 
+#[test]
+fn cancellation_after_a_completed_save_allows_a_fresh_shutdown() {
+    let session_end = SessionEnd::default();
+    let (old_report, old_attempt, _) = session_end.begin();
+    session_end.finish(old_attempt);
+    assert!(old_report.try_recv().is_ok());
+    session_end.cancel();
+    assert!(!session_end.ending());
+
+    let (new_report, new_attempt, first) = session_end.begin();
+    assert!(first);
+    assert!(session_end.ending());
+    assert_ne!(old_attempt, new_attempt);
+    session_end.finish(old_attempt);
+    assert!(matches!(new_report.try_recv(), Err(mpsc::TryRecvError::Empty)));
+    session_end.finish(new_attempt);
+    assert!(new_report.try_recv().is_ok());
+}
+
 // Windows gives each end-session message 5 s before it offers to end the app;
 // macOS documents no figure, so the same bound serves both. The backup drain
 // is skipped at an OS session end (lib.rs).
