@@ -63,22 +63,50 @@ pub fn open(
         return Ok(());
     }
 
-    let window = WebviewWindowBuilder::new(app, LABEL, WebviewUrl::App("records.html".into()))
-        .title(title(app, language))
-        .inner_size(WIDTH, HEIGHT)
-        .visible(false)
-        .disable_drag_drop_handler()
-        .build()
-        .map_err(|error| error.to_string())?;
-    if let Err(error) = theme::apply(&window, window_theme) {
-        logging::warn(
-            "apply window theme to records window failed",
-            json!({ "error": error }),
-        );
+    create_for_main(
+        || app.get_webview_window("main").is_some(),
+        || {
+            WebviewWindowBuilder::new(app, LABEL, WebviewUrl::App("records.html".into()))
+                .title(title(app, language))
+                .inner_size(WIDTH, HEIGHT)
+                .visible(false)
+                .disable_drag_drop_handler()
+                .build()
+                .map_err(|error| error.to_string())
+        },
+        |window| {
+            if let Err(error) = theme::apply(window, window_theme) {
+                logging::warn(
+                    "apply window theme to records window failed",
+                    json!({ "error": error }),
+                );
+            }
+            window_placement::restore(&window.as_ref().window(), placements);
+            window.show().map_err(|error| error.to_string())?;
+            window.set_focus().map_err(|error| error.to_string())
+        },
+        |window| window.destroy().map_err(|error| error.to_string()),
+    )
+}
+
+fn create_for_main<W>(
+    main_exists: impl Fn() -> bool,
+    build: impl FnOnce() -> Result<W, String>,
+    present: impl FnOnce(&W) -> Result<(), String>,
+    retire: impl FnOnce(&W) -> Result<(), String>,
+) -> Result<(), String> {
+    if !main_exists() {
+        return Ok(());
     }
-    window_placement::restore(&window.as_ref().window(), placements);
-    window.show().map_err(|error| error.to_string())?;
-    window.set_focus().map_err(|error| error.to_string())
+    let window = build()?;
+    // Wry can create the window before Tauri attaches it to the manager, so
+    // main's destruction callback may have missed it during build. Attachment
+    // is complete now: main is never recreated, and any later destruction can
+    // find this window. Teardown must not wait on the worker's OPENING claim.
+    if !main_exists() {
+        return retire(&window);
+    }
+    present(&window)
 }
 
 /// Closes the window together with the main window, keeping its placement, so it
@@ -122,3 +150,7 @@ pub fn follow_language(app: &AppHandle, language: &'static str) -> Result<(), St
     app.emit_to(LABEL, LANGUAGE_EVENT, language)
         .map_err(|error| error.to_string())
 }
+
+#[cfg(test)]
+#[path = "../tests/unit/records_window.rs"]
+mod tests;
