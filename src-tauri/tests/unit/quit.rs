@@ -21,20 +21,20 @@ fn a_terminate_without_a_quit_event_is_the_users() {
 #[test]
 fn the_windows_report_settles_the_session_end_it_answers() {
     let session_end = SessionEnd::default();
-    let (saved, first) = session_end.begin();
+    let (saved, attempt, first) = session_end.begin();
     assert!(first);
     assert!(saved.try_recv().is_err());
 
-    session_end.finish();
+    session_end.finish(attempt);
     assert!(saved.try_recv().is_ok());
 }
 
 #[test]
 fn a_report_with_no_session_end_in_flight_does_nothing() {
     let session_end = SessionEnd::default();
-    session_end.finish();
+    session_end.finish(0);
 
-    let (saved, first) = session_end.begin();
+    let (saved, _attempt, first) = session_end.begin();
     assert!(first);
     assert!(saved.try_recv().is_err());
 }
@@ -42,24 +42,43 @@ fn a_report_with_no_session_end_in_flight_does_nothing() {
 #[test]
 fn repeated_session_requests_join_the_admitted_save() {
     let session_end = SessionEnd::default();
-    let (first, first_owner) = session_end.begin();
-    let (second, second_owner) = session_end.begin();
+    let (first, attempt, first_owner) = session_end.begin();
+    let (second, repeated_attempt, second_owner) = session_end.begin();
+    assert_eq!(attempt, repeated_attempt);
     assert!(first_owner);
     assert!(!second_owner);
-    session_end.finish();
+    session_end.finish(attempt);
     assert!(first.try_recv().is_ok());
     assert!(second.try_recv().is_ok());
-    let (_, next_owner) = session_end.begin();
-    assert!(next_owner);
+    let (completed, same_attempt, next_owner) = session_end.begin();
+    assert!(!next_owner);
+    assert_eq!(attempt, same_attempt);
+    assert!(completed.try_recv().is_ok());
 }
 
 #[test]
 fn only_a_begun_os_session_end_marks_the_exit_as_one() {
     let session_end = SessionEnd::default();
     assert!(!session_end.ending());
-    session_end.begin();
-    session_end.finish();
+    let (_, attempt, _) = session_end.begin();
+    session_end.finish(attempt);
     assert!(session_end.ending());
+}
+
+#[test]
+fn cancellation_retires_an_unanswered_attempt_and_ignores_its_late_report() {
+    let session_end = SessionEnd::default();
+    let (old_report, old_attempt, _) = session_end.begin();
+    session_end.cancel();
+    assert!(!session_end.ending());
+    assert!(matches!(old_report.try_recv(), Err(mpsc::TryRecvError::Disconnected)));
+    let (new_report, new_attempt, first) = session_end.begin();
+    assert!(first);
+    assert_ne!(old_attempt, new_attempt);
+    session_end.finish(old_attempt);
+    assert!(matches!(new_report.try_recv(), Err(mpsc::TryRecvError::Empty)));
+    session_end.finish(new_attempt);
+    assert!(new_report.try_recv().is_ok());
 }
 
 // Windows gives each end-session message 5 s before it offers to end the app;

@@ -524,6 +524,7 @@ export function App() {
     let sessionEndUnlisten: (() => void) | undefined;
     let closing: Promise<boolean> | null = null;
     let sessionEnding = false;
+    let sessionAttempt: number | null = null;
 
     const quitSteps = {
       snapshot: () => snapshotAllPanesRef.current("app_close"),
@@ -600,18 +601,25 @@ export function App() {
       // An OS logout, restart or shutdown never prompts: the same save runs,
       // its failures are logged, and the Rust core exits once it hears back or
       // its own bound passes (unsaved-edits conventions, Quitting).
-      void onSessionEnding(() => {
-        if (sessionEnding) return;
+      void onSessionEnding((attempt) => {
+        if (sessionAttempt === attempt) return;
+        const previousSessionEnding = sessionEnding;
+        sessionAttempt = attempt;
         sessionEnding = true;
         // Take over the admitted attempt. A question follows a failed save,
         // so settle it as Retry within this owner, with further prompts off.
         if (quitChoiceRef.current) chooseAfterQuitSaveFailure("retry");
-        const saving = closing ?? saveBeforeClose();
+        // A different native attempt means Windows cancelled the previous
+        // shutdown. Capture current input anew, even if its old save is late.
+        const saving = previousSessionEnding ? saveForQuit(quitSteps) : closing ?? saveForQuit(quitSteps);
         closing = saving;
         void saving
-          .then(() => reportSessionEndSaved())
+          .then(() => reportSessionEndSaved(attempt))
           .catch((error) => logWarn("session end report failed", { error: serializeError(error) }))
-          .finally(() => { sessionEnding = false; if (closing === saving) closing = null; });
+          .finally(() => {
+            if (sessionAttempt === attempt) sessionEnding = false;
+            if (closing === saving) closing = null;
+          });
       }).then((unlisten) => {
         sessionEndUnlisten = unlisten;
       }).catch((error) => {

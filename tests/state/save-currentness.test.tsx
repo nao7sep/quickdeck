@@ -2,6 +2,7 @@ import React, { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AppStateProvider, useAppState } from "../../src/state/AppStateContext";
+import { saveForQuit, QUIT_SAVE_BOUND_MS } from "../../src/services/quit";
 import type { LoadedAppData } from "../../src/services/persistence";
 
 const persistence = vi.hoisted(() => ({
@@ -118,6 +119,31 @@ describe("current input save truth", () => {
     expect(latestState!.saveState).toBe("unsaved");
     await act(async () => { expect(await latestState!.saveNow()).toBe(true); });
     expect(persistence.savePanes.mock.calls[1][0].panes[0].content).toBe("later");
+  });
+
+  it.each(["failed", "pending"])("allows quit after required saves despite %s optional view state", async (outcome) => {
+    vi.useFakeTimers();
+    let settleState = () => {};
+    try {
+      await renderState();
+      await act(async () => latestState!.updatePaneContent(latestState!.activePaneId, "authored"));
+      persistence.saveState.mockImplementationOnce(() => outcome === "failed"
+        ? Promise.reject(new Error("optional state unavailable"))
+        : new Promise<void>((resolve) => { settleState = resolve; }));
+      let result: boolean | undefined;
+      await act(async () => {
+        void saveForQuit({ snapshot: async () => {}, save: latestState!.saveNow }).then((saved) => { result = saved; });
+        await vi.advanceTimersByTimeAsync(QUIT_SAVE_BOUND_MS);
+      });
+      expect(result).toBe(true);
+      expect(latestState!.saveState).toBe("saved");
+      expect(persistence.savePanes).toHaveBeenCalledWith(expect.objectContaining({
+        panes: expect.arrayContaining([expect.objectContaining({ content: "authored" })]),
+      }));
+    } finally {
+      await act(async () => settleState());
+      vi.useRealTimers();
+    }
   });
 
   it("retains current edits when native panes save refuses a newer destination", async () => {

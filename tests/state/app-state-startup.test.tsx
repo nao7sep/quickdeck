@@ -81,6 +81,7 @@ let root: Root | null = null;
 beforeEach(() => {
   persistence.loadAppData.mockResolvedValue(loadedAppData());
   persistence.saveConfig.mockResolvedValue(null);
+  persistence.saveState.mockResolvedValue(undefined);
   persistence.countSnapshots.mockResolvedValue(0);
   persistence.launchLanguage.mockResolvedValue({ language: "en", systemLanguage: "en", systemLocale: null });
 });

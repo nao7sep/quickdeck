@@ -11,7 +11,7 @@ type CloseHandler = (event: { preventDefault: () => void }) => Promise<void>;
 const mocks = vi.hoisted(() => ({
   appState: {} as Record<string, unknown>,
   closeHandler: null as CloseHandler | null,
-  sessionEnding: null as (() => void) | null,
+  sessionEnding: null as ((event: { payload: number }) => void) | null,
   invoke: vi.fn((_command: string) => Promise.resolve()),
   destroy: vi.fn(() => Promise.resolve()),
   logError: vi.fn(),
@@ -23,7 +23,7 @@ vi.mock("../src/state/AppStateContext", () => ({
 }));
 vi.mock("@tauri-apps/api/core", () => ({ isTauri: () => true, invoke: mocks.invoke }));
 vi.mock("@tauri-apps/api/event", () => ({
-  listen: (event: string, handler: () => void) => {
+  listen: (event: string, handler: (event: { payload: number }) => void) => {
     if (event === "session-ending") mocks.sessionEnding = handler;
     return Promise.resolve(() => undefined);
   },
@@ -368,9 +368,9 @@ describe("closing the window", () => {
 });
 
 describe("an OS logout, restart or shutdown", () => {
-  async function endSession() {
+  async function endSession(attempt = 1) {
     await act(async () => {
-      mocks.sessionEnding!();
+      mocks.sessionEnding!({ payload: attempt });
       await vi.advanceTimersByTimeAsync(0);
     });
   }
@@ -383,7 +383,7 @@ describe("an OS logout, restart or shutdown", () => {
 
     expect(state.snapshotAllPanes).toHaveBeenCalledWith("app_close");
     expect(state.saveNow).toHaveBeenCalledOnce();
-    expect(mocks.invoke).toHaveBeenCalledExactlyOnceWith("session_end_saved");
+    expect(mocks.invoke).toHaveBeenCalledExactlyOnceWith("session_end_saved", { attempt: 1 });
     expect(mocks.destroy).not.toHaveBeenCalled();
   });
 
@@ -395,7 +395,7 @@ describe("an OS logout, restart or shutdown", () => {
 
     expect(dialog()).toBeNull();
     expect(mocks.logError).toHaveBeenCalledWith("save on close failed", expect.anything());
-    expect(mocks.invoke).toHaveBeenCalledExactlyOnceWith("session_end_saved");
+    expect(mocks.invoke).toHaveBeenCalledExactlyOnceWith("session_end_saved", { attempt: 1 });
   });
 
   it("reports once a stalled snapshot and save pass their bounds", async () => {
@@ -409,7 +409,7 @@ describe("an OS logout, restart or shutdown", () => {
     await advance(1);
 
     expect(dialog()).toBeNull();
-    expect(mocks.invoke).toHaveBeenCalledExactlyOnceWith("session_end_saved");
+    expect(mocks.invoke).toHaveBeenCalledExactlyOnceWith("session_end_saved", { attempt: 1 });
   });
 
   it.each([true, false])("joins a user save already in flight without a second save or a prompt (saved: %s)", async (saved) => {
@@ -425,7 +425,23 @@ describe("an OS logout, restart or shutdown", () => {
     } finally { await act(async () => { settle(); await closing.done; await vi.advanceTimersByTimeAsync(0); }); }
     expect(dialog()).toBeNull();
     expect(mocks.destroy).not.toHaveBeenCalled();
-    expect(mocks.invoke).toHaveBeenCalledExactlyOnceWith("session_end_saved");
+    expect(mocks.invoke).toHaveBeenCalledExactlyOnceWith("session_end_saved", { attempt: 1 });
+  });
+
+  it.each([true, false])("captures anew while a cancelled attempt is late without prompting (saved: %s)", async (saved) => {
+    let settleOld!: () => void;
+    const saveNow = vi.fn()
+      .mockImplementationOnce(() => new Promise<boolean>((resolve) => { settleOld = () => resolve(saved); }))
+      .mockResolvedValueOnce(true);
+    await renderApp(createAppState({ saveNow }));
+    await endSession(1);
+    await endSession(2);
+    expect(saveNow).toHaveBeenCalledTimes(2);
+    expect(mocks.invoke).toHaveBeenCalledExactlyOnceWith("session_end_saved", { attempt: 2 });
+    await act(async () => { settleOld(); await vi.advanceTimersByTimeAsync(0); });
+    expect(mocks.invoke).toHaveBeenLastCalledWith("session_end_saved", { attempt: 1 });
+    expect(dialog()).toBeNull();
+    expect(mocks.destroy).not.toHaveBeenCalled();
   });
 
   it("takes over the existing quit question and retries without another prompt", async () => {
@@ -442,6 +458,6 @@ describe("an OS logout, restart or shutdown", () => {
     expect(saveNow).toHaveBeenCalledTimes(2);
     expect(dialog()).toBeNull();
     expect(mocks.destroy).not.toHaveBeenCalled();
-    expect(mocks.invoke).toHaveBeenCalledExactlyOnceWith("session_end_saved");
+    expect(mocks.invoke).toHaveBeenCalledExactlyOnceWith("session_end_saved", { attempt: 1 });
   });
 });

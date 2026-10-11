@@ -28,7 +28,7 @@ function within<T>(step: () => Promise<T>, ms: number): Promise<Settled<T>> {
 export type QuitSaveSteps = {
   // The insurance snapshots: logged when they fail, never holding the quit.
   snapshot: () => Promise<void>;
-  // The panes, settings and state: the user's own work.
+  // The panes and committed settings: the user's own work.
   save: () => Promise<boolean>;
   onFailure?: (error: unknown) => void;
 };
@@ -56,12 +56,12 @@ export async function saveForQuit(steps: QuitSaveSteps): Promise<boolean> {
 // the app to quit (src-tauri/src/quit.rs).
 const SESSION_ENDING_EVENT = "session-ending";
 
-export function onSessionEnding(listener: () => void): Promise<() => void> {
-  return listen(SESSION_ENDING_EVENT, () => listener());
+export function onSessionEnding(listener: (attempt: number) => void): Promise<() => void> {
+  return listen<number>(SESSION_ENDING_EVENT, (event) => listener(event.payload));
 }
 
 // Tells the Rust core the session-end save has finished, whatever its outcome,
 // so the app exits without waiting out its bound.
-export function reportSessionEndSaved(): Promise<void> {
-  return invoke("session_end_saved");
+export function reportSessionEndSaved(attempt: number): Promise<void> {
+  return invoke("session_end_saved", { attempt });
 }

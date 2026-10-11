@@ -649,9 +649,13 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       // order, and the core writes nothing when they equal the file.
       const [configSetAsideTo] = await Promise.all([
         saveConfig(storedSettingsSets(settings)),
-        persistState(buildStateFile(activePaneId, zoomLevel)),
         savePanes(buildPanesFile(panes)),
       ]);
+      // View state is optional: admit it after required writes, and retain its
+      // per-file queue through settlement without making it a quit condition.
+      void persistState(buildStateFile(activePaneId, zoomLevel)).catch((error) => {
+        logWarn("view state save failed", { error: serializeError(error) });
+      });
       const result = resolveSaveState(dirtyAtStart, dirtyCounterRef.current);
       setSaveState(result);
       if (configSetAsideTo !== null) {

@@ -64,22 +64,41 @@ fn quit_origin(event_id: Option<u32>, has_quit_reason: bool) -> QuitOrigin {
 /// session end has begun, exit skips its waits that are not the user's save.
 #[derive(Default)]
 pub struct SessionEnd {
-    pending: Mutex<Vec<mpsc::SyncSender<()>>>,
+    pending: Mutex<SessionAttempt>,
     ending: AtomicBool,
 }
 
+#[derive(Default)]
+struct SessionAttempt {
+    id: u32,
+    active: bool,
+    reports: Vec<mpsc::SyncSender<()>>,
+}
+
 impl SessionEnd {
-    fn begin(&self) -> (mpsc::Receiver<()>, bool) {
+    fn begin(&self) -> (mpsc::Receiver<()>, u32, bool) {
         self.ending.store(true, Ordering::Relaxed);
         let (saved, report) = mpsc::sync_channel(1);
         let mut pending = self.pending.lock().unwrap_or_else(PoisonError::into_inner);
-        let first = pending.is_empty();
-        pending.push(saved);
-        (report, first)
+        let first = !pending.active;
+        if first {
+            pending.id = pending.id.wrapping_add(1);
+            pending.active = true;
+        }
+        if !first && pending.reports.is_empty() {
+            // This attempt already reported; repeated native requests neither
+            // recapture input nor restart its deadline.
+            let _ = saved.try_send(());
+        } else {
+            pending.reports.push(saved);
+        }
+        (report, pending.id, first)
     }
 
-    fn finish(&self) {
-        for saved in self.pending.lock().unwrap_or_else(PoisonError::into_inner).drain(..) {
+    fn finish(&self, attempt: u32) {
+        let mut pending = self.pending.lock().unwrap_or_else(PoisonError::into_inner);
+        if !pending.active || pending.id != attempt { return; }
+        for saved in pending.reports.drain(..) {
             let _ = saved.try_send(());
         }
     }
@@ -93,6 +112,9 @@ impl SessionEnd {
     /// a later exit is an ordinary one again.
     #[cfg_attr(not(windows), allow(dead_code))]
     fn cancel(&self) {
+        let mut pending = self.pending.lock().unwrap_or_else(PoisonError::into_inner);
+        pending.active = false;
+        pending.reports.clear();
         self.ending.store(false, Ordering::Relaxed);
     }
 }
@@ -101,16 +123,16 @@ impl SessionEnd {
 /// it has; `None` when there is no window to ask.
 fn begin_session_end<R: Runtime>(app: &AppHandle<R>) -> Option<(mpsc::Receiver<()>, bool)> {
     app.get_webview_window("main")?;
-    let (saved, first) = app.state::<SessionEnd>().begin();
+    let (saved, attempt, first) = app.state::<SessionEnd>().begin();
     if !first { return Some((saved, false)); }
-    match app.emit_to("main", SESSION_ENDING_EVENT, ()) {
+    match app.emit_to("main", SESSION_ENDING_EVENT, attempt) {
         Ok(()) => Some((saved, true)),
         Err(error) => {
             logging::warn(
                 "session end save not requested",
                 json!({ "error": error.to_string() }),
             );
-            app.state::<SessionEnd>().finish();
+            app.state::<SessionEnd>().finish(attempt);
             None
         }
     }
@@ -126,8 +148,8 @@ fn log_session_save_expired() {
 /// The window's report that its session-end save has finished, whatever its
 /// outcome; failures are logged on the window's side.
 #[tauri::command]
-pub fn session_end_saved(session_end: State<SessionEnd>) {
-    session_end.finish();
+pub fn session_end_saved(session_end: State<SessionEnd>, attempt: u32) {
+    session_end.finish(attempt);
 }
 
 /// Hooks the OS-started quits into the save; called once from setup.
