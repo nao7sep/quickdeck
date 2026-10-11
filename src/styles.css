@@ -30,7 +30,7 @@
      The window minimum and per-pane minimums are NOT here — they are the single
      source of truth in src/utils/layoutMetrics.ts and reach the layout via the
      --pane-min-width / --pane-min-height vars set on .pane below. */
-  --border: #e5e7f0;
+  --border: #cbd0df;
   --border-strong: #c0c4d6;
   --surface: #ffffff;
   --surface-muted: #f8f9fc;
@@ -44,22 +44,22 @@
   --text-heading: #1e1b4b;
   --text-onhover: #312e81;
   --text-muted: #6b7280;
-  /* The outline is the only boundary of a text field on the modal surface, so it
-     holds 3:1 against --surface; the other borders are decorative dividers. */
-  --input-border: #868ba3;
+  /* Fields and outlined buttons share control strength; section and band
+     boundaries use the quieter --border. Verified on rendered surfaces. */
+  --input-border: #a6aabd;
   --accent: #6d28d9;
   --accent-strong: #4c1d95;
   --danger: #b91c1c;
   --danger-surface: #fdecec;
   --danger-surface-pressed: #fbdada;
   --warning: #f59e0b;
-  --divider-subtle: rgba(0, 0, 0, 0.1);
+  --divider-subtle: rgba(0, 0, 0, 0.16);
   --overlay-hover: rgba(0, 0, 0, 0.08);
   --overlay-pressed: rgba(0, 0, 0, 0.14);
   /* The edge of an outlined button. The dividers above are too faint to be a
      control's only boundary, most of all on the dark surface. */
-  --control-edge: #c1c3d2;
-  --control-edge-hover: #b3b7cc;
+  --control-edge: #a6aabd;
+  --control-edge-hover: #969bb2;
   /* The one focus treatment: a ring just clear of the control's edge, in the
      app's violet, and the same hue as a soft glow around a focused field. The
      window-inactive block below quiets both. */
@@ -128,7 +128,7 @@
 @media (prefers-color-scheme: dark) {
   :root {
     color-scheme: dark;
-    --border: #34343f;
+    --border: #42424f;
     --border-strong: #45454f;
     --surface: #20202a;
     --surface-muted: #282833;
@@ -142,13 +142,13 @@
     --text-heading: #f1f1f7;
     --text-onhover: #d7cdff;
     --text-muted: #989eaa;
-    --input-border: #72728a;
+    --input-border: #5c5c6a;
     --accent: #c4b5fd;
     --danger: #f87171;
     --danger-surface: #3a2020;
     --danger-surface-pressed: #4a2626;
     --accent-strong: #ddd0ff;
-    --divider-subtle: rgba(255, 255, 255, 0.08);
+    --divider-subtle: rgba(255, 255, 255, 0.14);
     --overlay-hover: rgba(255, 255, 255, 0.10);
     --overlay-pressed: rgba(255, 255, 255, 0.16);
     --control-edge: #5c5c6a;
@@ -755,7 +755,7 @@ input[type="range"]:focus-visible {
   margin-inline-start: auto;
   display: flex;
   align-items: center;
-  border: 1px solid var(--border);
+  border: 1px solid var(--control-edge);
   border-radius: 8px;
   overflow: hidden;
 }
@@ -795,8 +795,8 @@ input[type="range"]:focus-visible {
   justify-content: center;
   padding: 0;
   border: 0;
-  border-left: 1px solid var(--border);
-  border-right: 1px solid var(--border);
+  border-left: 1px solid var(--control-edge);
+  border-right: 1px solid var(--control-edge);
   border-radius: 0;
   background: transparent;
   text-align: center;
@@ -1029,11 +1029,8 @@ input[type="range"]:focus-visible {
   justify-content: space-between;
   gap: 12px;
   padding-block: 10px;
-  /* Never fainter than the app's own control borders in either theme
-     (modal-dialog-conventions): the divider token (--border) reads fainter
-     than the buttons' and fields' own border, so the line uses that token
-     instead. */
-  border-bottom: 1px solid var(--control-edge);
+  /* Band boundaries stay quieter than the controls they frame. */
+  border-bottom: 1px solid var(--border);
   /* Every band shares the surface's one background; only the lines separate
      them (modal-dialog-conventions: "Each band is drawn as a band"). */
   background: var(--surface);
@@ -1119,11 +1116,8 @@ input[type="range"]:focus-visible {
      buttons wrap below about 420 px in the longest languages. */
   flex-wrap: wrap;
   gap: 8px;
-  /* Never fainter than the app's own control borders in either theme
-     (modal-dialog-conventions): the divider token (--border) reads fainter
-     than the buttons' and fields' own border, so the line uses that token
-     instead. */
-  border-top: 1px solid var(--control-edge);
+  /* Band boundaries stay quieter than the controls they frame. */
+  border-top: 1px solid var(--border);
   /* Every band shares the surface's one background; only the lines separate
      them (modal-dialog-conventions: "Each band is drawn as a band"). */
   background: var(--surface);

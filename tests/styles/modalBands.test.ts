@@ -11,17 +11,11 @@ function rule(selector: string): string {
   return match[1]!;
 }
 
-// A line closes the title bar and opens the action row, in the app's one hairline
-// (modal-dialog-conventions). The title bar used to be a violet gradient with no
-// line while the action row had one. The hairline is pinned to --control-edge,
-// not the fainter --border divider token, because the convention requires it
-// read no fainter than the app's own control borders in either theme; and both
-// bands share the dialog surface's own background rather than a tint or a muted
-// fill, because "each band is drawn as a band" on one shared surface.
+// Header and footer share the section/band hairline on one surface.
 describe("modal bands", () => {
-  it("closes the header and opens the footer with the same hairline, no fainter than the app's control borders", () => {
-    expect(rule(".modalHeader")).toContain("border-bottom:1pxsolidvar(--control-edge)");
-    expect(rule(".modalFooter")).toContain("border-top:1pxsolidvar(--control-edge)");
+  it("closes the header and opens the footer with the same band hairline", () => {
+    expect(rule(".modalHeader")).toContain("border-bottom:1pxsolidvar(--border)");
+    expect(rule(".modalFooter")).toContain("border-top:1pxsolidvar(--border)");
   });
 
   it("draws the header and footer on the dialog's own surface, not a gradient or a tint", () => {

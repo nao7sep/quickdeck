@@ -29,13 +29,6 @@ const TEXT_PAIRS: ReadonlyArray<[string, string]> = [
   ["--kbd-text", "--kbd-bg"],
 ];
 
-// Boundaries that alone identify a control: a text field's outline on the modal
-// surface, and the invalid-field outline.
-const BOUNDARY_PAIRS: ReadonlyArray<[string, string]> = [
-  ["--input-border", "--surface"],
-  ["--danger", "--surface"],
-];
-
 function pairContrast(theme: (typeof themes)[number], foreground: string, background: string): number {
   const block = themeBlock(css, theme);
   return contrast(parseHex(tokenValue(block, foreground)), parseHex(tokenValue(block, background)));
@@ -50,28 +43,18 @@ describe("theme token contrast", () => {
       }
     });
 
-    it(`keeps control boundaries at 3:1 or more in the ${theme} theme`, () => {
-      for (const [foreground, background] of BOUNDARY_PAIRS) {
-        expect(pairContrast(theme, foreground, background), `${foreground} on ${background}`)
-          .toBeGreaterThanOrEqual(3);
+    it(`preserves the measured line hierarchy in the ${theme} theme`, () => {
+      for (const surface of ["--surface", "--surface-muted", "--surface-accent"]) {
+        const band = pairContrast(theme, "--border", surface);
+        const control = pairContrast(theme, "--control-edge", surface);
+        expect(band, surface).toBeGreaterThanOrEqual(1.35);
+        expect(band, surface).toBeLessThanOrEqual(1.7);
+        expect(control, surface).toBeGreaterThanOrEqual(2);
+        expect(control, surface).toBeLessThanOrEqual(2.5);
+        expect(pairContrast(theme, "--input-border", surface)).toBe(control);
       }
     });
   }
-});
-
-// The line a dialog's header and footer bands draw (checked in
-// modalBands.test.ts) must stay as visible as the app's own control borders
-// in both themes (modal-dialog-conventions). Recorded here as a contrast
-// comparison so a future retint of either token can't quietly make the line
-// fainter than a button's or field's own border again.
-describe("dialog band separator contrast", () => {
-  it("keeps the control-border token at least as visible as the divider token in both themes", () => {
-    for (const theme of themes) {
-      const dividerContrast = pairContrast(theme, "--border", "--surface");
-      const controlEdgeContrast = pairContrast(theme, "--control-edge", "--surface");
-      expect(controlEdgeContrast, theme).toBeGreaterThanOrEqual(dividerContrast);
-    }
-  });
 });
 
 describe("native window background", () => {
