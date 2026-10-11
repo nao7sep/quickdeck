@@ -500,7 +500,13 @@ fn insert_record(
 // managed-text atomic path (data-backup conventions).
 fn append_fallback(root: &Path, stamp: &str, line: &str) -> std::io::Result<()> {
     let dir = root.join("logs");
-    fs::create_dir_all(&dir)?;
+    // Only the logs child belongs to fallback. If the claimed parent was
+    // removed, diagnostics fall through to stderr rather than recreating it.
+    match fs::create_dir(&dir) {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists && dir.is_dir() => {}
+        Err(error) => return Err(error),
+    }
     let mut file = OpenOptions::new()
         .create(true)
         .append(true)

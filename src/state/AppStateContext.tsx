@@ -140,8 +140,6 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const locale = formattingLocale(language, systemLocale);
   const translator = useMemo(() => createTranslator(language, locale), [language, locale]);
   const panesRef = useRef(panes);
-  const activePaneIdRef = useRef(activePaneId);
-  const zoomLevelRef = useRef(zoomLevel);
   // Monotonic counter bumped on every edit. saveNow snapshots the value at the
   // start of a save and only flips back to "saved" when the counter has not
   // moved during the save — keeps an edit from being lost in a save race.
@@ -150,8 +148,6 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     panesRef.current = panes;
   }, [panes]);
-  useEffect(() => { activePaneIdRef.current = activePaneId; }, [activePaneId]);
-  useEffect(() => { zoomLevelRef.current = zoomLevel; }, [zoomLevel]);
 
   const markUnsaved = useCallback(() => {
     dirtyCounterRef.current += 1;
@@ -468,7 +464,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   // Commit-time cleanup for the pane title: the input stores its value verbatim
   // while the user types (never cleaned mid-edit), then this runs on blur to
   // single-line it — so a pasted multi-line value can't leak \r/\n into
-  // state.json. The title is not an identity field, so we normalize rather
+  // panes.json. The title is not an identity field, so we normalize rather
   // than validate. Decide whether anything changes before touching state (the
   // updater must stay pure under StrictMode's double-invoke), and only mark
   // unsaved when cleanup actually changes the value, so a blur over an

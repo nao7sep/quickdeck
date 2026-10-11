@@ -1,8 +1,4 @@
-use std::fs;
-
-use quickdeck_lib::theme::{
-    read_saved_window_theme, saved_window_theme, window_background, window_theme_for,
-};
+use quickdeck_lib::theme::{saved_window_theme, window_background, window_theme_for};
 use tauri::window::Color;
 use tauri::Theme;
 
@@ -44,20 +40,6 @@ fn a_missing_retired_or_corrupt_config_follows_the_os() {
     );
     assert_eq!(saved_window_theme("{not json"), None);
     assert_eq!(saved_window_theme("[]"), None);
-}
-
-#[test]
-fn reading_the_saved_theme_never_changes_the_file() {
-    let dir = tempfile::tempdir().expect("temp dir");
-    let path = dir.path().join("config.json");
-    assert_eq!(read_saved_window_theme(&path), None);
-
-    fs::write(&path, "{corrupt").expect("write config");
-    assert_eq!(read_saved_window_theme(&path), None);
-    assert_eq!(fs::read_to_string(&path).expect("read config"), "{corrupt");
-
-    fs::write(&path, r#"{"formatVersion":1,"theme":"dark"}"#).expect("write config");
-    assert_eq!(read_saved_window_theme(&path), Some(Theme::Dark));
 }
 
 #[test]

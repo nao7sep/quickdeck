@@ -30,6 +30,36 @@ fn a_fallback_file_from_the_same_second_is_appended_to() {
 }
 
 #[test]
+fn fallback_logging_does_not_recreate_a_deleted_launch_root() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join("claimed");
+    fs::create_dir(&root).unwrap();
+    let session = session(Some(&root));
+    fs::remove_dir(&root).unwrap();
+
+    assert!(!write_record(
+        None,
+        &session,
+        Level::Warn,
+        "fallback",
+        "2026-01-01T00:00:01.000Z",
+        &Map::new()
+    ));
+    assert!(
+        !root.exists(),
+        "optional diagnostics must not recreate the root"
+    );
+}
+
+#[test]
+fn fallback_logging_does_not_replace_a_file_named_logs() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("logs");
+    fs::write(&path, "kept").unwrap();
+    assert!(append_fallback(dir.path(), "20260105-030409-utc", "line").is_err());
+    assert_eq!(fs::read_to_string(path).unwrap(), "kept");
+}
+#[test]
 fn level_parse_is_liberal_and_case_insensitive() {
     assert_eq!(Level::parse("debug").as_str(), "debug");
     assert_eq!(Level::parse("INFO").as_str(), "info");

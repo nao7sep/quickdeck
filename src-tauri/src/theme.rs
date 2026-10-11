@@ -4,8 +4,6 @@
 //! block follows. It is applied before the window is first shown and again on
 //! every Save, together with the window background behind the page.
 
-use std::path::Path;
-
 use tauri::window::Color;
 use tauri::{Theme, WebviewWindow};
 
@@ -26,13 +24,6 @@ pub fn window_theme_for(preference: &str) -> Option<Theme> {
 pub fn saved_window_theme(config: &str) -> Option<Theme> {
     let value = crate::storage::launch_config(config)?;
     window_theme_for(value.get("theme")?.as_str()?)
-}
-
-/// Reads the saved choice without touching the file. A missing or unreadable
-/// config follows the OS; recovery of a corrupt one stays with the load path.
-pub fn read_saved_window_theme(config_path: &Path) -> Option<Theme> {
-    let text = std::fs::read_to_string(config_path).ok()?;
-    saved_window_theme(&text)
 }
 
 /// The window background behind the page — styles.css's --app-bg in each

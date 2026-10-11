@@ -343,10 +343,6 @@ fn read_state_object(path: &Path) -> Option<serde_json::Map<String, JsonValue>> 
     }
 }
 
-pub fn load_window_state(app: &AppHandle) -> Result<Option<JsonValue>, String> {
-    load_window_state_in(&app_data_dir(app)?)
-}
-
 pub(crate) fn load_window_state_in(root: &Path) -> Result<Option<JsonValue>, String> {
     let path = root.join(WINDOW_FILE_NAME);
     let loaded = read_rebuildable_store(&path, format_version::WINDOW)?;
