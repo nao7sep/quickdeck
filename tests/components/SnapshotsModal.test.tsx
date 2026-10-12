@@ -135,6 +135,26 @@ describe("SnapshotsModal list as one composite control", () => {
     expect(document.querySelector(".snapshotDetail pre")?.textContent).toBe("first");
   });
 
+  // Hover is only a visual state; the next arrow continues from the selection.
+  it("keeps the keyboard target when an earlier row is hovered", async () => {
+    mocks.list.mockResolvedValue({
+      rows: [row("a", "first"), row("b", "second"), row("c", "third"), row("d", "fourth")],
+      hasMore: false,
+    });
+    await open();
+    await act(async () => pressOnList("ArrowDown"));
+    await act(async () => pressOnList("ArrowDown"));
+
+    await act(async () => {
+      for (const type of ["pointerover", "pointerenter", "mouseover", "mouseenter", "pointermove", "mousemove"]) {
+        rows()[0].dispatchEvent(new MouseEvent(type, { bubbles: true }));
+      }
+    });
+    await act(async () => pressOnList("ArrowDown"));
+    expect(rows()[3].getAttribute("aria-selected")).toBe("true");
+    expect(document.querySelector(".snapshotDetail pre")?.textContent).toBe("fourth");
+  });
+
   it("keeps the empty list reachable by Tab", async () => {
     mocks.list.mockResolvedValue({ rows: [], hasMore: false });
     await open();
