@@ -2,7 +2,7 @@
   "name": "quickdeck",
   "private": true,
   "version": "0.1.0",
-  "packageManager": "npm@12.0.2",
+  "packageManager": "npm@12.2.0",
   "description": "Write in several plain-text panes side by side, and bring back earlier text from automatic snapshots.",
   "author": "Yoshinao Inoguchi <yoshinao@inoguchi.com>",
   "license": "GPL-3.0-or-later",
@@ -20,23 +20,23 @@
   "dependencies": {
     "@tauri-apps/api": "^2.11.1",
     "@tauri-apps/plugin-opener": "^2.5.5",
-    "lucide-react": "^1.52.0",
+    "lucide-react": "^1.55.0",
     "nanoid": "^6.0.2",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "twitter-text": "^3.1.0"
   },
   "devDependencies": {
-    "@babel/parser": "^8.0.6",
+    "@babel/parser": "^8.0.7",
     "@tauri-apps/cli": "^2.11.4",
-    "@types/node": "^26.6.4",
+    "@types/node": "^26.6.5",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.2",
     "@vitest/coverage-v8": "^5.0.3",
     "jsdom": "^30.1.2",
     "typescript": "^7.0.2",
-    "vite": "^8.3.3",
+    "vite": "^8.3.4",
     "vitest": "^5.0.3"
   },
   "allowScripts": {
