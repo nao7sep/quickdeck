@@ -13,7 +13,7 @@
   "status.topmost": "항상 위",
   "status.topmostHint": "클릭하여 항상 위에 표시 끄기",
   "status.saved": "저장됨",
-  "status.saving": "저장 중",
+  "status.saving": "저장 중…",
   "status.unsaved": "저장 안 됨",
   "status.saveFailed": "저장 실패",
 
@@ -86,7 +86,7 @@
   "shortcuts.macNote": "macOS에서는 시스템 텍스트 편집 키와 겹치는 Ctrl 조합이 텍스트 필드에 입력하는 동안 그 필드에 우선권을 넘깁니다. Cmd 조합은 계속 사용할 수 있습니다.",
 
   "snapshots.title": "스냅샷",
-  "snapshots.loading": "스냅샷을 불러오는 중입니다.",
+  "snapshots.loading": "스냅샷을 불러오는 중…",
   "snapshots.emptyStore": "아직 스냅샷이 없습니다.",
   "snapshots.noMatches": "일치하는 스냅샷이 없습니다.",
   "snapshots.listLabel": "스냅샷 목록",

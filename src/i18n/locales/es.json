@@ -13,7 +13,7 @@
   "status.topmost": "Siempre visible",
   "status.topmostHint": "Haz clic para desactivar «siempre visible»",
   "status.saved": "Guardado",
-  "status.saving": "Guardando",
+  "status.saving": "Guardando…",
   "status.unsaved": "Sin guardar",
   "status.saveFailed": "Error al guardar",
 
@@ -86,7 +86,7 @@
   "shortcuts.macNote": "En macOS, las combinaciones con Ctrl que coinciden con las teclas de edición de texto del sistema dejan paso al campo de texto mientras escribes en él; sus versiones con Cmd siguen disponibles.",
 
   "snapshots.title": "Instantáneas",
-  "snapshots.loading": "Cargando instantáneas.",
+  "snapshots.loading": "Cargando instantáneas…",
   "snapshots.emptyStore": "Todavía no hay instantáneas.",
   "snapshots.noMatches": "No hay instantáneas que coincidan.",
   "snapshots.listLabel": "Lista de instantáneas",

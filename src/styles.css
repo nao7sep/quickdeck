@@ -527,6 +527,8 @@ input[type="range"]:focus-visible {
   box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.18);
 }
 
+/* The zen status bar has room for one line of the active pane's name. Its whole
+   name is one step away: the switcher's list shows every name in full. */
 .paneSwitcherTitle {
   flex: 1 1 auto;
   min-width: 0;
@@ -599,9 +601,7 @@ input[type="range"]:focus-visible {
 .paneSwitcherOptionTitle {
   flex: 1 1 auto;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
 /* ── Save State ──────────────────────────────────────────────── */
@@ -679,8 +679,9 @@ input[type="range"]:focus-visible {
   z-index: var(--z-menu);
   right: 0;
   display: grid;
-  /* As wide as the longest label, so a longer translation never wraps; never
-     narrower than the English layout, and never wider than the window. */
+  /* As wide as the longest label, so a longer translation stays on one line
+     wherever the window allows; never narrower than the English layout, and never
+     wider than the window, where a label wraps rather than losing its end. */
   width: max-content;
   min-width: 210px;
   max-width: calc(100vw - 24px);
@@ -713,9 +714,6 @@ input[type="range"]:focus-visible {
   border-radius: var(--radius-item);
   background: transparent;
   text-align: left;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
   transition: background var(--motion);
 }
 
@@ -1657,6 +1655,7 @@ kbd {
 }
 
 .snapshotRowTime {
+  flex-shrink: 0;
   color: var(--text-muted);
   font-size: 11px;
   font-weight: 600;
@@ -1670,6 +1669,13 @@ kbd {
   font-size: 12px;
 }
 
+/* The detail bar is where a long pane name is read in full, so it wraps there. */
+.snapshotDetailBar .snapshotRowPane {
+  overflow: visible;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
 /* Copy and Delete sit together on the detail bar, one step apart. */
 .snapshotDetailActions {
   display: inline-flex;
@@ -1677,8 +1683,9 @@ kbd {
   gap: 8px;
 }
 
-/* The pane a snapshot came from. It gives way before the time does, since the time is
-   what orders the list. */
+/* The pane a snapshot came from. In a row it gives way before the time does, since
+   the time is what orders the list; selecting the row shows the whole name in the
+   detail bar. */
 .snapshotRowPane {
   color: var(--text-muted);
   font-size: 11px;
@@ -1688,6 +1695,9 @@ kbd {
   white-space: nowrap;
 }
 
+/* A preview: the row's selection shows the whole text in the detail pane. The
+   excerpt arrives pre-cut with its own marker; where the row is narrower still,
+   the drawn marker takes the end and the pre-cut one is clipped, so one shows. */
 .snapshotRowExcerpt {
   overflow: hidden;
   color: var(--text);
@@ -1896,13 +1906,12 @@ kbd {
   overflow-wrap: anywhere;
 }
 
+/* The operation wraps like the message above it; the detail pane does not repeat it. */
 .recordsRowText {
   color: var(--text-muted);
   font-family: var(--font-mono);
   font-size: 12px;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
+  overflow-wrap: anywhere;
 }
 
 /* A level reads as its word; error and warning also take their colour. */

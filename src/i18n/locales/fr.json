@@ -13,7 +13,7 @@
   "status.topmost": "Premier plan",
   "status.topmostHint": "Cliquer pour ne plus garder la fenêtre au premier plan",
   "status.saved": "Enregistré",
-  "status.saving": "Enregistrement",
+  "status.saving": "Enregistrement…",
   "status.unsaved": "Non enregistré",
   "status.saveFailed": "Échec de l’enregistrement",
 
@@ -86,7 +86,7 @@
   "shortcuts.macNote": "Sous macOS, les combinaisons avec Ctrl qui recoupent les touches d’édition de texte du système laissent la priorité au champ de texte pendant la saisie\u00a0; leurs équivalents avec Cmd restent disponibles.",
 
   "snapshots.title": "Instantanés",
-  "snapshots.loading": "Chargement des instantanés.",
+  "snapshots.loading": "Chargement des instantanés…",
   "snapshots.emptyStore": "Aucun instantané pour le moment.",
   "snapshots.noMatches": "Aucun instantané ne correspond.",
   "snapshots.listLabel": "Liste des instantanés",

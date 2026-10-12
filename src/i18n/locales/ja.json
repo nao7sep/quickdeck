@@ -13,7 +13,7 @@
   "status.topmost": "最前面",
   "status.topmostHint": "クリックして最前面表示を解除",
   "status.saved": "保存済み",
-  "status.saving": "保存中",
+  "status.saving": "保存中…",
   "status.unsaved": "未保存",
   "status.saveFailed": "保存に失敗",
 
@@ -86,7 +86,7 @@
   "shortcuts.macNote": "macOS では、システムのテキスト編集キーと重なる Ctrl の組み合わせは、テキスト欄で入力している間はその欄の操作が優先されます。Cmd の組み合わせはそのまま使えます。",
 
   "snapshots.title": "スナップショット",
-  "snapshots.loading": "スナップショットを読み込んでいます。",
+  "snapshots.loading": "スナップショットを読み込み中…",
   "snapshots.emptyStore": "スナップショットはまだありません。",
   "snapshots.noMatches": "該当するスナップショットはありません。",
   "snapshots.listLabel": "スナップショット一覧",

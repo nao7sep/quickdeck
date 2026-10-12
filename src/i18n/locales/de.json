@@ -13,7 +13,7 @@
   "status.topmost": "Im Vordergrund",
   "status.topmostHint": "Klicken, um „Immer im Vordergrund“ auszuschalten",
   "status.saved": "Gespeichert",
-  "status.saving": "Wird gespeichert",
+  "status.saving": "Wird gespeichert\u00a0…",
   "status.unsaved": "Nicht gespeichert",
   "status.saveFailed": "Speichern fehlgeschlagen",
 
@@ -86,7 +86,7 @@
   "shortcuts.macNote": "Unter macOS lassen Ctrl-Kombinationen, die sich mit den Textbearbeitungstasten des Systems überschneiden, beim Tippen in einem Textfeld diesem Feld den Vortritt; ihre Cmd-Varianten bleiben verfügbar.",
 
   "snapshots.title": "Snapshots",
-  "snapshots.loading": "Snapshots werden geladen.",
+  "snapshots.loading": "Snapshots werden geladen\u00a0…",
   "snapshots.emptyStore": "Noch keine Snapshots.",
   "snapshots.noMatches": "Keine passenden Snapshots.",
   "snapshots.listLabel": "Snapshot-Liste",
@@ -118,7 +118,7 @@
   "records.levelWarn": "Warnung",
   "records.levelInfo": "Info",
   "records.levelDebug": "Debug",
-  "records.loading": "Protokoll wird geladen …",
+  "records.loading": "Protokoll wird geladen\u00a0…",
   "records.empty": "Keine Einträge entsprechen diesen Filtern.",
   "records.loadFailed": "Das Protokoll konnte nicht gelesen werden.",
   "records.detailFailed": "Dieser Eintrag konnte nicht gelesen werden.",

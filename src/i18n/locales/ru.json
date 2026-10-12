@@ -13,7 +13,7 @@
   "status.topmost": "Поверх окон",
   "status.topmostHint": "Нажмите, чтобы выключить режим «Поверх окон»",
   "status.saved": "Сохранено",
-  "status.saving": "Сохранение",
+  "status.saving": "Сохранение…",
   "status.unsaved": "Не сохранено",
   "status.saveFailed": "Ошибка сохранения",
 
@@ -86,7 +86,7 @@
   "shortcuts.macNote": "В macOS сочетания с Ctrl, которые совпадают с системными клавишами редактирования текста, уступают текстовому полю, пока вы в нём печатаете; их варианты с Cmd остаются доступными.",
 
   "snapshots.title": "Снимки",
-  "snapshots.loading": "Загрузка снимков.",
+  "snapshots.loading": "Загрузка снимков…",
   "snapshots.emptyStore": "Снимков пока нет.",
   "snapshots.noMatches": "Подходящих снимков нет.",
   "snapshots.listLabel": "Список снимков",

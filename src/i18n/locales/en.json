@@ -13,7 +13,7 @@
   "status.topmost": "Topmost",
   "status.topmostHint": "Click to disable always on top",
   "status.saved": "Saved",
-  "status.saving": "Saving",
+  "status.saving": "Saving…",
   "status.unsaved": "Unsaved",
   "status.saveFailed": "Save failed",
 
@@ -86,7 +86,7 @@
   "shortcuts.macNote": "On macOS, Ctrl chords that overlap the system's text-editing keys yield to the text field while you are typing in one; their Cmd forms remain available.",
 
   "snapshots.title": "Snapshots",
-  "snapshots.loading": "Loading snapshots.",
+  "snapshots.loading": "Loading snapshots…",
   "snapshots.emptyStore": "No snapshots yet.",
   "snapshots.noMatches": "No snapshots match your search.",
   "snapshots.listLabel": "Snapshot list",

@@ -13,7 +13,7 @@
   "status.topmost": "In primo piano",
   "status.topmostHint": "Fai clic per disattivare «sempre in primo piano»",
   "status.saved": "Salvato",
-  "status.saving": "Salvataggio in corso",
+  "status.saving": "Salvataggio in corso…",
   "status.unsaved": "Non salvato",
   "status.saveFailed": "Salvataggio non riuscito",
 
@@ -86,7 +86,7 @@
   "shortcuts.macNote": "Su macOS, le combinazioni con Ctrl che coincidono con i tasti di modifica del testo del sistema lasciano la precedenza al campo di testo mentre scrivi; le varianti con Cmd restano disponibili.",
 
   "snapshots.title": "Istantanee",
-  "snapshots.loading": "Caricamento delle istantanee.",
+  "snapshots.loading": "Caricamento delle istantanee…",
   "snapshots.emptyStore": "Nessuna istantanea per ora.",
   "snapshots.noMatches": "Nessuna istantanea corrispondente.",
   "snapshots.listLabel": "Elenco delle istantanee",

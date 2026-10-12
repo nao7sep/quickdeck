@@ -13,7 +13,7 @@
   "status.topmost": "置顶",
   "status.topmostHint": "点击以取消窗口置顶",
   "status.saved": "已保存",
-  "status.saving": "正在保存",
+  "status.saving": "正在保存…",
   "status.unsaved": "未保存",
   "status.saveFailed": "保存失败",
 
@@ -86,7 +86,7 @@
   "shortcuts.macNote": "在 macOS 上，与系统文本编辑键重叠的 Ctrl 组合键，在你向文本框输入时交由该文本框处理；对应的 Cmd 组合键仍然可用。",
 
   "snapshots.title": "快照",
-  "snapshots.loading": "正在加载快照。",
+  "snapshots.loading": "正在加载快照…",
   "snapshots.emptyStore": "还没有快照。",
   "snapshots.noMatches": "没有匹配的快照。",
   "snapshots.listLabel": "快照列表",

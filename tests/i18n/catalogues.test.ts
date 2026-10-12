@@ -120,6 +120,26 @@ describe("catalogues", () => {
     expect(literal).toEqual([]);
   });
 
+  // An ellipsis carries meaning, so a translation has one exactly when English
+  // does; it is always the single character, attached directly or, in German,
+  // after an escaped no-break space (localization-conventions, Ellipsis).
+  it.each(LANGUAGES)("%s uses an ellipsis exactly where English does, as one character", (language) => {
+    for (const [key, englishEntry] of Object.entries(english)) {
+      const englishHas = forms(englishEntry).some((text) => text.includes("…"));
+      for (const text of forms(catalogues[language][key] ?? "")) {
+        expect(text, key).not.toContain("...");
+        expect(text, key).not.toMatch(/\s(?<! )…/u);
+        expect(text.includes("…"), `${key}: ${text}`).toBe(englishHas);
+      }
+    }
+  });
+
+  // Parsing hides how the character was written, so this reads the files.
+  it.each(LANGUAGES)("%s writes the ellipsis literally", (language) => {
+    const source = readFileSync(join(process.cwd(), `src/i18n/locales/${language}.json`), "utf8");
+    expect(source).not.toMatch(/\\u2026|&hellip;|&#x?0*(2026|8230);/iu);
+  });
+
   // Every control that opens About reads exactly "About <App>" in the interface
   // language, matching the macOS app-menu wording, so a label can't drift into
   // a bare "About" or its own phrasing (app-chrome-conventions, App identity).

@@ -13,7 +13,7 @@
   "status.topmost": "Sempre no topo",
   "status.topmostHint": "Clique para desativar “sempre no topo”",
   "status.saved": "Salvo",
-  "status.saving": "Salvando",
+  "status.saving": "Salvando…",
   "status.unsaved": "Não salvo",
   "status.saveFailed": "Falha ao salvar",
 
@@ -86,7 +86,7 @@
   "shortcuts.macNote": "No macOS, as combinações com Ctrl que coincidem com as teclas de edição de texto do sistema dão lugar ao campo de texto enquanto você digita nele; as versões com Cmd continuam disponíveis.",
 
   "snapshots.title": "Instantâneos",
-  "snapshots.loading": "Carregando instantâneos.",
+  "snapshots.loading": "Carregando instantâneos…",
   "snapshots.emptyStore": "Ainda não há instantâneos.",
   "snapshots.noMatches": "Nenhum instantâneo corresponde.",
   "snapshots.listLabel": "Lista de instantâneos",
