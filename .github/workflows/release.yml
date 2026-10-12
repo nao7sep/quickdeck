@@ -39,7 +39,7 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: src-tauri -> target
-      - run: npm install --global npm@12.0.2
+      - run: npm install --global npm@12.2.0
       - run: npm ci
       - name: Verify tag matches app version
         if: github.ref_type == 'tag'
@@ -70,7 +70,7 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: src-tauri -> target
-      - run: npm install --global npm@12.0.2
+      - run: npm install --global npm@12.2.0
       - run: npm ci
 
       # One command per OS — runs `tauri build` and emits the installer + portable
