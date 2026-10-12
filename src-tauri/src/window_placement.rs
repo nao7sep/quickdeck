@@ -91,6 +91,30 @@ fn current_normal_rectangle(window: &Window<Wry>) -> tauri::Result<NormalRectang
     })
 }
 
+#[cfg(windows)]
+fn is_maximized(window: &Window<Wry>) -> tauri::Result<bool> {
+    let hwnd = window.hwnd()?;
+    // Tao delivers Moved before WM_SIZE updates its cached maximized flag.
+    // Read the live native mode so the new maximized geometry is never saved
+    // as a normal rectangle. The borrowed window supplies its own handle.
+    Ok(unsafe { windows::Win32::UI::WindowsAndMessaging::IsZoomed(hwnd) }.as_bool())
+}
+
+#[cfg(not(windows))]
+fn is_maximized(window: &Window<Wry>) -> tauri::Result<bool> {
+    window.is_maximized()
+}
+
+fn current_window_state(window: &Window<Wry>) -> tauri::Result<ClosingState> {
+    if window.is_minimized()? || window.is_fullscreen()? {
+        return Ok(ClosingState::Transient);
+    }
+    if is_maximized(window)? {
+        return Ok(ClosingState::Maximized);
+    }
+    Ok(ClosingState::Normal(current_normal_rectangle(window)?))
+}
+
 // How much of a window's top edge must lie inside one monitor's work area for
 // the window to be grabbed and moved: its title bar's height, and enough of its
 // width to aim at (physical pixels). Overlap alone is not enough — a one-pixel
@@ -115,7 +139,8 @@ pub fn usable_on(rectangle: NormalRectangle, work_areas: &[NormalRectangle]) -> 
         let area_bottom = area_top + i64::from(area.height);
         top >= area_top
             && top + TITLE_BAR_HEIGHT <= area_bottom
-            && right.min(area_right) - left.max(area_left) >= TITLE_BAR_GRAB.min(i64::from(rectangle.width))
+            && right.min(area_right) - left.max(area_left)
+                >= TITLE_BAR_GRAB.min(i64::from(rectangle.width))
     })
 }
 
@@ -156,11 +181,19 @@ fn replace_state(state: &PlacementState, label: &str, placement: Option<Placemen
 // Prepare on a worker before showing the first frame (window conventions).
 // A late result never mutates the live placement state.
 pub(crate) fn load(app: &AppHandle, state: &PlacementState) {
-    let Some(root) = app.try_state::<crate::paths::DataRoot>().map(|root| root.0.clone()) else {
+    let Some(root) = app
+        .try_state::<crate::paths::DataRoot>()
+        .map(|root| root.0.clone())
+    else {
         return;
     };
-    let saved = match crate::startup::prepare("window placement", crate::startup::PREPARE_WAIT,
-        move || storage::load_window_state_in(&root)).and_then(|result| result) {
+    let saved = match crate::startup::prepare(
+        "window placement",
+        crate::startup::PREPARE_WAIT,
+        move || storage::load_window_state_in(&root),
+    )
+    .and_then(|result| result)
+    {
         Ok(value) => placements_from(value),
         Err(error) => {
             logging::warn(
@@ -242,20 +275,15 @@ pub(crate) fn restore(window: &Window<Wry>, state: &PlacementState) {
     replace_state(state, &label, restored);
 }
 
-pub(crate) fn capture(window: &Window<Wry>, state: &PlacementState) {
-    let closing = (|| -> tauri::Result<ClosingState> {
-        if window.is_minimized()? || window.is_fullscreen()? {
-            return Ok(ClosingState::Transient);
-        }
-        if window.is_maximized()? {
-            return Ok(ClosingState::Maximized);
-        }
-        Ok(ClosingState::Normal(current_normal_rectangle(window)?))
-    })();
+fn capture_from(
+    label: &str,
+    state: &PlacementState,
+    read_window: impl FnOnce() -> tauri::Result<ClosingState>,
+) {
+    let closing = read_window();
 
     match closing {
         Ok(closing) => {
-            let label = window.label();
             let previous = state
                 .lock()
                 .ok()
@@ -273,12 +301,38 @@ pub(crate) fn capture(window: &Window<Wry>, state: &PlacementState) {
     }
 }
 
-pub(crate) fn on_window_event(window: &Window<Wry>, event: &WindowEvent, state: &PlacementState) {
-    if DURABLE_WINDOWS.contains(&window.label())
-        && matches!(event, WindowEvent::CloseRequested { .. })
+pub(crate) fn capture(window: &Window<Wry>, state: &PlacementState) {
+    capture_from(window.label(), state, || current_window_state(window));
+}
+
+fn capture_event(
+    label: &str,
+    event: &WindowEvent,
+    state: &PlacementState,
+    read_window: impl FnOnce() -> tauri::Result<ClosingState>,
+) {
+    if DURABLE_WINDOWS.contains(&label)
+        && matches!(
+            event,
+            WindowEvent::Moved(_) | WindowEvent::Resized(_) | WindowEvent::CloseRequested { .. }
+        )
     {
-        capture(window, state);
+        capture_from(label, state, read_window);
     }
+}
+
+pub(crate) fn on_window_event(window: &Window<Wry>, event: &WindowEvent, state: &PlacementState) {
+    // Keep the latest complete normal sample in the existing owner. At a
+    // maximized close the current native rectangle is no longer the normal
+    // one. Neither event payloads nor separate position/size histories own it.
+    capture_event(window.label(), event, state, || {
+        // Construction/restore events must not overwrite a loaded placement
+        // before the hidden window's setup has applied it.
+        if !window.is_visible()? {
+            return Ok(ClosingState::Transient);
+        }
+        current_window_state(window)
+    });
 }
 
 // The exit write runs on its own thread so a stalled data volume
@@ -347,3 +401,7 @@ fn write_placements(root: &Path, placements: Placements) {
         ),
     }
 }
+
+#[cfg(test)]
+#[path = "../tests/unit/window_placement.rs"]
+mod tests;

@@ -27,10 +27,14 @@ describe("Tauri window-state integration", () => {
     expect(placement).toContain('cfg!(target_os = "windows") && placement.maximized');
   });
 
-  it("captures position and size together only from a normal closing window", () => {
+  it("reads complete normal geometry with live Windows mode and hidden setup guards", () => {
     expect(placement).toContain("WindowEvent::CloseRequested");
+    expect(placement).toContain("WindowEvent::Moved(_)");
+    expect(placement).toContain("WindowEvent::Resized(_)");
+    expect(placement).toContain("if !window.is_visible()?");
     expect(placement).toContain("window.is_minimized()? || window.is_fullscreen()?");
-    expect(placement).toContain("if window.is_maximized()?");
+    expect(placement).toContain("if is_maximized(window)?");
+    expect(placement).toContain("WindowsAndMessaging::IsZoomed(hwnd)");
     expect(placement).toContain("ClosingState::Normal(current_normal_rectangle(window)?)");
     expect(placement).not.toMatch(/onMoved|onResized|debounce|prev_[xy]/i);
   });
