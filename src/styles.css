@@ -1122,6 +1122,19 @@ input[type="range"]:focus-visible {
   background: var(--surface);
 }
 
+/* A button keeps its whole one-line label: below its 104 px minimum width it
+   would otherwise shrink under the label, so the row wraps instead
+   (modal-dialog-conventions). Only a label wider than a whole row, such as
+   Russian "Keep editing" at the minimum window, wraps inside its button rather
+   than running past the dialog's clipped edge. */
+.modalFooter > button {
+  flex-shrink: 0;
+  max-width: 100%;
+  padding-block: 4px;
+  white-space: normal;
+  text-align: center;
+}
+
 /* ── Action Buttons ──────────────────────────────────────────── */
 
 .iconTextButton,
