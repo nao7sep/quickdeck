@@ -1306,11 +1306,13 @@ input[type="range"]:focus-visible {
    instead. The chevron is two gradients in currentColor rather than an image:
    the content-security policy allows no data: images, and currentColor needs no
    per-theme copy. Only the closed control is ours; the list it opens stays the
-   platform's. */
+   platform's. A chosen option wider than the closed control ends in the drawn
+   marker rather than a bare clip; opening the list shows it whole. */
 .formGrid select,
 .recordsSelect {
   appearance: none;
   padding-right: 30px;
+  text-overflow: ellipsis;
   background-image:
     linear-gradient(45deg, transparent 50%, currentColor 50%),
     linear-gradient(135deg, currentColor 50%, transparent 50%);
