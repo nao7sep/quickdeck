@@ -28,8 +28,9 @@ describe("modal bands", () => {
     expect(rule(".modalFooter")).toContain("flex-wrap:wrap");
   });
 
-  it("drops the header's line when its title is hidden", () => {
+  it("drops the header's and footer's lines when its title is hidden", () => {
     expect(rule(".modalHeader-bare")).toContain("border-bottom:0");
+    expect(rule(".modalFooter-bare")).toContain("border-top:0");
   });
 
   it("keeps the close control in its trailing corner", () => {

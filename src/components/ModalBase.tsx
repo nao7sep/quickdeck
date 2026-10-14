@@ -33,7 +33,8 @@ type ModalBaseProps = {
   scrollableBody?: boolean;
   // A surface that names itself in its own content (About) keeps its title as
   // the dialog's spoken name only; its band then holds just the close control
-  // and drops its line (modal-dialog conventions).
+  // and drops its line (modal-dialog conventions). Its footer drops its line
+  // too, so the card reads as one surface (developer decision).
   titleVisuallyHidden?: boolean;
 };
 
@@ -160,7 +161,11 @@ export function ModalBase({
         >
           {children}
         </div>
-        {footer ? <footer className="modalFooter">{footer}</footer> : null}
+        {footer ? (
+          <footer className={`modalFooter ${titleVisuallyHidden ? "modalFooter-bare" : ""}`}>
+            {footer}
+          </footer>
+        ) : null}
       </div>
     </div>
   );

@@ -49,6 +49,7 @@ describe("AboutModal header", () => {
     expect(title.textContent).toBe("About QuickDeck");
     expect(title.classList.contains("visuallyHidden")).toBe(true);
     expect(document.querySelector(".modalHeader")?.classList.contains("modalHeader-bare")).toBe(true);
+    expect(document.querySelector(".modalFooter")?.classList.contains("modalFooter-bare")).toBe(true);
     expect(document.querySelector(".aboutText > p")?.textContent).toBe("QuickDeck");
   });
 });
