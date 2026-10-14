@@ -24,17 +24,17 @@ name = "quickdeck_lib"
 crate-type = ["rlib"]
 
 [build-dependencies]
-tauri-build = { version = "2.6.3", features = [] }
+tauri-build = { version = "2.7.2", features = [] }
 
 [dependencies]
-tauri = { version = "2.11.5", features = [] }
+tauri = { version = "2.12.3", features = [] }
 serde = { version = "1.0.229", features = ["derive"] }
-serde_json = { version = "1.0.151", features = ["preserve_order"] }
+serde_json = { version = "1.0.154", features = ["preserve_order"] }
 rusqlite = { version = "0.40.2", features = ["bundled"] }
-sha2 = "0.11.0"
+sha2 = "0.11.1"
 chrono = { version = "0.4.45", features = ["serde"] }
 getrandom = "0.4.3"
-tauri-plugin-opener = "2.5.4"
+tauri-plugin-opener = "2.7.1"
 # The system clipboard, behind the Copy control in the snapshots modal. The
 # webview's own navigator.clipboard is not reliably a secure context under the
 # tauri:// scheme, so the copy goes through a command instead.
@@ -49,23 +49,23 @@ arboard = { version = "3.6.1", default-features = false }
 sys-locale = "0.3.2"
 # The home directory, resolved exactly as Tauri's path resolver does, so the
 # saved language can be read before Tauri builds the app.
-dirs = "6.0.0"
+dirs = "7.0.0"
 
 # AppKit's language is aligned with the interface language before the app is
 # built (i18n::align_appkit).
 [target.'cfg(target_os = "macos")'.dependencies]
-objc2 = "0.6.4"
+objc2 = "0.6.5"
 objc2-foundation = { version = "0.3.2", default-features = false, features = ["std", "NSArray", "NSDictionary", "NSObject", "NSString", "NSUserDefaults"] }
 
 # The main window's WM_QUERYENDSESSION, which tao leaves unanswered, so an OS
 # logout or shutdown reaches the quit save (src/quit.rs). The same release
 # Tauri already builds.
 [target.'cfg(windows)'.dependencies]
-windows = { version = "0.61.3", features = ["Win32_Foundation", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
+windows = { version = "0.62.2", features = ["Win32_Foundation", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
 
 # The session-end wait's test posts thread messages to itself (tests/unit/quit.rs).
 [target.'cfg(windows)'.dev-dependencies]
-windows = { version = "0.61.3", features = ["Win32_System_Threading"] }
+windows = { version = "0.62.2", features = ["Win32_System_Threading"] }
 
 [dev-dependencies]
 # Serializes the tests that share process-global state — the backup-store
@@ -75,7 +75,7 @@ windows = { version = "0.61.3", features = ["Win32_System_Threading"] }
 # makes each such group mutually exclusive while unrelated tests still parallelize.
 # Default features (async runtime + logging) are unused here; only the synchronous
 # `#[serial]` attribute is needed.
-serial_test = { version = "3.5.0", default-features = false }
+serial_test = { version = "4.0.1", default-features = false }
 tempfile = "3.27.0"
 
 [profile.dev]
