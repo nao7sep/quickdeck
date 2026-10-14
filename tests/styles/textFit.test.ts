@@ -33,9 +33,9 @@ describe("identifying text", () => {
     expect(rule).not.toContain("overflow-wrap");
   });
 
-  it("reads a snapshot's whole pane name inside the detail's scroll region", () => {
-    expect(declarations(".snapshotDetailPane")).toContain("overflow-wrap:anywhere");
-    expect(declarations(".snapshotDetailBody")).toContain("overflow:auto");
+  it("names a snapshot's pane in the detail bar on one line", () => {
+    expect(declarations(".snapshotDetailBar .snapshotRowPane".replace(/\s/g, ""))).toContain("font-size:12px");
+    expect(compact).not.toMatch(/\.snapshotDetailBar\.snapshotRowPane\{[^}]*(white-space:normal|overflow-wrap)/);
   });
 });
 

@@ -73,7 +73,7 @@ export function SnapshotsModal({ onClose }: SnapshotsModalProps) {
     selectionVersionRef.current += 1;
   }
   const listRef = useRef<HTMLDivElement | null>(null);
-  const detailRef = useRef<HTMLDivElement | null>(null);
+  const detailRef = useRef<HTMLPreElement | null>(null);
   // `load` is memoized on the page size, so it cannot read `rows` from the
   // render closure. A ref carries what a later page appends to; state updaters
   // stay pure, since StrictMode double-invokes them.
@@ -159,7 +159,7 @@ export function SnapshotsModal({ onClose }: SnapshotsModalProps) {
   useEffect(() => {
     setCopied(false);
     clearCopiedTimer();
-    // React reuses the same detail region across selections, so without this the new
+    // React reuses the same <pre> across selections, so without this the new
     // snapshot opens at the previous one's scroll position — and a reader who
     // was deep inside a long snapshot lands in the middle of a short one.
     if (detailRef.current !== null) {
@@ -423,14 +423,18 @@ export function SnapshotsModal({ onClose }: SnapshotsModalProps) {
             <>
               {/* The list can be scrolled away from the selected row, so the
                   detail names what is open rather than relying on the row —
-                  the same dot and time in the bar, and the pane's whole name
-                  at the top of the scrolling text, where it can wrap. */}
+                  the same dot and time, not a bare repeat of the timestamp. */}
               <div className="snapshotDetailBar">
                 <span className="snapshotRowHead">
                   <PaneSwatch color={selectedOrigin?.headerColor} />
                   <span className="snapshotRowTime">
                     {formatSnapshotTimestamp(selected.createdAtUtc, i18n.dateTime)}
                   </span>
+                  {paneName(selectedOrigin?.title, selected.paneTitle) !== "" ? (
+                    <span className="snapshotRowPane">
+                      {paneName(selectedOrigin?.title, selected.paneTitle)}
+                    </span>
+                  ) : null}
                 </span>
                 <span className="snapshotDetailActions">
                   <button
@@ -451,22 +455,16 @@ export function SnapshotsModal({ onClose }: SnapshotsModalProps) {
                   </button>
                 </span>
               </div>
-              <div
+              <pre
                 ref={detailRef}
-                className="snapshotDetailBody"
                 {...passiveScrollRegionProps(
                   t("snapshots.entryLabel", {
                     timestamp: formatSnapshotTimestamp(selected.createdAtUtc, i18n.dateTime),
                   }),
                 )}
               >
-                {paneName(selectedOrigin?.title, selected.paneTitle) !== "" ? (
-                  <p className="snapshotDetailPane">
-                    {paneName(selectedOrigin?.title, selected.paneTitle)}
-                  </p>
-                ) : null}
-                <pre>{selected.content}</pre>
-              </div>
+                {selected.content}
+              </pre>
             </>
           )}
         </div>

@@ -41,7 +41,7 @@ describe("snapshot browser scrolling", () => {
 
   it("keeps each half's scrolling to itself", () => {
     expect(rule(".snapshotList")).toContain("overscroll-behavior:contain");
-    expect(rule(".snapshotDetailBody")).toContain("overscroll-behavior:contain");
+    expect(rule(".snapshotDetailpre")).toContain("overscroll-behavior:contain");
   });
 
   // Same specificity, so source order is the whole of it: the override has to

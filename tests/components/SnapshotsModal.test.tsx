@@ -348,13 +348,13 @@ describe("SnapshotsModal detail pane", () => {
 
     expect(document.querySelectorAll("[data-passive-scroll-region]")).toHaveLength(1);
     const preview = document.querySelector<HTMLElement>(
-      ".snapshotDetailBody[data-passive-scroll-region]",
+      ".snapshotDetail pre[data-passive-scroll-region]",
     );
     expect(preview?.tabIndex).toBe(0);
     expect(preview?.getAttribute("aria-label")).toContain("Snapshot from");
   });
 
-  // React reuses the same detail region, so its scroll position outlives the selection
+  // React reuses the same <pre>, so its scroll position outlives the selection
   // unless it is reset: a reader deep in a long snapshot would otherwise land
   // in the middle of the next one.
   it("opens each snapshot at the top of its text", async () => {
@@ -364,25 +364,21 @@ describe("SnapshotsModal detail pane", () => {
     });
     await open();
 
-    const body = document.querySelector<HTMLElement>(".snapshotDetailBody")!;
-    body.scrollTop = 400;
+    const pre = document.querySelector<HTMLElement>(".snapshotDetail pre")!;
+    pre.scrollTop = 400;
 
     await act(async () => pressOnList("ArrowDown"));
 
-    expect(document.querySelector<HTMLElement>(".snapshotDetailBody")?.scrollTop).toBe(0);
+    expect(document.querySelector<HTMLElement>(".snapshotDetail pre")?.scrollTop).toBe(0);
   });
 
-  // The bar identifies the snapshot in one line; a long pane name is read whole
-  // inside the scrolling text instead of growing the bar (interface-styling
-  // conventions, Labels).
-  it("shows the pane's whole name in the scrolling detail, not the bar", async () => {
-    const long = "A pane name long enough that no narrow window could fit it on one line";
-    mocks.list.mockResolvedValue({ rows: [row("a", "first", "deleted-pane", long)], hasMore: false });
+  // The bar names what is open — its time and its pane — above the text.
+  it("names the snapshot's pane in the detail bar, not in its text", async () => {
+    mocks.list.mockResolvedValue({ rows: [row("a", "first", "deleted-pane", "Shopping")], hasMore: false });
     await open();
 
-    expect(document.querySelector(".snapshotDetailBar")?.textContent).not.toContain(long);
-    expect(document.querySelector(".snapshotDetailBody .snapshotDetailPane")?.textContent).toBe(long);
-    expect(document.querySelector(".snapshotDetailBody pre")?.textContent).toBe("first");
+    expect(document.querySelector(".snapshotDetailBar .snapshotRowPane")?.textContent).toBe("Shopping");
+    expect(document.querySelector(".snapshotDetail pre")?.textContent).toBe("first");
   });
 
   it("copies the selected snapshot's full text, not its excerpt", async () => {

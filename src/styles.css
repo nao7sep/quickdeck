@@ -1690,7 +1690,10 @@ kbd {
 
 /* The detail bar carries one snapshot rather than a list of them, so its time takes
    the room a row cannot spare. */
-.snapshotDetailBar .snapshotRowTime {
+/* The detail bar names the open snapshot by its time and pane, each on one
+   line; a long pane name gives way first, as in a row. */
+.snapshotDetailBar .snapshotRowTime,
+.snapshotDetailBar .snapshotRowPane {
   font-size: 12px;
 }
 
@@ -1702,8 +1705,7 @@ kbd {
 }
 
 /* The pane a snapshot came from. In a row it gives way before the time does, since
-   the time is what orders the list; selecting the row shows the whole name at the
-   top of the detail's text. */
+   the time is what orders the list. */
 .snapshotRowPane {
   color: var(--text-muted);
   font-size: 11px;
@@ -1761,28 +1763,14 @@ kbd {
   padding: 14px;
 }
 
-/* The detail's one scroll region: the whole pane name, then the text. */
-.snapshotDetailBody {
+.snapshotDetail pre {
   flex: 1 1 auto;
   min-height: 0;
+  margin: 0;
   padding: 14px;
   overflow: auto;
   overscroll-behavior: contain;
   background: var(--surface);
-}
-
-/* A long pane name is read here in full, so it wraps, inside the scroll region
-   rather than growing the bar above it. */
-.snapshotDetailPane {
-  margin: 0 0 10px;
-  color: var(--text-muted);
-  font-size: 12px;
-  font-weight: 600;
-  overflow-wrap: anywhere;
-}
-
-.snapshotDetail pre {
-  margin: 0;
   white-space: pre-wrap;
   word-break: break-word;
   font-family: inherit;
