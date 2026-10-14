@@ -1,7 +1,7 @@
 use quickdeck_lib::format_version::{self, JsonFormat};
 use quickdeck_lib::window_placement::{
-    new_state, placement_after_close, placements_from, save, ClosingState, NormalRectangle,
-    Placement, DURABLE_WINDOWS,
+    new_state, placement_after_close, placements_from, restored_placement, save, ClosingState,
+    NormalRectangle, Placement, DURABLE_WINDOWS, REMEMBERS_MAXIMIZED,
 };
 use serde_json::json;
 
@@ -45,6 +45,26 @@ fn maximized_close_retains_the_complete_normal_rectangle() {
             maximized: true,
         })
     );
+}
+
+#[test]
+fn only_windows_reopens_a_saved_maximized_window_maximized() {
+    let saved = Placement {
+        normal: rectangle(120, 80, 720, 640),
+        maximized: true,
+    };
+
+    assert_eq!(restored_placement(saved, true), saved);
+    assert_eq!(
+        restored_placement(saved, false),
+        Placement {
+            normal: saved.normal,
+            maximized: false,
+        }
+    );
+    let normal = Placement { maximized: false, ..saved };
+    assert_eq!(restored_placement(normal, true), normal);
+    assert_eq!(REMEMBERS_MAXIMIZED, cfg!(target_os = "windows"));
 }
 
 #[test]

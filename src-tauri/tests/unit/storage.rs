@@ -939,6 +939,15 @@ fn a_target_held_open_without_delete_sharing_fails_cleanly() {
     crate::backup_store::close_backup_store();
 }
 
+// Off Windows the test above is listed as ignored rather than left out; run
+// explicitly, it fails.
+#[cfg(not(windows))]
+#[test]
+#[ignore = "Windows only: needs Windows file sharing modes"]
+fn a_target_held_open_without_delete_sharing_fails_cleanly() {
+    panic!("runs only on Windows");
+}
+
 #[test]
 fn temp_path_for_uses_stem_discriminator_dot_tmp_shape_in_the_same_directory() {
     // <stem>-<discriminator>.tmp — the derived-filename grammar: one final

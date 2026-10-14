@@ -106,3 +106,35 @@ fn catalogue_text_fills_in_the_app_name() {
         "QuickDeckを終了"
     );
 }
+
+// The override lives in the argument domain, which outranks the user's saved
+// languages and is never written to disk; anything else there is kept.
+#[cfg(target_os = "macos")]
+#[test]
+fn appkit_takes_the_interface_language_from_a_volatile_override() {
+    use objc2_foundation::{NSArgumentDomain, NSMutableCopying, NSString, NSUserDefaults};
+
+    let defaults = NSUserDefaults::standardUserDefaults();
+    // SAFETY: NSArgumentDomain is a constant NSString that Foundation defines.
+    let domain_name = unsafe { NSArgumentDomain };
+    let before = defaults.volatileDomainForName(domain_name);
+    let marker = NSString::from_str("QuickDeckTestMarker");
+    let with_marker = before.mutableCopy();
+    with_marker.insert(&*marker, &*NSString::from_str("kept"));
+    // SAFETY: NSString keys to property-list values, as the method requires.
+    unsafe { defaults.setVolatileDomain_forName(&with_marker, domain_name) };
+
+    let languages = || {
+        defaults
+            .stringArrayForKey(&NSString::from_str("AppleLanguages"))
+            .map(|languages| languages.iter().map(|language| language.to_string()).collect::<Vec<_>>())
+    };
+    align_appkit("ja");
+    assert_eq!(languages(), Some(vec!["ja".to_string()]));
+    align_appkit("de");
+    assert_eq!(languages(), Some(vec!["de".to_string()]));
+    assert!(defaults.volatileDomainForName(domain_name).objectForKey(&marker).is_some());
+
+    // SAFETY: as above; restores the domain this test found.
+    unsafe { defaults.setVolatileDomain_forName(&before, domain_name) };
+}

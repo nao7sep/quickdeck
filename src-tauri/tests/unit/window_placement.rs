@@ -1,6 +1,6 @@
 use super::{
     capture_event, capture_from, new_state, placements_from, save, ClosingState, NormalRectangle,
-    Placement, DURABLE_WINDOWS,
+    Placement, DURABLE_WINDOWS, REMEMBERS_MAXIMIZED,
 };
 use crate::format_version::{self, JsonFormat};
 use tauri::{PhysicalPosition, PhysicalSize, WindowEvent};
@@ -62,7 +62,7 @@ fn normal_change_then_maximized_exit(event: WindowEvent) {
             reloaded.get(label),
             Some(&Placement {
                 normal: BEFORE_MAXIMIZE,
-                maximized: cfg!(target_os = "windows"),
+                maximized: REMEMBERS_MAXIMIZED,
             }),
             "{label} must restore the latest normal rectangle, not the launch rectangle",
         );

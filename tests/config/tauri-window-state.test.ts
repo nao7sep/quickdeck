@@ -24,7 +24,7 @@ describe("Tauri window-state integration", () => {
     expect(core.indexOf("window_placement::restore(")).toBeLessThan(
       core.indexOf("window.show()?"),
     );
-    expect(placement).toContain('cfg!(target_os = "windows") && placement.maximized');
+    expect(placement).toContain("restored_placement(placement, REMEMBERS_MAXIMIZED)");
   });
 
   it("reads complete normal geometry with live Windows mode and hidden setup guards", () => {

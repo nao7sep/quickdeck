@@ -45,6 +45,19 @@ pub enum ClosingState {
     Transient,
 }
 
+/// Whether a window reopens maximized. Windows restores the maximized mode
+/// over the remembered normal rectangle; the Mac reopens at the normal
+/// rectangle (window conventions, Placement).
+pub const REMEMBERS_MAXIMIZED: bool = cfg!(target_os = "windows");
+
+/// The placement a saved, usable placement restores to.
+pub fn restored_placement(saved: Placement, remember_maximized: bool) -> Placement {
+    Placement {
+        normal: saved.normal,
+        maximized: remember_maximized && saved.maximized,
+    }
+}
+
 pub fn placement_after_close(
     previous: Option<Placement>,
     closing: ClosingState,
@@ -258,11 +271,9 @@ pub(crate) fn restore(window: &Window<Wry>, state: &PlacementState) {
                 ));
             }
         } else {
-            restored = Some(Placement {
-                normal,
-                maximized: cfg!(target_os = "windows") && placement.maximized,
-            });
-            if cfg!(target_os = "windows") && placement.maximized {
+            let placement = restored_placement(placement, REMEMBERS_MAXIMIZED);
+            restored = Some(placement);
+            if placement.maximized {
                 if let Err(error) = window.maximize() {
                     logging::warn(
                         "maximized window state could not be restored",
@@ -291,7 +302,7 @@ fn capture_from(
             replace_state(
                 state,
                 label,
-                placement_after_close(previous, closing, cfg!(target_os = "windows")),
+                placement_after_close(previous, closing, REMEMBERS_MAXIMIZED),
             );
         }
         Err(error) => logging::warn(
