@@ -528,7 +528,7 @@ input[type="range"]:focus-visible {
 }
 
 /* The zen status bar has room for one line of the active pane's name. Its whole
-   name is one step away: the switcher's list shows every name in full. */
+   name is in the shown pane's title field. */
 .paneSwitcherTitle {
   flex: 1 1 auto;
   min-width: 0;
@@ -550,7 +550,11 @@ input[type="range"]:focus-visible {
   left: 16px;
   bottom: 54px;
   display: grid;
-  width: 280px;
+  /* As wide as the longest name up to a cap; a longer name ends in an ellipsis
+     and is whole in its pane's title field once chosen. */
+  width: max-content;
+  min-width: 200px;
+  max-width: min(320px, calc(100vw - 32px));
   max-height: min(360px, calc(100vh - 70px));
   overflow: auto;
   padding: 6px;
@@ -563,6 +567,7 @@ input[type="range"]:focus-visible {
 }
 
 .paneSwitcherOption {
+  min-width: 0;
   display: inline-flex;
   align-items: center;
   gap: 10px;
@@ -598,10 +603,13 @@ input[type="range"]:focus-visible {
   color: var(--text-onhover);
 }
 
+/* A name identifies its pane: one line, keeping its beginning. */
 .paneSwitcherOptionTitle {
   flex: 1 1 auto;
   min-width: 0;
-  overflow-wrap: anywhere;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* ── Save State ──────────────────────────────────────────────── */
@@ -679,12 +687,12 @@ input[type="range"]:focus-visible {
   z-index: var(--z-menu);
   right: 0;
   display: grid;
-  /* As wide as the longest label, so a longer translation stays on one line
-     wherever the window allows; never narrower than the English layout, and never
-     wider than the window, where a label wraps rather than losing its end. */
+  /* As wide as the longest label up to a cap every command fits within in the
+     longest language; a label ends in an ellipsis only where the window is
+     narrower than that (composite-control-conventions, Menu). */
   width: max-content;
   min-width: 210px;
-  max-width: calc(100vw - 24px);
+  max-width: min(320px, calc(100vw - 24px));
   max-height: calc(100vh - 70px);
   overflow-y: auto;
   padding: 6px;
@@ -710,6 +718,7 @@ input[type="range"]:focus-visible {
 }
 
 .menuPanel button {
+  min-width: 0;
   border: 0;
   border-radius: var(--radius-item);
   background: transparent;
@@ -745,6 +754,14 @@ input[type="range"]:focus-visible {
 }
 
 .menuZoomRow {
+  white-space: nowrap;
+}
+
+/* A command's label stays on one line (composite-control-conventions, Menu). */
+.menuItemLabel {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
@@ -1673,16 +1690,8 @@ kbd {
 
 /* The detail bar carries one snapshot rather than a list of them, so its time takes
    the room a row cannot spare. */
-.snapshotDetailBar .snapshotRowTime,
-.snapshotDetailBar .snapshotRowPane {
+.snapshotDetailBar .snapshotRowTime {
   font-size: 12px;
-}
-
-/* The detail bar is where a long pane name is read in full, so it wraps there. */
-.snapshotDetailBar .snapshotRowPane {
-  overflow: visible;
-  white-space: normal;
-  overflow-wrap: anywhere;
 }
 
 /* Copy and Delete sit together on the detail bar, one step apart. */
@@ -1693,8 +1702,8 @@ kbd {
 }
 
 /* The pane a snapshot came from. In a row it gives way before the time does, since
-   the time is what orders the list; selecting the row shows the whole name in the
-   detail bar. */
+   the time is what orders the list; selecting the row shows the whole name at the
+   top of the detail's text. */
 .snapshotRowPane {
   color: var(--text-muted);
   font-size: 11px;
@@ -1752,14 +1761,28 @@ kbd {
   padding: 14px;
 }
 
-.snapshotDetail pre {
+/* The detail's one scroll region: the whole pane name, then the text. */
+.snapshotDetailBody {
   flex: 1 1 auto;
   min-height: 0;
-  margin: 0;
   padding: 14px;
   overflow: auto;
   overscroll-behavior: contain;
   background: var(--surface);
+}
+
+/* A long pane name is read here in full, so it wraps, inside the scroll region
+   rather than growing the bar above it. */
+.snapshotDetailPane {
+  margin: 0 0 10px;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.snapshotDetail pre {
+  margin: 0;
   white-space: pre-wrap;
   word-break: break-word;
   font-family: inherit;
@@ -1912,15 +1935,22 @@ kbd {
 
 .recordsRowTitle {
   font-size: 13px;
-  overflow-wrap: anywhere;
 }
 
-/* The operation wraps like the message above it; the detail pane does not repeat it. */
+/* A row identifies its record with one line each; the selected record shows the
+   whole message as its detail title and the operation in its details. */
+.recordsRowTitle,
+.recordsRowText {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .recordsRowText {
   color: var(--text-muted);
   font-family: var(--font-mono);
   font-size: 12px;
-  overflow-wrap: anywhere;
 }
 
 /* A level reads as its word; error and warning also take their colour. */

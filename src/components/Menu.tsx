@@ -174,9 +174,13 @@ export function Menu({ label, trigger, children, panelClassName }: MenuProps) {
  */
 export function MenuItem({
   onSelect,
+  icon,
   children,
 }: {
   onSelect: () => void;
+  icon?: ReactNode;
+  // The command's label: one line, ending in an ellipsis only where the menu's
+  // cap or the window is narrower (composite-control conventions, Menu).
   children: ReactNode;
 }) {
   const ctx = useContext(MenuContext);
@@ -190,7 +194,8 @@ export function MenuItem({
         onSelect();
       }}
     >
-      {children}
+      {icon}
+      <span className="menuItemLabel">{children}</span>
     </button>
   );
 }

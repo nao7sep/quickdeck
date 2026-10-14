@@ -727,20 +727,16 @@ export function App() {
               </button>
             )}
           >
-            <MenuItem onSelect={() => addPane()}>
-              <Plus size={16} />
+            <MenuItem onSelect={() => addPane()} icon={<Plus size={16} />}>
               {t("menu.addPane")}
             </MenuItem>
-            <MenuItem onSelect={() => openMenuModal("settings")}>
-              <Settings size={16} />
+            <MenuItem onSelect={() => openMenuModal("settings")} icon={<Settings size={16} />}>
               {t("menu.settings")}
             </MenuItem>
-            <MenuItem onSelect={() => openMenuModal("snapshots")}>
-              <History size={16} />
+            <MenuItem onSelect={() => openMenuModal("snapshots")} icon={<History size={16} />}>
               {t("menu.snapshots")}
             </MenuItem>
-            <MenuItem onSelect={openRecords}>
-              <ScrollText size={16} />
+            <MenuItem onSelect={openRecords} icon={<ScrollText size={16} />}>
               {t("menu.records")}
             </MenuItem>
             <div className="menuDivider" />
@@ -749,7 +745,7 @@ export function App() {
                 global zoom shortcuts, not promoted into menu items. */}
             <div className="menuZoomRow">
               <ZoomIn size={16} />
-              <span>{t("menu.zoom")}</span>
+              <span className="menuItemLabel">{t("menu.zoom")}</span>
               <div className="menuZoomControls">
                 <button
                   type="button"
@@ -789,12 +785,10 @@ export function App() {
               </div>
             </div>
             <div className="menuDivider" />
-            <MenuItem onSelect={() => openMenuModal("shortcuts")}>
-              <Keyboard size={16} />
+            <MenuItem onSelect={() => openMenuModal("shortcuts")} icon={<Keyboard size={16} />}>
               {t("menu.shortcuts")}
             </MenuItem>
-            <MenuItem onSelect={() => openMenuModal("about")}>
-              <Info size={16} />
+            <MenuItem onSelect={() => openMenuModal("about")} icon={<Info size={16} />}>
               {t("menu.about")}
             </MenuItem>
           </Menu>
