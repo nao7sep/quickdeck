@@ -98,4 +98,13 @@ describe("Records window lifecycle", () => {
       expect(services).toContain(`"${event}"`);
     }
   });
+
+  // window-conventions: a window opened from main appears above it, including
+  // a main window kept on top, and keeps that level when the setting changes.
+  it("opens at the main window's level and follows it when keeping on top changes", () => {
+    const open = between(recordsWindow, "pub fn open(", "\npub fn ");
+    expect(open).toContain("main.is_always_on_top()");
+    expect(open).toContain(".always_on_top(main_on_top)");
+    expect(between(core, "fn apply_topmost(", "\n}\n")).toContain("records_window::follow_topmost(&app, topmost)");
+  });
 });

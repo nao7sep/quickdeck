@@ -17,7 +17,7 @@ pub mod window_placement;
 use std::sync::Mutex;
 
 use i18n::LanguageState;
-use menu::SAFE_QUIT_MENU_ID;
+use menu::{CLOSE_WINDOW_MENU_ID, SAFE_QUIT_MENU_ID};
 use records::{RecordDetail, RecordSources, RecordsPage, RecordsQuery};
 use serde::Serialize;
 use serde_json::{json, Map, Value as JsonValue};
@@ -59,6 +59,21 @@ pub(crate) fn bring_main_forward<R: Runtime>(app: &AppHandle<R>) {
             "main window could not be brought forward",
             json!({ "error": error.to_string() }),
         );
+    }
+}
+
+// Ctrl+W on Windows closes the key window the way its close button would, so
+// the main window's close saves first and never another window
+// (keyboard-shortcut conventions, Closing a window).
+fn close_key_window<R: Runtime>(app: &AppHandle<R>) {
+    let key = app
+        .webview_windows()
+        .into_values()
+        .find(|window| window.is_focused().unwrap_or(false));
+    if let Some(window) = key {
+        if let Err(error) = window.close() {
+            logging::warn("close key window failed", json!({ "error": error.to_string() }));
+        }
     }
 }
 
@@ -144,6 +159,23 @@ fn apply_theme(
             app.webview_windows()
                 .values()
                 .try_for_each(|window| theme::apply(window, theme))
+        },
+        |_| json!({}),
+    )
+}
+
+// Keeps the main window on top or not, and an open Records window with it, so
+// the window opened from main can stay above it (window conventions).
+#[tauri::command]
+fn apply_topmost(app: AppHandle, topmost: bool) -> Result<(), String> {
+    logging::boundary(
+        "apply_topmost",
+        json!({ "topmost": topmost }),
+        || {
+            let main = app.get_webview_window("main").ok_or("no main window")?;
+            main.set_always_on_top(topmost).map_err(|error| error.to_string())?;
+            records_window::follow_topmost(&app, topmost);
+            Ok(())
         },
         |_| json!({}),
     )
@@ -524,6 +556,8 @@ pub fn run() {
         .on_menu_event(|app, event| {
             if event.id() == SAFE_QUIT_MENU_ID {
                 quit::request_quit(app);
+            } else if event.id() == CLOSE_WINDOW_MENU_ID {
+                close_key_window(app);
             }
         })
         .setup(move |app| {
@@ -558,6 +592,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             apply_language,
             apply_theme,
+            apply_topmost,
             launch_language,
             load_app_data,
             open_records_window,

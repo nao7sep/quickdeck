@@ -16,6 +16,15 @@ use tauri::{AppHandle, Wry};
 use crate::i18n;
 
 pub const SAFE_QUIT_MENU_ID: &str = "quickdeck.safe-quit";
+pub const CLOSE_WINDOW_MENU_ID: &str = "quickdeck.close-window";
+
+/// The chord QuickDeck's own Close Window item carries where the predefined
+/// one lacks Cmd/Ctrl+W: on Windows it binds only Alt+F4, which still works
+/// beside it (keyboard-shortcut conventions, Closing a window).
+#[cfg(any(target_os = "macos", target_os = "windows", test))]
+fn close_window_chord(mac: bool) -> Option<&'static str> {
+    (!mac).then_some("Ctrl+W")
+}
 
 #[cfg(any(target_os = "macos", target_os = "windows", test))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -190,7 +199,16 @@ fn item(
         Entry::Services => Box::new(PredefinedMenuItem::services(app, label)?),
         Entry::Hide => Box::new(PredefinedMenuItem::hide(app, label)?),
         Entry::HideOthers => Box::new(PredefinedMenuItem::hide_others(app, label)?),
-        Entry::CloseWindow => Box::new(PredefinedMenuItem::close_window(app, label)?),
+        Entry::CloseWindow => match close_window_chord(cfg!(target_os = "macos")) {
+            Some(chord) => Box::new(MenuItem::with_id(
+                app,
+                CLOSE_WINDOW_MENU_ID,
+                label.unwrap_or_default(),
+                true,
+                Some(chord),
+            )?),
+            None => Box::new(PredefinedMenuItem::close_window(app, label)?),
+        },
         Entry::Undo => Box::new(PredefinedMenuItem::undo(app, label)?),
         Entry::Redo => Box::new(PredefinedMenuItem::redo(app, label)?),
         Entry::Cut => Box::new(PredefinedMenuItem::cut(app, label)?),

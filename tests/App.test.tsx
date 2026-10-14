@@ -8,7 +8,7 @@ const mocks = vi.hoisted(() => ({
   applyWindowTheme: vi.fn<(theme: "system" | "light" | "dark") => Promise<void>>(() => Promise.resolve()),
   applyLanguage: vi.fn<(language: string) => Promise<void>>(() => Promise.resolve()),
   setZoom: vi.fn<(zoom: number) => Promise<void>>(() => Promise.resolve()),
-  setAlwaysOnTop: vi.fn(() => Promise.resolve()),
+  applyTopmost: vi.fn(() => Promise.resolve()),
   setMinSize: vi.fn(() => Promise.resolve()),
   isMaximized: vi.fn(() => Promise.resolve(false)),
   isFullscreen: vi.fn(() => Promise.resolve(false)),
@@ -26,7 +26,6 @@ vi.mock("@tauri-apps/api/event", () => ({ listen: () => Promise.resolve(() => un
 vi.mock("@tauri-apps/api/window", () => ({
   currentMonitor: mocks.currentMonitor,
   getCurrentWindow: () => ({
-    setAlwaysOnTop: mocks.setAlwaysOnTop,
     setMinSize: mocks.setMinSize,
     isMaximized: mocks.isMaximized,
     isFullscreen: mocks.isFullscreen,
@@ -43,6 +42,7 @@ vi.mock("@tauri-apps/api/window", () => ({
 vi.mock("@tauri-apps/api/webview", () => ({
   getCurrentWebview: () => ({ setZoom: mocks.setZoom }),
 }));
+vi.mock("../src/services/windowTopmost", () => ({ applyTopmost: mocks.applyTopmost }));
 vi.mock("../src/services/windowTheme", () => ({
   applyWindowTheme: mocks.applyWindowTheme,
 }));
@@ -74,8 +74,8 @@ afterEach(async () => {
   mocks.applyLanguage.mockResolvedValue();
   mocks.setZoom.mockReset();
   mocks.setZoom.mockResolvedValue();
-  mocks.setAlwaysOnTop.mockReset();
-  mocks.setAlwaysOnTop.mockResolvedValue();
+  mocks.applyTopmost.mockReset();
+  mocks.applyTopmost.mockResolvedValue();
   mocks.setMinSize.mockReset();
   mocks.setMinSize.mockResolvedValue();
   mocks.logWarn.mockReset();
@@ -307,7 +307,7 @@ describe("App window-chrome results", () => {
     mocks.appState = state;
     mocks.applyWindowTheme.mockResolvedValue();
     mocks.setZoom.mockResolvedValue();
-    mocks.setAlwaysOnTop.mockRejectedValueOnce(new Error("EACCES /private/tmp/TOPMOST"));
+    mocks.applyTopmost.mockRejectedValueOnce(new Error("EACCES /private/tmp/TOPMOST"));
     const container = document.createElement("div");
     document.body.append(container);
     root = createRoot(container);
@@ -317,7 +317,7 @@ describe("App window-chrome results", () => {
     expect(document.body.textContent).toContain("Always on top could not be updated");
     expect(document.body.textContent).not.toContain("/private/tmp");
 
-    mocks.setAlwaysOnTop.mockResolvedValueOnce();
+    mocks.applyTopmost.mockResolvedValueOnce();
     mocks.appState = { ...state, settings: { ...state.settings, topmost: true } };
     await act(async () => root?.render(<App />));
     await flushEffects();

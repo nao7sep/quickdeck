@@ -63,12 +63,19 @@ pub fn open(
         return Ok(());
     }
 
+    // A main window kept on top would otherwise cover the window opened from it
+    // (window conventions, Background visibility and activation).
+    let main_on_top = app
+        .get_webview_window("main")
+        .and_then(|main| main.is_always_on_top().ok())
+        .unwrap_or(false);
     create_for_main(
         || app.get_webview_window("main").is_some(),
         || {
             WebviewWindowBuilder::new(app, LABEL, WebviewUrl::App("records.html".into()))
                 .title(title(app, language))
                 .inner_size(WIDTH, HEIGHT)
+                .always_on_top(main_on_top)
                 .visible(false)
                 .disable_drag_drop_handler()
                 .build()
@@ -135,6 +142,20 @@ pub fn notify_changed(app: &AppHandle) {
         let _ = writeln!(
             std::io::stderr(),
             "[quickdeck] records window signal failed: {error}"
+        );
+    }
+}
+
+/// Keeps the window at the main window's level when keeping main on top
+/// changes, so it stays above the window it was opened from.
+pub fn follow_topmost(app: &AppHandle, topmost: bool) {
+    let Some(window) = app.get_webview_window(LABEL) else {
+        return;
+    };
+    if let Err(error) = window.set_always_on_top(topmost) {
+        logging::warn(
+            "records window could not follow always on top",
+            json!({ "error": error.to_string() }),
         );
     }
 }

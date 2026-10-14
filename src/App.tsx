@@ -30,6 +30,7 @@ import { ShortcutsModal } from "./components/ShortcutsModal";
 import { ToastViewport } from "./components/ToastViewport";
 import { matchesShortcut } from "./shortcuts";
 import { applyWindowTheme } from "./services/windowTheme";
+import { applyTopmost } from "./services/windowTopmost";
 import { saveFailureMessage, applyLanguage } from "./services/persistence";
 import { openRecordsWindow } from "./services/records";
 import { onSessionEnding, reportSessionEndSaved, saveForQuit } from "./services/quit";
@@ -475,9 +476,8 @@ export function App() {
       return undefined;
     }
 
-    const appWindow = getCurrentWindow();
     let current = true;
-    void appWindow.setAlwaysOnTop(settings.topmost)
+    void applyTopmost(settings.topmost)
       .then(() => {
         if (current) setTopmostApplicationFailed(false);
       })

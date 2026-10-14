@@ -31,7 +31,6 @@ vi.mock("@tauri-apps/api/event", () => ({
 vi.mock("@tauri-apps/api/window", () => ({
   currentMonitor: () => Promise.resolve(null),
   getCurrentWindow: () => ({
-    setAlwaysOnTop: () => Promise.resolve(),
     setMinSize: () => Promise.resolve(),
     isMaximized: () => Promise.resolve(false),
     isFullscreen: () => Promise.resolve(false),
@@ -51,6 +50,7 @@ vi.mock("@tauri-apps/api/window", () => ({
 vi.mock("@tauri-apps/api/webview", () => ({
   getCurrentWebview: () => ({ setZoom: () => Promise.resolve() }),
 }));
+vi.mock("../src/services/windowTopmost", () => ({ applyTopmost: () => Promise.resolve() }));
 vi.mock("../src/services/windowTheme", () => ({
   applyWindowTheme: () => Promise.resolve(),
 }));

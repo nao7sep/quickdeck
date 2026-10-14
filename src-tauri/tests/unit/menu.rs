@@ -106,3 +106,11 @@ fn every_platform_has_editing_and_window_commands() {
         assert_eq!(holding(&menus, Entry::CloseWindow).len(), 2, "{platform}");
     }
 }
+
+// Cmd/Ctrl+W closes the key window on both platforms: the Mac's predefined item
+// carries Cmd+W, Windows' binds only Alt+F4, so QuickDeck's own item adds Ctrl+W.
+#[test]
+fn close_window_has_cmd_or_ctrl_w_on_both_platforms() {
+    assert_eq!(close_window_chord(true), None);
+    assert_eq!(close_window_chord(false), Some("Ctrl+W"));
+}
