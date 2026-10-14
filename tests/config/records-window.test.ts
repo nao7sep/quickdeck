@@ -107,4 +107,13 @@ describe("Records window lifecycle", () => {
     expect(open).toContain(".always_on_top(main_on_top)");
     expect(between(core, "fn apply_topmost(", "\n}\n")).toContain("records_window::follow_topmost(&app, topmost)");
   });
+
+  // The system About panel opens at the normal level, behind a main window kept
+  // on top; QuickDeck's own item opens the in-window dialog instead.
+  it("routes the native About item to the main window's own dialog", () => {
+    const menu = read("src-tauri/src/menu.rs");
+    expect(menu).not.toContain("PredefinedMenuItem::about");
+    expect(between(menu, "Entry::About => Box::new(", ")?),")).toContain("ABOUT_MENU_ID");
+    expect(between(core, "event.id() == ABOUT_MENU_ID", "}")).toContain("bring_main_forward(app)");
+  });
 });

@@ -1,12 +1,14 @@
 //! The native menu, in the interface language. It has the same items as
-//! Tauri's default menu, except that Quit (Exit on Windows) is QuickDeck's own
-//! item, routed through the main window's close so pane data is saved first.
+//! Tauri's default menu, except that three are QuickDeck's own: Quit (Exit on
+//! Windows), routed through the main window's close so pane data is saved
+//! first; About, which opens the main window's About dialog; and, on Windows,
+//! Close Window with Ctrl+W.
 //! Each platform's menu is a plain table (`layout`), compiled and tested on
 //! every platform; `build` only turns the running platform's table into native
 //! items.
 
 #[cfg(any(target_os = "macos", target_os = "windows"))]
-use tauri::menu::{AboutMetadata, IsMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};
+use tauri::menu::{IsMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};
 #[cfg(any(target_os = "macos", target_os = "windows", test))]
 use tauri::menu::{HELP_SUBMENU_ID, WINDOW_SUBMENU_ID};
 #[cfg(any(target_os = "macos", target_os = "windows"))]
@@ -17,6 +19,10 @@ use crate::i18n;
 
 pub const SAFE_QUIT_MENU_ID: &str = "quickdeck.safe-quit";
 pub const CLOSE_WINDOW_MENU_ID: &str = "quickdeck.close-window";
+/// About opens the main window's own About dialog rather than the system's
+/// About panel, which macOS shows at the normal level, behind a main window
+/// kept on top (window conventions, Background visibility and activation).
+pub const ABOUT_MENU_ID: &str = "quickdeck.about";
 
 /// The chord QuickDeck's own Close Window item carries where the predefined
 /// one lacks Cmd/Ctrl+W: on Windows it binds only Alt+F4, which still works
@@ -139,18 +145,6 @@ pub fn build(app: &AppHandle, language: &str) -> tauri::Result<Menu<Wry>> {
     let mac = cfg!(target_os = "macos");
     let name = app.package_info().name.clone();
     let text = i18n::catalogue(language);
-    let config = app.config();
-    let about = AboutMetadata {
-        name: Some(name.clone()),
-        version: Some(app.package_info().version.to_string()),
-        copyright: config.bundle.copyright.clone(),
-        authors: config
-            .bundle
-            .publisher
-            .clone()
-            .map(|publisher| vec![publisher]),
-        ..Default::default()
-    };
     let submenus = layout(mac)
         .into_iter()
         .map(|submenu| {
@@ -159,7 +153,7 @@ pub fn build(app: &AppHandle, language: &str) -> tauri::Result<Menu<Wry>> {
                 .iter()
                 .map(|&entry| {
                     let label = label_key(entry, mac).map(|key| text.text(key, &name));
-                    item(app, entry, label.as_deref(), &about)
+                    item(app, entry, label.as_deref())
                 })
                 .collect::<tauri::Result<Vec<_>>>()?;
             let items: Vec<&dyn IsMenuItem<Wry>> = items.iter().map(AsRef::as_ref).collect();
@@ -185,7 +179,6 @@ fn item(
     app: &AppHandle,
     entry: Entry,
     label: Option<&str>,
-    about: &AboutMetadata,
 ) -> tauri::Result<Box<dyn IsMenuItem<Wry>>> {
     Ok(match entry {
         Entry::Quit => Box::new(MenuItem::with_id(
@@ -195,7 +188,13 @@ fn item(
             true,
             Some("CmdOrCtrl+Q"),
         )?),
-        Entry::About => Box::new(PredefinedMenuItem::about(app, label, Some(about.clone()))?),
+        Entry::About => Box::new(MenuItem::with_id(
+            app,
+            ABOUT_MENU_ID,
+            label.unwrap_or_default(),
+            true,
+            None::<&str>,
+        )?),
         Entry::Services => Box::new(PredefinedMenuItem::services(app, label)?),
         Entry::Hide => Box::new(PredefinedMenuItem::hide(app, label)?),
         Entry::HideOthers => Box::new(PredefinedMenuItem::hide_others(app, label)?),

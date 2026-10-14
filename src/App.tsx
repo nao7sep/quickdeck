@@ -31,6 +31,7 @@ import { ToastViewport } from "./components/ToastViewport";
 import { matchesShortcut } from "./shortcuts";
 import { applyWindowTheme } from "./services/windowTheme";
 import { applyTopmost } from "./services/windowTopmost";
+import { onAboutRequested } from "./services/appMenu";
 import { saveFailureMessage, applyLanguage } from "./services/persistence";
 import { openRecordsWindow } from "./services/records";
 import { onSessionEnding, reportSessionEndSaved, saveForQuit } from "./services/quit";
@@ -367,6 +368,28 @@ export function App() {
     document.addEventListener("keydown", handler);
     return () => document.removeEventListener("keydown", handler);
   }, [setZoomLevel]);
+
+  // The native About item opens the same dialog as the in-window menu, when
+  // the window could take a keyboard command.
+  const aboutAllowedRef = useRef(false);
+  aboutAllowedRef.current = loadStatus === "ready" && !openModal && !blockingError && !quitSaveFailed;
+  useEffect(() => {
+    if (!isTauri()) return undefined;
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+    void onAboutRequested(() => {
+      if (aboutAllowedRef.current) openMenuModal("about");
+    })
+      .then((stop) => {
+        if (disposed) stop();
+        else unlisten = stop;
+      })
+      .catch((error) => logWarn("about listener failed", { error: serializeError(error) }));
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, [openMenuModal]);
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {

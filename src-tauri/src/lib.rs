@@ -17,12 +17,12 @@ pub mod window_placement;
 use std::sync::Mutex;
 
 use i18n::LanguageState;
-use menu::{CLOSE_WINDOW_MENU_ID, SAFE_QUIT_MENU_ID};
+use menu::{ABOUT_MENU_ID, CLOSE_WINDOW_MENU_ID, SAFE_QUIT_MENU_ID};
 use records::{RecordDetail, RecordSources, RecordsPage, RecordsQuery};
 use serde::Serialize;
 use serde_json::{json, Map, Value as JsonValue};
 use storage::{SaveFailure, LoadFailure, LoadedAppData, SnapshotInput, SnapshotListResult, SnapshotWriteResult};
-use tauri::{AppHandle, Manager, RunEvent, Runtime, State, Theme, WindowEvent};
+use tauri::{AppHandle, Emitter, Manager, RunEvent, Runtime, State, Theme, WindowEvent};
 use window_placement::PlacementState;
 
 // The window theme last applied, which a Records window opened later takes too.
@@ -61,6 +61,9 @@ pub(crate) fn bring_main_forward<R: Runtime>(app: &AppHandle<R>) {
         );
     }
 }
+
+// The native About item's request for the main window's own About dialog.
+const ABOUT_REQUESTED_EVENT: &str = "about-requested";
 
 // Ctrl+W on Windows closes the key window the way its close button would, so
 // the main window's close saves first and never another window
@@ -558,6 +561,12 @@ pub fn run() {
                 quit::request_quit(app);
             } else if event.id() == CLOSE_WINDOW_MENU_ID {
                 close_key_window(app);
+            } else if event.id() == ABOUT_MENU_ID {
+                // The dialog opens inside the main window, so main comes forward.
+                bring_main_forward(app);
+                if let Err(error) = app.emit_to("main", ABOUT_REQUESTED_EVENT, ()) {
+                    logging::warn("about request failed", json!({ "error": error.to_string() }));
+                }
             }
         })
         .setup(move |app| {

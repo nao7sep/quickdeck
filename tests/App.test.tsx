@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => ({
   currentMonitor: vi.fn(() => Promise.resolve(null)),
   logWarn: vi.fn(),
   openRecordsWindow: vi.fn<() => Promise<void>>(() => Promise.resolve()),
+  aboutRequested: null as (() => void) | null,
 }));
 
 vi.mock("../src/state/AppStateContext", () => ({
@@ -41,6 +42,12 @@ vi.mock("@tauri-apps/api/window", () => ({
 }));
 vi.mock("@tauri-apps/api/webview", () => ({
   getCurrentWebview: () => ({ setZoom: mocks.setZoom }),
+}));
+vi.mock("../src/services/appMenu", () => ({
+  onAboutRequested: (listener: () => void) => {
+    mocks.aboutRequested = listener;
+    return Promise.resolve(() => undefined);
+  },
 }));
 vi.mock("../src/services/windowTopmost", () => ({ applyTopmost: mocks.applyTopmost }));
 vi.mock("../src/services/windowTheme", () => ({
@@ -322,6 +329,23 @@ describe("App window-chrome results", () => {
     await act(async () => root?.render(<App />));
     await flushEffects();
     expect(document.body.textContent).not.toContain("Always on top could not be updated");
+  });
+});
+
+// The native About item opens the main window's own About dialog, which stays
+// above a main window kept on top (window conventions).
+describe("native About item", () => {
+  it("opens the in-window About dialog", async () => {
+    mocks.appState = { ...createAppState(), showToast: vi.fn() };
+    const container = document.createElement("div");
+    document.body.append(container);
+    root = createRoot(container);
+    await act(async () => root?.render(<App />));
+    await flushEffects();
+
+    await act(async () => mocks.aboutRequested?.());
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain("QuickDeck");
+    expect(document.querySelector(".modalHeader-bare")).not.toBeNull();
   });
 });
 
