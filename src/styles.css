@@ -932,8 +932,8 @@ input[type="range"]:focus-visible {
   border: 0;
   background: transparent;
   color: var(--text);
-  line-height: 1.6;
-  padding: 14px;
+  line-height: 1.5;
+  padding: 15px;
   outline: none;
   white-space: pre-wrap;
   word-break: break-word;
@@ -1049,6 +1049,12 @@ input[type="range"]:focus-visible {
   padding-bottom: 0;
   border-bottom: 0;
   background: transparent;
+}
+
+/* Its footer drops its line the same way, so the card reads as one surface. */
+.modalFooter-bare {
+  padding-top: 0;
+  border-top: 0;
 }
 
 /* The quiet close: a drawn X with no chrome at rest; hover and press reveal its
