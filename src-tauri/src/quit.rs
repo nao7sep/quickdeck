@@ -111,8 +111,11 @@ enum EndSessionStep {
     Save,
     /// The session end did not happen (another app cancelled it).
     Cancelled,
-    /// Anything else, including the session end going ahead: tao's own
-    /// handler ends the event loop, which runs the exit.
+    /// Anything else, including the session end going ahead: tao's hidden
+    /// event-target window ends the event loop, which runs the exit, and then
+    /// exits the process, whichever window hears it first. The save is already
+    /// done by then: Windows sends every window `WM_QUERYENDSESSION`, which
+    /// holds for the save, before it sends any `WM_ENDSESSION`.
     Pass,
 }
 
