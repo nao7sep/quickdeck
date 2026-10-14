@@ -1051,12 +1051,6 @@ input[type="range"]:focus-visible {
   background: transparent;
 }
 
-/* Its footer drops its line the same way, so the card reads as one surface. */
-.modalFooter-bare {
-  padding-top: 0;
-  border-top: 0;
-}
-
 /* The quiet close: a drawn X with no chrome at rest; hover and press reveal its
    hit area. It keeps the band's trailing corner even when it is the band's only
    visible child. */
@@ -1126,6 +1120,12 @@ input[type="range"]:focus-visible {
   /* Every band shares the surface's one background; only the lines separate
      them (modal-dialog-conventions: "Each band is drawn as a band"). */
   background: var(--surface);
+}
+
+/* About's footer drops its line like its header but keeps its spacing, so the
+   card reads as one surface. It must follow the rule above to override it. */
+.modalFooter-bare {
+  border-top: 0;
 }
 
 /* ── Action Buttons ──────────────────────────────────────────── */

@@ -31,6 +31,9 @@ describe("modal bands", () => {
   it("drops the header's and footer's lines when its title is hidden", () => {
     expect(rule(".modalHeader-bare")).toContain("border-bottom:0");
     expect(rule(".modalFooter-bare")).toContain("border-top:0");
+    // Same specificity, so the override must come after the line it removes.
+    expect(compact.indexOf(".modalFooter-bare{")).toBeGreaterThan(compact.lastIndexOf(".modalFooter{"));
+    expect(rule(".modalFooter-bare")).not.toContain("padding");
   });
 
   it("keeps the close control in its trailing corner", () => {
