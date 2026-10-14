@@ -60,6 +60,71 @@ fn quit_origin(event_id: Option<u32>, has_quit_reason: bool) -> QuitOrigin {
     }
 }
 
+/// How `applicationShouldTerminate:` answers a `terminate:`.
+#[cfg(any(target_os = "macos", test))]
+#[derive(Debug, PartialEq, Eq)]
+enum TerminateAnswer<T> {
+    /// Exit at once: there is no window to save, or its save could not be asked for.
+    Now,
+    /// The user's quit, which the window's close now owns.
+    Cancel,
+    /// Exit once the session-end save reports. The request that began the save
+    /// carries its report and owns the reply; a repeated request joins it.
+    Later(Option<T>),
+}
+
+#[cfg(any(target_os = "macos", test))]
+fn answer_terminate<T>(
+    has_main: bool,
+    origin: QuitOrigin,
+    route_quit: impl FnOnce(),
+    begin_save: impl FnOnce() -> Option<(T, bool)>,
+) -> TerminateAnswer<T> {
+    if !has_main {
+        return TerminateAnswer::Now;
+    }
+    match origin {
+        QuitOrigin::User => {
+            route_quit();
+            TerminateAnswer::Cancel
+        }
+        QuitOrigin::SessionEnd => match begin_save() {
+            None => TerminateAnswer::Now,
+            Some((saved, true)) => TerminateAnswer::Later(Some(saved)),
+            Some((_, false)) => TerminateAnswer::Later(None),
+        },
+    }
+}
+
+// The main window's end-session messages, by their Win32 values (checked
+// against the windows crate on Windows, tests/unit/quit.rs).
+#[cfg(any(windows, test))]
+const WM_QUERYENDSESSION: u32 = 0x0011;
+#[cfg(any(windows, test))]
+const WM_ENDSESSION: u32 = 0x0016;
+
+/// What the main window does with a message on its way to tao.
+#[cfg(any(windows, test))]
+#[derive(Debug, PartialEq, Eq)]
+enum EndSessionStep {
+    /// A logout, restart or shutdown asks whether the app may end: save first.
+    Save,
+    /// The session end did not happen (another app cancelled it).
+    Cancelled,
+    /// Anything else, including the session end going ahead: tao's own
+    /// handler ends the event loop, which runs the exit.
+    Pass,
+}
+
+#[cfg(any(windows, test))]
+fn end_session_step(message: u32, wparam: usize) -> EndSessionStep {
+    match (message, wparam) {
+        (WM_QUERYENDSESSION, _) => EndSessionStep::Save,
+        (WM_ENDSESSION, 0) => EndSessionStep::Cancelled,
+        _ => EndSessionStep::Pass,
+    }
+}
+
 /// The session-end save in flight: the window's report settles it. Once an OS
 /// session end has begun, exit skips its waits that are not the user's save.
 #[derive(Default)]
@@ -104,8 +169,14 @@ impl SessionEnd {
     }
 
     /// Whether this exit is an OS logout, restart or shutdown.
-    pub fn ending(&self) -> bool {
+    fn ending(&self) -> bool {
         self.ending.load(Ordering::Relaxed)
+    }
+
+    /// How long exit waits for pending backup history: briefly at an ordinary
+    /// quit, not at all at an OS session end (data-backup conventions).
+    pub fn backup_wait(&self) -> Option<Duration> {
+        (!self.ending()).then_some(crate::backup_store::DRAIN_WAIT)
     }
 
     /// The session end did not happen (Windows: another app cancelled it), so
@@ -123,16 +194,28 @@ impl SessionEnd {
 /// it has; `None` when there is no window to ask.
 fn begin_session_end<R: Runtime>(app: &AppHandle<R>) -> Option<(mpsc::Receiver<()>, bool)> {
     app.get_webview_window("main")?;
-    let (saved, attempt, first) = app.state::<SessionEnd>().begin();
+    ask_for_session_save(&app.state::<SessionEnd>(), |attempt| {
+        app.emit_to("main", SESSION_ENDING_EVENT, attempt)
+    })
+}
+
+/// Admits a session-end save. Only the request that begins the attempt asks
+/// the window; the bool says whether this request did. An attempt the window
+/// could not be asked for is settled at once.
+fn ask_for_session_save<E: std::fmt::Display>(
+    session_end: &SessionEnd,
+    ask_window: impl FnOnce(u32) -> Result<(), E>,
+) -> Option<(mpsc::Receiver<()>, bool)> {
+    let (saved, attempt, first) = session_end.begin();
     if !first { return Some((saved, false)); }
-    match app.emit_to("main", SESSION_ENDING_EVENT, attempt) {
+    match ask_window(attempt) {
         Ok(()) => Some((saved, true)),
         Err(error) => {
             logging::warn(
                 "session end save not requested",
                 json!({ "error": error.to_string() }),
             );
-            app.state::<SessionEnd>().finish(attempt);
+            session_end.finish(attempt);
             None
         }
     }
@@ -180,8 +263,8 @@ mod macos {
     use tauri::{AppHandle, Manager};
 
     use super::{
-        begin_session_end, log_session_save_expired, quit_origin, request_quit, QuitOrigin,
-        SESSION_SAVE_WAIT,
+        answer_terminate, begin_session_end, log_session_save_expired, quit_origin, request_quit,
+        TerminateAnswer, SESSION_SAVE_WAIT,
     };
     use crate::logging;
 
@@ -226,21 +309,19 @@ mod macos {
         let Some(app) = APP.get() else {
             return TERMINATE_NOW;
         };
-        if app.get_webview_window("main").is_none() {
-            return TERMINATE_NOW;
-        }
+        let has_main = app.get_webview_window("main").is_some();
         let (event_id, has_quit_reason) = current_quit_event();
-        match quit_origin(event_id, has_quit_reason) {
-            QuitOrigin::User => {
-                request_quit(app);
-                TERMINATE_CANCEL
-            }
-            QuitOrigin::SessionEnd => {
-                let Some((saved, first)) = begin_session_end(app) else {
-                    return TERMINATE_NOW;
-                };
-                // The first request already owns the termination reply and budget.
-                if !first { return TERMINATE_LATER; }
+        let answer = answer_terminate(
+            has_main,
+            quit_origin(event_id, has_quit_reason),
+            || request_quit(app),
+            || begin_session_end(app),
+        );
+        match answer {
+            TerminateAnswer::Now => TERMINATE_NOW,
+            TerminateAnswer::Cancel => TERMINATE_CANCEL,
+            TerminateAnswer::Later(None) => TERMINATE_LATER,
+            TerminateAnswer::Later(Some(saved)) => {
                 let app = app.clone();
                 std::thread::spawn(move || {
                     if let Err(RecvTimeoutError::Timeout) = saved.recv_timeout(SESSION_SAVE_WAIT) {
@@ -306,13 +387,15 @@ mod windows_session {
             Shell::{DefSubclassProc, SetWindowSubclass},
             WindowsAndMessaging::{
                 DispatchMessageW, MsgWaitForMultipleObjects, PeekMessageW, PostQuitMessage,
-                TranslateMessage, MSG, PM_REMOVE, QS_ALLINPUT, WM_ENDSESSION, WM_QUERYENDSESSION,
-                WM_QUIT,
+                TranslateMessage, MSG, PM_REMOVE, QS_ALLINPUT, WM_QUIT,
             },
         },
     };
 
-    use super::{begin_session_end, log_session_save_expired, SessionEnd, SESSION_SAVE_WAIT};
+    use super::{
+        begin_session_end, end_session_step, log_session_save_expired, EndSessionStep, SessionEnd,
+        SESSION_SAVE_WAIT,
+    };
     use crate::logging;
 
     const SUBCLASS_ID: usize = 1;
@@ -350,16 +433,17 @@ mod windows_session {
         _: usize,
         data: usize,
     ) -> LRESULT {
-        if message == WM_QUERYENDSESSION {
+        let step = end_session_step(message, wparam.0);
+        if step != EndSessionStep::Pass {
             // SAFETY: `data` is the AppHandle `install` leaked for this window.
             let app = unsafe { &*(data as *const AppHandle) };
-            if let Some((saved, true)) = begin_session_end(app) {
-                pump_until_saved(&saved);
+            if step == EndSessionStep::Save {
+                if let Some((saved, true)) = begin_session_end(app) {
+                    pump_until_saved(&saved);
+                }
+            } else {
+                app.state::<SessionEnd>().cancel();
             }
-        } else if message == WM_ENDSESSION && wparam.0 == 0 {
-            // SAFETY: as above.
-            let app = unsafe { &*(data as *const AppHandle) };
-            app.state::<SessionEnd>().cancel();
         }
         // SAFETY: forwards the message this subclass received.
         unsafe { DefSubclassProc(hwnd, message, wparam, lparam) }

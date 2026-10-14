@@ -611,10 +611,8 @@ pub fn run() {
             if let Some(root) = app.try_state::<paths::DataRoot>() {
                 window_placement::save(&root.0, &placement_state);
             }
-            // Pending backup history gets a short wait at an ordinary quit and
-            // none at an OS session end (data-backup conventions).
-            if !app.state::<quit::SessionEnd>().ending() {
-                backup_store::drain(backup_store::DRAIN_WAIT);
+            if let Some(wait) = app.state::<quit::SessionEnd>().backup_wait() {
+                backup_store::drain(wait);
             }
             logging::flush();
         }

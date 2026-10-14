@@ -18,6 +18,133 @@ fn a_terminate_without_a_quit_event_is_the_users() {
     assert_eq!(quit_origin(Some(u32::from_be_bytes(*b"odoc")), true), QuitOrigin::User);
 }
 
+// `applicationShouldTerminate:`'s answer, with the window's close and save
+// supplied by the test.
+fn answer(has_main: bool, origin: QuitOrigin, save: Option<(u32, bool)>) -> (TerminateAnswer<u32>, bool, bool) {
+    let routed = std::cell::Cell::new(false);
+    let saved = std::cell::Cell::new(false);
+    let answer = answer_terminate(
+        has_main,
+        origin,
+        || routed.set(true),
+        || {
+            saved.set(true);
+            save
+        },
+    );
+    (answer, routed.get(), saved.get())
+}
+
+#[test]
+fn a_terminate_with_no_main_window_exits_at_once() {
+    assert_eq!(answer(false, QuitOrigin::User, None), (TerminateAnswer::Now, false, false));
+    assert_eq!(
+        answer(false, QuitOrigin::SessionEnd, Some((1, true))),
+        (TerminateAnswer::Now, false, false)
+    );
+}
+
+#[test]
+fn the_users_quit_is_cancelled_and_routed_through_the_windows_close() {
+    assert_eq!(answer(true, QuitOrigin::User, Some((1, true))), (TerminateAnswer::Cancel, true, false));
+}
+
+#[test]
+fn an_os_session_end_waits_for_the_save_without_prompting() {
+    assert_eq!(
+        answer(true, QuitOrigin::SessionEnd, Some((7, true))),
+        (TerminateAnswer::Later(Some(7)), false, true)
+    );
+}
+
+#[test]
+fn a_repeated_session_end_request_waits_without_owning_the_reply() {
+    assert_eq!(
+        answer(true, QuitOrigin::SessionEnd, Some((7, false))),
+        (TerminateAnswer::Later(None), false, true)
+    );
+}
+
+#[test]
+fn a_session_end_whose_save_cannot_be_asked_for_exits_at_once() {
+    assert_eq!(answer(true, QuitOrigin::SessionEnd, None), (TerminateAnswer::Now, false, true));
+}
+
+#[test]
+fn windows_end_session_messages_save_cancel_or_pass_through() {
+    assert_eq!(end_session_step(WM_QUERYENDSESSION, 0), EndSessionStep::Save);
+    // ENDSESSION_CLOSEAPP and friends arrive in lParam; wParam is the answer.
+    assert_eq!(end_session_step(WM_QUERYENDSESSION, 1), EndSessionStep::Save);
+    assert_eq!(end_session_step(WM_ENDSESSION, 0), EndSessionStep::Cancelled);
+    // A session end going ahead is tao's to finish: it ends the event loop.
+    assert_eq!(end_session_step(WM_ENDSESSION, 1), EndSessionStep::Pass);
+    assert_eq!(end_session_step(0x0010 /* WM_CLOSE */, 0), EndSessionStep::Pass);
+}
+
+#[test]
+fn the_window_is_asked_once_for_each_session_end_attempt() {
+    let session_end = SessionEnd::default();
+    let mut asked = Vec::new();
+    let (saved, first) = ask_for_session_save(&session_end, |attempt| {
+        asked.push(attempt);
+        Ok::<_, String>(())
+    })
+    .unwrap();
+    assert!(first);
+    let (repeated, repeated_first) =
+        ask_for_session_save(&session_end, |_| -> Result<(), String> { panic!("asked twice") }).unwrap();
+    assert!(!repeated_first);
+    assert_eq!(asked.len(), 1);
+
+    session_end.finish(asked[0]);
+    assert!(saved.try_recv().is_ok());
+    assert!(repeated.try_recv().is_ok());
+}
+
+#[test]
+fn a_window_that_cannot_be_asked_settles_the_attempt() {
+    let session_end = SessionEnd::default();
+    assert!(ask_for_session_save(&session_end, |_| Err("no listener")).is_none());
+    // The exit goes ahead as a session end; a later request does not wait.
+    assert_eq!(session_end.backup_wait(), None);
+    let (saved, first) = ask_for_session_save(&session_end, |_| -> Result<(), String> {
+        panic!("asked again")
+    })
+    .unwrap();
+    assert!(!first);
+    assert!(saved.try_recv().is_ok());
+}
+
+// Windows: a cancelled shutdown followed by a fresh one asks the window again.
+#[test]
+fn a_cancelled_session_end_lets_the_next_one_ask_the_window_again() {
+    let session_end = SessionEnd::default();
+    let mut asked = Vec::new();
+    let _ = ask_for_session_save(&session_end, |attempt| {
+        asked.push(attempt);
+        Ok::<_, String>(())
+    });
+    session_end.cancel();
+    let (_, first) = ask_for_session_save(&session_end, |attempt| {
+        asked.push(attempt);
+        Ok::<_, String>(())
+    })
+    .unwrap();
+    assert!(first);
+    assert_eq!(asked.len(), 2);
+    assert_ne!(asked[0], asked[1]);
+}
+
+#[test]
+fn exit_waits_for_backups_only_at_an_ordinary_quit() {
+    let session_end = SessionEnd::default();
+    assert_eq!(session_end.backup_wait(), Some(crate::backup_store::DRAIN_WAIT));
+    let _ = session_end.begin();
+    assert_eq!(session_end.backup_wait(), None);
+    session_end.cancel();
+    assert_eq!(session_end.backup_wait(), Some(crate::backup_store::DRAIN_WAIT));
+}
+
 #[test]
 fn the_windows_report_settles_the_session_end_it_answers() {
     let session_end = SessionEnd::default();
@@ -101,12 +228,17 @@ fn cancellation_after_a_completed_save_allows_a_fresh_shutdown() {
 }
 
 // Windows gives each end-session message 5 s before it offers to end the app;
-// macOS documents no figure, so the same bound serves both. The backup drain
-// is skipped at an OS session end (lib.rs).
+// macOS documents no figure, so the same bound serves both. These are every
+// wait between the session end and the process ending (lib.rs, RunEvent::Exit).
 #[test]
 fn an_os_session_end_fits_under_the_kill_delay() {
     let kill_delay = Duration::from_secs(5);
-    let quit = SESSION_SAVE_WAIT + crate::window_placement::SAVE_WAIT + crate::logging::FLUSH_WAIT;
+    let session_end = SessionEnd::default();
+    let _ = session_end.begin();
+    let quit = SESSION_SAVE_WAIT
+        + crate::window_placement::SAVE_WAIT
+        + session_end.backup_wait().unwrap_or_default()
+        + crate::logging::FLUSH_WAIT;
     assert!(quit < kill_delay, "{quit:?} is not under {kill_delay:?}");
 }
 
@@ -155,6 +287,13 @@ mod windows_session_wait {
     }
 
     #[test]
+    fn the_end_session_message_values_are_the_win32_ones() {
+        use windows::Win32::UI::WindowsAndMessaging as win32;
+        assert_eq!(WM_QUERYENDSESSION, win32::WM_QUERYENDSESSION);
+        assert_eq!(WM_ENDSESSION, win32::WM_ENDSESSION);
+    }
+
+    #[test]
     fn the_wait_ends_at_its_deadline_under_continuously_posted_messages() {
         let (_report, saved) = mpsc::sync_channel::<()>(1);
         let elapsed = under_posted_messages(|| {
@@ -180,5 +319,30 @@ mod windows_session_wait {
         });
         reporter.join().unwrap();
         assert!(elapsed < SESSION_SAVE_WAIT, "{elapsed:?}");
+    }
+}
+
+// Off Windows the tests above are listed as ignored rather than left out, so a
+// run elsewhere shows what it did not cover. Run explicitly, each one fails.
+#[cfg(not(windows))]
+mod windows_session_wait {
+    const WINDOWS_ONLY: &str = "runs only on Windows";
+
+    #[test]
+    #[ignore = "Windows only: compares with the windows crate"]
+    fn the_end_session_message_values_are_the_win32_ones() {
+        panic!("{WINDOWS_ONLY}");
+    }
+
+    #[test]
+    #[ignore = "Windows only: pumps Win32 messages"]
+    fn the_wait_ends_at_its_deadline_under_continuously_posted_messages() {
+        panic!("{WINDOWS_ONLY}");
+    }
+
+    #[test]
+    #[ignore = "Windows only: pumps Win32 messages"]
+    fn the_wait_ends_when_the_save_reports() {
+        panic!("{WINDOWS_ONLY}");
     }
 }
