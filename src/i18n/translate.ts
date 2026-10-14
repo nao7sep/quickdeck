@@ -28,13 +28,15 @@ export type Translator = {
   number: (value: number) => string;
   percent: (ratio: number) => string;
   dateTime: (date: Date) => string;
+  // The zone times are shown in; undefined uses the platform's own.
+  timeZone: string | undefined;
 };
 
-export function createTranslator(language: Language, locale: string = language): Translator {
+export function createTranslator(language: Language, locale: string = language, timeZone?: string): Translator {
   const catalogue: Catalogue = loadedCatalogue(language);
   const numberFormat = new Intl.NumberFormat(locale);
   const percentFormat = new Intl.NumberFormat(locale, { style: "percent", maximumFractionDigits: 0 });
-  const dateTimeFormat = new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short" });
+  const dateTimeFormat = new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short", timeZone });
   const pluralRules = new Intl.PluralRules(language);
 
   function template(key: MessageKey, values: MessageValues | undefined): string {
@@ -84,5 +86,6 @@ export function createTranslator(language: Language, locale: string = language):
     number: (value) => numberFormat.format(value),
     percent: (ratio) => percentFormat.format(ratio),
     dateTime: (date) => dateTimeFormat.format(date),
+    timeZone,
   };
 }

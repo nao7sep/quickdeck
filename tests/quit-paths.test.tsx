@@ -56,6 +56,7 @@ vi.mock("../src/services/windowTheme", () => ({
 }));
 vi.mock("../src/services/persistence", () => ({
   applyLanguage: () => Promise.resolve(),
+  applyDisplayZone: () => Promise.resolve(),
   saveFailureMessage: (error: any) => error?.newer ? { key: "saveError.panesNewer", values: { path: error.path, version: error.newer } } : null,
 }));
 vi.mock("../src/services/records", () => ({

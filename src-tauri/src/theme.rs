@@ -47,3 +47,70 @@ pub fn apply(window: &WebviewWindow, theme: Option<Theme>) -> Result<(), String>
         .set_background_color(Some(window_background(effective)))
         .map_err(|error| error.to_string())
 }
+
+/// The OS appearance, whatever the window is set to: the Settings modal shows it
+/// as System's current value, such as "System (Dark)" (app-chrome conventions,
+/// Theme). The window's own theme cannot say, since a saved Light or Dark sets
+/// the app's appearance too.
+pub fn os_theme() -> Theme {
+    #[cfg(target_os = "macos")]
+    {
+        use objc2_foundation::{NSString, NSUserDefaults};
+        let style = NSUserDefaults::standardUserDefaults()
+            .stringForKey(&NSString::from_str("AppleInterfaceStyle"))
+            .map(|style| style.to_string());
+        mac_theme(style.as_deref())
+    }
+    #[cfg(windows)]
+    {
+        windows_theme(apps_use_light_theme())
+    }
+    #[cfg(not(any(target_os = "macos", windows)))]
+    {
+        Theme::Light
+    }
+}
+
+/// macOS records a dark appearance, including Auto while it is dark, as
+/// AppleInterfaceStyle "Dark"; light has no value.
+#[cfg(any(target_os = "macos", test))]
+fn mac_theme(style: Option<&str>) -> Theme {
+    if style == Some("Dark") { Theme::Dark } else { Theme::Light }
+}
+
+/// Windows records the apps' appearance as AppsUseLightTheme, 0 for dark; a
+/// missing value is light, Windows' default.
+#[cfg(any(windows, test))]
+fn windows_theme(apps_use_light_theme: Option<u32>) -> Theme {
+    if apps_use_light_theme == Some(0) { Theme::Dark } else { Theme::Light }
+}
+
+#[cfg(windows)]
+fn apps_use_light_theme() -> Option<u32> {
+    use windows::{
+        core::w,
+        Win32::{
+            Foundation::ERROR_SUCCESS,
+            System::Registry::{RegGetValueW, HKEY_CURRENT_USER, RRF_RT_REG_DWORD},
+        },
+    };
+    let mut value = 0u32;
+    let mut size = std::mem::size_of::<u32>() as u32;
+    // SAFETY: reads one DWORD into `value`, whose size `size` states.
+    let status = unsafe {
+        RegGetValueW(
+            HKEY_CURRENT_USER,
+            w!("Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize"),
+            w!("AppsUseLightTheme"),
+            RRF_RT_REG_DWORD,
+            None,
+            Some(&mut value as *mut u32 as *mut core::ffi::c_void),
+            Some(&mut size),
+        )
+    };
+    (status == ERROR_SUCCESS).then_some(value)
+}
+
+#[cfg(test)]
+#[path = "../tests/unit/theme.rs"]
+mod tests;

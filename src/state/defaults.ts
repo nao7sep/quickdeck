@@ -12,6 +12,7 @@ export const defaultSettings: AppSettings = {
   zen: false,
   topmost: false,
   uiFontFamily: "",
+  displayZone: "system",
   editorFontFamily: "",
   editorFontSize: 15,
   editorLineHeight: 1.5,

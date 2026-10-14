@@ -58,6 +58,7 @@ export type RecordSources = { currentSession: string; sessions: string[] };
 export type RecordsWindowSetup = {
   language: string;
   systemLocale: string | null;
+  displayZone: string;
   listWidth: number | null;
 };
 
@@ -89,6 +90,7 @@ export function readRecordSources(): Promise<RecordSources> {
 // The event names the Rust core sends the window (src-tauri/src/records_window.rs).
 const RECORDS_CHANGED_EVENT = "records-changed";
 const LANGUAGE_EVENT = "records-language";
+const DISPLAY_ZONE_EVENT = "records-display-zone";
 
 // Calls `listener` after each record the database stored. Returns the unsubscribe.
 export function onRecordsChanged(listener: () => void): () => void {
@@ -98,6 +100,11 @@ export function onRecordsChanged(listener: () => void): () => void {
 // Calls `listener` with the language tag when a saved change moves it.
 export function onLanguageChanged(listener: (language: string) => void): () => void {
   return subscribe(LANGUAGE_EVENT, listen<string>(LANGUAGE_EVENT, (event) => listener(event.payload)));
+}
+
+// Calls `listener` with the display zone setting when a saved change moves it.
+export function onDisplayZoneChanged(listener: (zone: string) => void): () => void {
+  return subscribe(DISPLAY_ZONE_EVENT, listen<string>(DISPLAY_ZONE_EVENT, (event) => listener(event.payload)));
 }
 
 // A listener registers asynchronously; one unsubscribed before that settles is

@@ -29,6 +29,7 @@ vi.mock("../../src/services/records", async (importOriginal) => ({
       mocks.languageChanged = null;
     };
   },
+  onDisplayZoneChanged: () => () => undefined,
   onRecordsChanged: () => () => undefined,
   readRecordsPage: () => Promise.resolve({ records: [], more: false }),
   readRecordSources: () => Promise.resolve({ currentSession: "s", sessions: [] }),
@@ -115,14 +116,14 @@ describe("RecordsApp", () => {
     await mount();
     expect(document.body.textContent).toBe("");
 
-    await act(async () => resolve({ language: "ja", systemLocale: "ja-JP", listWidth: 500 }));
+    await act(async () => resolve({ language: "ja", systemLocale: "ja-JP", displayZone: "system", listWidth: 500 }));
     await settleUntilText("すべての起動");
     expect(listWidth()).toBe("500px");
     expect(document.documentElement.lang).toBe("ja");
   });
 
   it("sets the window minimum derived from its panes", async () => {
-    mocks.setup.mockResolvedValue({ language: "en", systemLocale: null, listWidth: null });
+    mocks.setup.mockResolvedValue({ language: "en", systemLocale: null, displayZone: "system", listWidth: null });
     await mount();
     expect(mocks.setMinSize).toHaveBeenCalledWith(
       expect.objectContaining({ width: RECORDS_WINDOW_MIN_WIDTH, height: RECORDS_WINDOW_MIN_HEIGHT }),
@@ -131,7 +132,7 @@ describe("RecordsApp", () => {
   });
 
   it("follows a language saved in the main window", async () => {
-    mocks.setup.mockResolvedValue({ language: "en", systemLocale: null, listWidth: null });
+    mocks.setup.mockResolvedValue({ language: "en", systemLocale: null, displayZone: "system", listWidth: null });
     await mount();
     expect(document.body.textContent).toContain("All launches");
 
@@ -155,7 +156,7 @@ describe("RecordsApp", () => {
   }
 
   it("shows the latest language when an earlier one's catalogue loads last", async () => {
-    mocks.setup.mockResolvedValue({ language: "en", systemLocale: null, listWidth: null });
+    mocks.setup.mockResolvedValue({ language: "en", systemLocale: null, displayZone: "system", listWidth: null });
     await mount();
     const releaseJapanese = hold("ja");
     await act(async () => mocks.languageChanged!("ja"));
@@ -171,7 +172,7 @@ describe("RecordsApp", () => {
     mocks.setup.mockReturnValue(new Promise((res) => (resolve = res)));
     await mount();
     await act(async () => mocks.languageChanged!("de"));
-    await act(async () => resolve({ language: "ja", systemLocale: "ja-JP", listWidth: 500 }));
+    await act(async () => resolve({ language: "ja", systemLocale: "ja-JP", displayZone: "system", listWidth: 500 }));
     await settleUntilText("Alle Starts");
     expect(document.documentElement.lang).toBe("de");
     expect(listWidth()).toBe("500px");
@@ -183,7 +184,7 @@ describe("RecordsApp", () => {
     await mount();
     await act(async () => root?.unmount());
     root = null;
-    await act(async () => resolve({ language: "ja", systemLocale: "ja-JP", listWidth: 500 }));
+    await act(async () => resolve({ language: "ja", systemLocale: "ja-JP", displayZone: "system", listWidth: 500 }));
     await act(async () => new Promise((resolve) => setTimeout(resolve, 50)));
     expect(document.body.textContent).toBe("");
     expect(mocks.languageChanged).toBeNull();

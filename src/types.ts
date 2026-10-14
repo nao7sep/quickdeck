@@ -29,6 +29,8 @@ export type AppSettings = {
   // UI (chrome) font family. Family only; blank = the built-in default stack (the styles.css
   // --font-ui variable). Distinct from editorFontFamily, which is the pane editor's content font.
   uiFontFamily: string;
+  // The zone times are shown in: "system" or an IANA zone (src/utils/timeZone.ts).
+  displayZone: string;
   // The pane editor's content font family — the surface the user writes in, so it carries the full
   // per-app-chrome-conventions content-font set: family, size, line-height, padding, and the
   // weight/slant/underline decorations. Family only; blank = the built-in fixed-width stack

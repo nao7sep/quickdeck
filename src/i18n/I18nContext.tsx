@@ -9,13 +9,15 @@ const I18nContext = createContext<Translator>(createTranslator("en"));
 export function I18nProvider({
   language,
   locale,
+  timeZone,
   children,
 }: {
   language: Language;
   locale: string;
+  timeZone?: string;
   children: ReactNode;
 }) {
-  const translator = useMemo(() => createTranslator(language, locale), [language, locale]);
+  const translator = useMemo(() => createTranslator(language, locale, timeZone), [language, locale, timeZone]);
 
   // <html lang> picks the right glyphs for Chinese, Japanese and Korean text and
   // tells the last-resort error boundary, which sits outside this provider,

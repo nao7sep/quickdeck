@@ -10,6 +10,7 @@ import { defaultSettings } from "./defaults";
 import { singleLine } from "../utils/textCleanup";
 import { normalizeLanguagePreference } from "../i18n/languages";
 import { normalizeThemePreference } from "../utils/theme";
+import { isDisplayZone } from "../utils/timeZone";
 import { ZOOM_DEFAULT, ZOOM_MAX, ZOOM_MIN } from "../utils/zoom";
 
 // Inclusive bounds for the numeric settings: the Settings form's input min/max
@@ -61,6 +62,7 @@ export function normalizeSettings(settings: AppSettings): AppSettings {
     zen: settings.zen,
     topmost: settings.topmost,
     uiFontFamily: singleLine(settings.uiFontFamily),
+    displayZone: settings.displayZone,
     editorFontFamily: singleLine(settings.editorFontFamily),
     editorFontSize: settings.editorFontSize,
     editorLineHeight: settings.editorLineHeight,
@@ -108,6 +110,7 @@ function shapedSet(key: keyof ConfigSets, value: unknown): boolean {
   const builtIn = settingsBySet(defaultSettings)[key];
   if (key === "language") return typeof value === "string" && normalizeLanguagePreference(value) === value;
   if (key === "theme") return typeof value === "string" && normalizeThemePreference(value) === value;
+  if (key === "displayZone") return isDisplayZone(value);
   if (key === "editorFont") {
     if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
     const source = value as Record<string, unknown>;

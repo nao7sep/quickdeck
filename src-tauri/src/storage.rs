@@ -248,6 +248,7 @@ pub fn config_to_write(data_dir: &Path, sets: JsonValue) -> Result<ConfigToWrite
         "zen",
         "topmost",
         "uiFontFamily",
+        "displayZone",
         "autosaveDelaySeconds",
         "snapshotSearchPageSize",
         "editorFont",

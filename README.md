@@ -10,6 +10,7 @@ Write in several plain-text panes side by side, and bring back earlier text from
 - Zen mode that focuses a single pane, and an always-on-top toggle
 - An interface in English, Japanese, Chinese, Korean, Spanish, Portuguese, French, German, Italian, and Russian that follows the computer's language by default
 - Light and dark themes that follow the system by default, persistent zoom (50–500%), and configurable UI and editor fonts
+- Snapshot and record times shown in the computer's time zone by default, or in a zone chosen in Settings
 - Fully keyboard-navigable menus and modals
 - A Records window that shows QuickDeck's own log, newest first and updating live, filtered by level, launch, or search
 

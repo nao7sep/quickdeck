@@ -162,6 +162,23 @@ export async function applyLanguage(language: string): Promise<void> {
   await invoke("apply_language", { language });
 }
 
+// Tells the Rust core the display zone, which an open Records window follows.
+export async function applyDisplayZone(zone: string): Promise<void> {
+  if (!isTauri()) {
+    return;
+  }
+
+  await invoke("apply_display_zone", { zone });
+}
+
+// The OS appearance, which Settings shows as System's current value.
+export async function systemTheme(): Promise<"light" | "dark"> {
+  if (!isTauri()) {
+    return window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  }
+  return (await invoke<string>("system_theme")) === "dark" ? "dark" : "light";
+}
+
 // Each store's writes are serialized through its own queue so a close-triggered
 // save always waits for an in-flight autosave of the same file to finish before
 // its own write starts — the file's final content then always reflects the more

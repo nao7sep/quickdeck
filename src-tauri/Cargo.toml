@@ -58,10 +58,11 @@ objc2 = "0.6.5"
 objc2-foundation = { version = "0.3.2", default-features = false, features = ["std", "NSArray", "NSDictionary", "NSObject", "NSString", "NSUserDefaults"] }
 
 # The main window's WM_QUERYENDSESSION, which tao leaves unanswered, so an OS
-# logout or shutdown reaches the quit save (src/quit.rs). The same release
-# Tauri already builds.
+# logout or shutdown reaches the quit save (src/quit.rs), and the apps'
+# appearance Settings shows for System (src/theme.rs). The same release Tauri
+# already builds.
 [target.'cfg(windows)'.dependencies]
-windows = { version = "0.62.2", features = ["Win32_Foundation", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
+windows = { version = "0.62.2", features = ["Win32_Foundation", "Win32_System_Registry", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
 
 # The session-end wait's test posts thread messages to itself (tests/unit/quit.rs).
 [target.'cfg(windows)'.dev-dependencies]

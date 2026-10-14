@@ -41,6 +41,7 @@ import {
 } from "../services/persistence";
 import { awaitStartup, STARTUP_LOAD_BOUND_MS } from "../services/startup";
 import { logError, logInfo, logWarn, serializeError, setDebugEnabled } from "../services/logger";
+import { resolveTimeZone } from "../utils/timeZone";
 import { I18nProvider } from "../i18n/I18nContext";
 import {
   effectiveLanguage,
@@ -69,6 +70,8 @@ type AppStateContextValue = {
   // The interface language: the saved choice, with System resolved to the
   // computer's language.
   language: Language;
+  // The computer's language, which Settings shows as System's current value.
+  systemLanguage: Language;
   // The webview zoom — session state (state.json), not a setting, so it rides
   // beside `settings` rather than inside it (persisted-store-separation).
   zoomLevel: number;
@@ -138,7 +141,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const [language, setLanguage] = useState<Language>("en");
   const chosenLanguage = effectiveLanguage(settings.language, systemLanguage);
   const locale = formattingLocale(language, systemLocale);
-  const translator = useMemo(() => createTranslator(language, locale), [language, locale]);
+  const timeZone = resolveTimeZone(settings.displayZone);
+  const translator = useMemo(() => createTranslator(language, locale, timeZone), [language, locale, timeZone]);
   const panesRef = useRef(panes);
   // Monotonic counter bumped on every edit. saveNow snapshots the value at the
   // start of a save and only flips back to "saved" when the counter has not
@@ -689,6 +693,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       activePane,
       settings,
       language,
+      systemLanguage,
       zoomLevel,
       saveState,
       toasts,
@@ -737,6 +742,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       loadStatus,
       movePane,
       language,
+      systemLanguage,
       panes,
       recordSnapshot,
       resetCorruptPanes,
@@ -760,7 +766,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
 
   return (
     <AppStateContext.Provider value={value}>
-      <I18nProvider language={language} locale={locale}>
+      <I18nProvider language={language} locale={locale} timeZone={timeZone}>
         {children}
       </I18nProvider>
     </AppStateContext.Provider>

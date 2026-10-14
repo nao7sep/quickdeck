@@ -1,9 +1,11 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useAppState } from "../state/AppStateContext";
 import type { AppSettings } from "../types";
 import { SETTINGS_BOUNDS, isSettingsDraftValid, normalizeSettings } from "../state/normalize";
 import { DEFAULT_EDITOR_FONT_FAMILY_STACK } from "../state/defaults";
 import { THEME_PREFERENCES } from "../utils/theme";
+import { SYSTEM_ZONE, systemTimeZone, timeZones } from "../utils/timeZone";
+import { systemTheme } from "../services/persistence";
 import { useI18n } from "../i18n/I18nContext";
 import { LANGUAGES, LANGUAGE_NAMES, normalizeLanguagePreference } from "../i18n/languages";
 import { ConfirmCloseModal } from "./ConfirmCloseModal";
@@ -14,7 +16,7 @@ type SettingsModalProps = {
 };
 
 export function SettingsModal({ onClose }: SettingsModalProps) {
-  const { settings, updateSettings } = useAppState();
+  const { settings, updateSettings, systemLanguage } = useAppState();
   const i18n = useI18n();
   const { t } = i18n;
   const [draft, setDraft] = useState<AppSettings>(settings);
@@ -26,6 +28,25 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
   }, [draft, settings]);
 
   const isValid = useMemo(() => isSettingsDraftValid(draft), [draft]);
+  const zones = useMemo(() => timeZones(), []);
+  // Every System entry shows what it resolves to now (app-chrome and timestamp
+  // conventions). The OS appearance comes from the Rust core: a saved Light or
+  // Dark sets the page's own appearance, so the page cannot tell.
+  const [osTheme, setOsTheme] = useState<"light" | "dark" | null>(null);
+  useEffect(() => {
+    let current = true;
+    void systemTheme().then(
+      (theme) => {
+        if (current) setOsTheme(theme);
+      },
+      () => undefined,
+    );
+    return () => {
+      current = false;
+    };
+  }, []);
+  const systemWith = (system: string, value: string | null) =>
+    value === null ? system : t("settings.systemResolved", { system, value });
 
   function requestClose() {
     if (confirmingClose) {
@@ -80,10 +101,25 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
               value={draft.language}
               onChange={(event) => setField("language", normalizeLanguagePreference(event.target.value))}
             >
-              <option value="system">{t("settings.languageSystem")}</option>
+              <option value="system">
+                {systemWith(t("settings.languageSystem"), LANGUAGE_NAMES[systemLanguage])}
+              </option>
               {LANGUAGES.map((language) => (
                 <option key={language} value={language} lang={language}>
                   {LANGUAGE_NAMES[language]}
+                </option>
+              ))}
+            </select>
+          </label>
+          {/* Zones are chosen from the platform's list, never typed
+              (timestamp-conventions, Time zones). */}
+          <label>
+            <span>{t("settings.timeZone")}</span>
+            <select value={draft.displayZone} onChange={(event) => setField("displayZone", event.target.value)}>
+              <option value={SYSTEM_ZONE}>{systemWith(t("settings.timeZoneSystem"), systemTimeZone())}</option>
+              {zones.map((zone) => (
+                <option key={zone} value={zone}>
+                  {zone}
                 </option>
               ))}
             </select>
@@ -103,7 +139,11 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
                     checked={draft.theme === value}
                     onChange={() => setField("theme", value)}
                   />
-                  <span>{t(label)}</span>
+                  <span>
+                    {value === "system"
+                      ? systemWith(t(label), osTheme === null ? null : t(osTheme === "dark" ? "settings.themeDark" : "settings.themeLight"))
+                      : t(label)}
+                  </span>
                 </label>
               ))}
             </div>

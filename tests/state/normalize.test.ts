@@ -36,6 +36,7 @@ describe("normalizeSettings", () => {
       "zen",
       "topmost",
       "uiFontFamily",
+      "displayZone",
       "editorFontFamily",
       "editorFontSize",
       "editorLineHeight",
@@ -167,6 +168,9 @@ describe("settingsShapeIssues", () => {
 
   it("flags wrong-typed and out-of-range present sets", () => {
     expect(settingsShapeIssues({ ...defaultSettings, theme: true })).toEqual(["theme is invalid"]);
+    // A zone is System or one from the platform's list, never a typed abbreviation.
+    expect(settingsShapeIssues({ displayZone: "Asia/Tokyo" })).toEqual([]);
+    expect(settingsShapeIssues({ displayZone: "JST" })).toEqual(["displayZone is invalid"]);
     expect(settingsShapeIssues({ autosaveDelaySeconds: 0 })).toEqual(["autosaveDelaySeconds is invalid"]);
     // The retired "dark" key is an unknown key, dropped rather than treated as corruption.
     expect(settingsShapeIssues({ ...defaultSettings, dark: true })).toEqual([]);

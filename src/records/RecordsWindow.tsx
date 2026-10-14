@@ -72,7 +72,7 @@ function rowKey(id: number): string {
 }
 
 export function RecordsWindow({ initialListWidth }: { initialListWidth: number }) {
-  const { t, locale } = useI18n();
+  const { t, locale, timeZone } = useI18n();
   const [sources, setSources] = useState<RecordSources | null>(null);
   const [sourceReads, setSourceReads] = useState(0);
   const [filters, setFilters] = useState<Filters>(NO_FILTERS);
@@ -104,7 +104,10 @@ export function RecordsWindow({ initialListWidth }: { initialListWidth: number }
     max: RECORDS_LIST_WIDTH.max,
   });
 
-  const timeFormat = useMemo(() => new Intl.DateTimeFormat(locale, { dateStyle: "short", timeStyle: "medium" }), [locale]);
+  const timeFormat = useMemo(
+    () => new Intl.DateTimeFormat(locale, { dateStyle: "short", timeStyle: "medium", timeZone }),
+    [locale, timeZone],
+  );
 
   useEffect(() => {
     priorNewestRef.current = list.status === "ready" ? list.records[0] ?? null : null;
@@ -480,7 +483,7 @@ function RecordDetailView({
   record: RecordDetail;
   launchLabel: (session: string) => string;
 }) {
-  const { t, locale } = useI18n();
+  const { t, locale, timeZone } = useI18n();
   const timeFormat = useMemo(
     () =>
       new Intl.DateTimeFormat(locale, {
@@ -491,8 +494,9 @@ function RecordDetailView({
         minute: "2-digit",
         second: "2-digit",
         fractionalSecondDigits: 3,
+        timeZone,
       }),
-    [locale],
+    [locale, timeZone],
   );
   const time = formatStoredTime(record.time, timeFormat);
   const level = knownLevel(record.level);

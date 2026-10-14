@@ -160,6 +160,18 @@ pub fn follow_topmost(app: &AppHandle, topmost: bool) {
     }
 }
 
+/// Sent to the window, with the display zone setting, when a saved change moves it.
+pub const DISPLAY_ZONE_EVENT: &str = "records-display-zone";
+
+/// Follows a saved change of the display zone.
+pub fn follow_display_zone(app: &AppHandle, zone: &str) -> Result<(), String> {
+    if app.get_webview_window(LABEL).is_none() {
+        return Ok(());
+    }
+    app.emit_to(LABEL, DISPLAY_ZONE_EVENT, zone)
+        .map_err(|error| error.to_string())
+}
+
 /// Follows a saved change of the interface language: the title and the page.
 pub fn follow_language(app: &AppHandle, language: &'static str) -> Result<(), String> {
     let Some(window) = app.get_webview_window(LABEL) else {

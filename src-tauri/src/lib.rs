@@ -44,6 +44,28 @@ impl WindowTheme {
     }
 }
 
+// The display zone setting ("system" or an IANA zone), which the Records window
+// formats its times in; each webview resolves System itself.
+struct DisplayZone(Mutex<String>);
+
+impl DisplayZone {
+    fn get(&self) -> String {
+        self.0.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).clone()
+    }
+
+    fn set(&self, zone: String) {
+        *self.0.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = zone;
+    }
+}
+
+// The display zone saved in a config.json body; System when there is none.
+fn saved_display_zone(config: Option<&str>) -> String {
+    config
+        .and_then(storage::launch_config)
+        .and_then(|value| value.get("displayZone")?.as_str().map(str::to_owned))
+        .unwrap_or_else(|| "system".to_owned())
+}
+
 // Activating the app — a second launch, or the macOS Dock — brings the main
 // window back, whatever the Records window is doing.
 pub(crate) fn bring_main_forward<R: Runtime>(app: &AppHandle<R>) {
@@ -165,6 +187,25 @@ fn apply_theme(
         },
         |_| json!({}),
     )
+}
+
+// The OS appearance, which Settings shows as System's current value.
+#[tauri::command]
+fn system_theme() -> &'static str {
+    match theme::os_theme() {
+        Theme::Dark => "dark",
+        _ => "light",
+    }
+}
+
+// Follows a saved change of the display zone in an open Records window.
+#[tauri::command]
+fn apply_display_zone(app: AppHandle, display_zone: State<DisplayZone>, zone: String) -> Result<(), String> {
+    if display_zone.get() == zone {
+        return Ok(());
+    }
+    display_zone.set(zone.clone());
+    records_window::follow_display_zone(&app, &zone)
 }
 
 // Keeps the main window on top or not, and an open Records window with it, so
@@ -423,6 +464,7 @@ async fn open_records_window(
 struct RecordsWindowSetup {
     language: &'static str,
     system_locale: Option<String>,
+    display_zone: String,
     list_width: Option<f64>,
 }
 
@@ -437,6 +479,7 @@ async fn records_window_setup(app: AppHandle) -> Result<RecordsWindowSetup, Stri
                 Ok(RecordsWindowSetup {
                     language: language.current(),
                     system_locale: language.system_locale.clone(),
+                    display_zone: app.state::<DisplayZone>().get(),
                     list_width: storage::records_list_width(&app)?,
                 })
             },
@@ -526,11 +569,13 @@ pub fn run() {
     let config_path = paths::data_dir_before_launch().map(|dir| dir.join(storage::CONFIG_FILE_NAME));
     let config = startup::saved_config(config_path);
     let saved_theme = config.as_deref().and_then(theme::saved_window_theme);
+    let display_zone = saved_display_zone(config.as_deref());
     let language = LanguageState::detect(config.as_deref());
     #[cfg(target_os = "macos")]
     i18n::align_appkit(language.current());
     let app = tauri::Builder::default()
         .manage(language)
+        .manage(DisplayZone(Mutex::new(display_zone)))
         .manage(managed_placement_state)
         .manage(quit::SessionEnd::default())
         .manage(storage::SnapshotConnection::default())
@@ -602,6 +647,8 @@ pub fn run() {
             apply_language,
             apply_theme,
             apply_topmost,
+            apply_display_zone,
+            system_theme,
             launch_language,
             load_app_data,
             open_records_window,
