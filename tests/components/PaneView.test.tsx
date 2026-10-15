@@ -5,11 +5,20 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Pane } from "../../src/types";
 
 const mocks = vi.hoisted(() => ({
-  getTextCounts: vi.fn(() => ({ words: 0, chars: 0, xWeightedChars: 0, xLimit: 280, xValid: true })),
+  countText: vi.fn((text: string) =>
+    Promise.resolve({ words: text.split(" ").length, chars: text.length, xWeightedChars: text.length, xLimit: 280, xValid: true })),
   recordSnapshot: vi.fn(),
+  logWarn: vi.fn(),
 }));
 
-vi.mock("../../src/utils/counts", () => ({ getTextCounts: mocks.getTextCounts }));
+vi.mock("../../src/services/textCounts", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../src/services/textCounts")>()),
+  countText: mocks.countText,
+}));
+vi.mock("../../src/services/logger", () => ({
+  logWarn: mocks.logWarn,
+  serializeError: (error: unknown) => ({ message: String(error) }),
+}));
 
 const settings = {
   zen: false,
@@ -47,7 +56,8 @@ afterEach(async () => {
   root = null;
   if (container) document.body.removeChild(container);
   container = null;
-  mocks.getTextCounts.mockClear();
+  mocks.countText.mockClear();
+  mocks.logWarn.mockClear();
   mocks.recordSnapshot.mockClear();
 });
 
@@ -61,10 +71,10 @@ function pane(content: string): Pane {
   };
 }
 
-// QD-4: counts must be recomputed only when this pane's own content changes,
-// not on every re-render caused by unrelated state elsewhere in the app (the
-// AppStateContext value's identity changes on every keystroke in any pane).
-describe("PaneView counts memoization", () => {
+// Counts are made only when this pane's own content changes, not on every
+// re-render caused by unrelated state elsewhere in the app (the AppStateContext
+// value's identity changes on every keystroke in any pane), and off the UI thread.
+describe("PaneView counts", () => {
   it("does not recompute counts when the pane object is re-rendered with unchanged content", async () => {
     container = document.createElement("div");
     document.body.appendChild(container);
@@ -72,12 +82,12 @@ describe("PaneView counts memoization", () => {
 
     const paneA = pane("hello world");
     await act(async () => root?.render(<PaneView pane={paneA} />));
-    expect(mocks.getTextCounts).toHaveBeenCalledTimes(1);
+    expect(mocks.countText).toHaveBeenCalledTimes(1);
 
     // Re-render with the SAME pane reference and content, as happens when a
     // sibling pane's edit changes context identity but not this pane's data.
     await act(async () => root?.render(<PaneView pane={paneA} />));
-    expect(mocks.getTextCounts).toHaveBeenCalledTimes(1);
+    expect(mocks.countText).toHaveBeenCalledTimes(1);
   });
 
   it("recomputes counts when this pane's own content changes", async () => {
@@ -86,10 +96,33 @@ describe("PaneView counts memoization", () => {
     root = createRoot(container);
 
     await act(async () => root?.render(<PaneView pane={pane("hello")} />));
-    expect(mocks.getTextCounts).toHaveBeenCalledTimes(1);
+    expect(mocks.countText).toHaveBeenCalledTimes(1);
 
     await act(async () => root?.render(<PaneView pane={pane("hello there")} />));
-    expect(mocks.getTextCounts).toHaveBeenCalledTimes(2);
+    expect(mocks.countText).toHaveBeenCalledTimes(2);
+    expect(container.querySelector(".paneFooter")?.textContent).toContain("Words 2");
+  });
+
+  it("keeps the editor live while a count is still running, showing a dash", async () => {
+    mocks.countText.mockImplementationOnce(() => new Promise(() => undefined));
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    await act(async () => root?.render(<PaneView pane={pane("hello")} />));
+    expect(container.querySelector(".paneFooter")?.textContent).toContain("Words –");
+    expect((container.querySelector("textarea.paneEditor") as HTMLTextAreaElement).value).toBe("hello");
+  });
+
+  it("shows a dash and logs when a count fails, never throwing", async () => {
+    mocks.countText.mockImplementationOnce(() => Promise.reject(new Error("out of memory")));
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    await act(async () => root?.render(<PaneView pane={pane("hello")} />));
+    expect(container.querySelector(".paneFooter")?.textContent).toContain("X –/280");
+    expect(mocks.logWarn).toHaveBeenCalledWith("pane count failed", expect.anything());
   });
 });
 

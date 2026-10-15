@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useRef, type CSSProperties } from "react";
+import { useEffect, useRef, type CSSProperties } from "react";
 import { Trash2 } from "lucide-react";
 import type { Pane } from "../types";
 import { useAppState } from "../state/AppStateContext";
-import { getTextCounts } from "../utils/counts";
+import { X_LIMIT } from "../utils/counts";
+import { useTextCounts } from "../hooks/useTextCounts";
 import { darkPaneBackground, paneHeaderDeep } from "../utils/paneColors";
 import { shouldPullEditorFocus } from "../utils/paneFocus";
 import { panePanelDomId } from "../utils/paneDomIds";
@@ -30,12 +31,11 @@ export function PaneView({ pane }: PaneViewProps) {
   const titleRef = useRef<HTMLInputElement | null>(null);
   const pendingPasteSnapshotRef = useRef(false);
   const active = pane.id === activePaneId;
-  // Word/char/X-weighted counts are O(this pane's content length) — a full word
-  // split, a full-string Array.from, and a full twitter-text parse. Every pane
-  // shares the AppStateContext value, whose identity changes on any keystroke in
-  // any pane, so without this memo every open pane redid that work on every
-  // keystroke, not just the one being edited.
-  const counts = useMemo(() => getTextCounts(pane.content), [pane.content]);
+  // Word, character and X counts are O(this pane's content length), so they are
+  // made off the UI thread and only when this pane's own text changes; the
+  // footer shows the latest finished ones.
+  const counts = useTextCounts(pane.content);
+  const shown = counts === null || counts === "failed" ? null : counts;
 
   // When this pane becomes active, pull focus into the textarea so Cmd/Ctrl+Arrow
   // and click-to-edit land ready to type — but never steal focus from a control
@@ -144,11 +144,12 @@ export function PaneView({ pane }: PaneViewProps) {
         }}
       />
       <footer className="paneFooter">
-        <span>{t("pane.words", { count: counts.words })}</span>
-        <span>{t("pane.chars", { count: counts.chars })}</span>
+        {/* A dash stands in until the first count arrives or when one fails. */}
+        <span>{t("pane.words", { count: shown === null ? "–" : shown.words })}</span>
+        <span>{t("pane.chars", { count: shown === null ? "–" : shown.chars })}</span>
         {/* "X" is the service's name, so it stays as it is in every language. */}
-        <span className={counts.xValid ? undefined : "countOverLimit"}>
-          X {i18n.number(counts.xWeightedChars)}/{i18n.number(counts.xLimit)}
+        <span className={shown === null || shown.xValid ? undefined : "countOverLimit"}>
+          X {shown === null ? "–" : i18n.number(shown.xWeightedChars)}/{i18n.number(X_LIMIT)}
         </span>
       </footer>
     </section>

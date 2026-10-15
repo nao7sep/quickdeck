@@ -1,6 +1,9 @@
 import twitterText from "twitter-text";
 import type { TextCounts } from "../types";
 
+// X's limit in weighted characters.
+export const X_LIMIT = 280;
+
 export function getTextCounts(text: string): TextCounts {
   const trimmed = text.trim();
   const words = trimmed.length === 0 ? 0 : trimmed.split(/\s+/).length;
@@ -11,7 +14,7 @@ export function getTextCounts(text: string): TextCounts {
     words,
     chars,
     xWeightedChars: parsedTweet.weightedLength,
-    xLimit: 280,
+    xLimit: X_LIMIT,
     xValid: parsedTweet.valid,
   };
 }
