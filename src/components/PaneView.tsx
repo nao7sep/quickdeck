@@ -32,8 +32,8 @@ export function PaneView({ pane }: PaneViewProps) {
   const pendingPasteSnapshotRef = useRef(false);
   const active = pane.id === activePaneId;
   // Word, character and X counts are O(this pane's content length), so they are
-  // made off the UI thread and only when this pane's own text changes; the
-  // footer shows the latest finished ones.
+  // made off the UI thread once typing in this pane pauses; the footer shows the
+  // latest finished ones.
   const counts = useTextCounts(pane.content);
   const shown = counts === null || counts === "failed" ? null : counts;
 
