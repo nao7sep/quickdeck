@@ -15,6 +15,9 @@ vi.mock("../../src/services/textCounts", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../src/services/textCounts")>()),
   countText: mocks.countText,
 }));
+// The limit itself is tested in tests/utils/spellCheck.test.ts; jsdom is slow
+// with a textarea that large, so "huge" stands for a pane past it here.
+vi.mock("../../src/utils/spellCheck", () => ({ spellCheckFits: (text: string) => text !== "huge" }));
 vi.mock("../../src/services/logger", () => ({
   logWarn: mocks.logWarn,
   serializeError: (error: unknown) => ({ message: String(error) }),
@@ -123,6 +126,21 @@ describe("PaneView counts", () => {
     await act(async () => root?.render(<PaneView pane={pane("hello")} />));
     expect(container.querySelector(".paneFooter")?.textContent).toContain("X –/280");
     expect(mocks.logWarn).toHaveBeenCalledWith("pane count failed", expect.anything());
+  });
+});
+
+describe("PaneView spell checking", () => {
+  it("checks spelling in an ordinary pane and stops in a very large one", async () => {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    const editor = () => container!.querySelector("textarea.paneEditor") as HTMLTextAreaElement;
+
+    await act(async () => root?.render(<PaneView pane={pane("hello")} />));
+    expect(editor().getAttribute("spellcheck")).toBe("true");
+
+    await act(async () => root?.render(<PaneView pane={pane("huge")} />));
+    expect(editor().getAttribute("spellcheck")).toBe("false");
   });
 });
 
