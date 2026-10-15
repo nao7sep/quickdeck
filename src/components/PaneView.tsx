@@ -8,7 +8,6 @@ import { darkPaneBackground, paneHeaderDeep } from "../utils/paneColors";
 import { shouldPullEditorFocus } from "../utils/paneFocus";
 import { panePanelDomId } from "../utils/paneDomIds";
 import { pasteReplacesText, removesLargeBlock } from "../utils/snapshotBoundaries";
-import { spellCheckFits } from "../utils/spellCheck";
 import { useI18n } from "../i18n/I18nContext";
 
 type PaneViewProps = {
@@ -133,7 +132,7 @@ export function PaneView({ pane }: PaneViewProps) {
           pendingPasteSnapshotRef.current = true;
         }}
         onFocus={() => setActivePaneId(pane.id)}
-        spellCheck={spellCheckFits(pane.content)}
+        spellCheck
         style={{
           fontFamily: settings.editorFontFamily || "var(--font-mono)",
           fontSize: `${settings.editorFontSize}px`,
