@@ -34,7 +34,13 @@ import { applyTopmost } from "./services/windowTopmost";
 import { onAboutRequested } from "./services/appMenu";
 import { saveFailureMessage, applyDisplayZone, applyLanguage } from "./services/persistence";
 import { openRecordsWindow } from "./services/records";
-import { onSessionEnding, reportSessionEndSaved, saveForQuit } from "./services/quit";
+import {
+  askQuitSaveFailureStandalone,
+  onSessionEnding,
+  reportSessionEndSaved,
+  saveForQuit,
+  windowIsHidden,
+} from "./services/quit";
 import { useI18n } from "./i18n/I18nContext";
 import type { MessageKey } from "./i18n/catalogues";
 import { message, type Message } from "./i18n/translate";
@@ -90,6 +96,9 @@ export function App() {
     updateSettings,
   } = useAppState();
   const i18n = useI18n();
+  // The quit flow registers once, so it reads the current language through this.
+  const i18nRef = useRef(i18n);
+  i18nRef.current = i18n;
   const { t } = i18n;
   const [openModal, setOpenModal] = useState<OpenModal>(null);
   const [snapshotPulse, setSnapshotPulse] = useState(false);
@@ -556,16 +565,52 @@ export function App() {
     let sessionEnding = false;
     let sessionAttempt: number | null = null;
 
+    let quitSaveReasonNow: Message | null = null;
     const quitSteps = {
       snapshot: () => snapshotAllPanesRef.current("app_close"),
-      save: () => { setQuitSaveReason(null); return saveNowRef.current(); },
-      onFailure: (error: unknown) => setQuitSaveReason(saveFailureMessage(error)),
+      save: () => {
+        quitSaveReasonNow = null;
+        setQuitSaveReason(null);
+        return saveNowRef.current();
+      },
+      onFailure: (error: unknown) => {
+        quitSaveReasonNow = saveFailureMessage(error);
+        setQuitSaveReason(quitSaveReasonNow);
+      },
     };
 
+    // The question shows in the window when it is in sight. A minimized or
+    // hidden window gets a standalone dialog instead, so the question neither
+    // goes unseen nor brings the window back (window conventions). A session
+    // end can still settle either through quitChoiceRef.
     function askAfterQuitSaveFailure(): Promise<QuitSaveErrorChoice> {
       return new Promise((resolve) => {
         quitChoiceRef.current = resolve;
-        setQuitSaveFailed(true);
+        const settle = (choice: QuitSaveErrorChoice) => {
+          if (quitChoiceRef.current !== resolve) return;
+          quitChoiceRef.current = null;
+          resolve(choice);
+        };
+        void (async () => {
+          if (appWindow === null || !(await windowIsHidden(appWindow))) {
+            if (quitChoiceRef.current === resolve) setQuitSaveFailed(true);
+            return;
+          }
+          const { t, text } = i18nRef.current;
+          try {
+            settle(await askQuitSaveFailureStandalone({
+              title: t("saveError.title"),
+              body: `${t("saveError.onClose")}\n\n${quitSaveReasonNow ? text(quitSaveReasonNow) : t("saveError.retryHint")}`,
+              retry: t("saveError.retry"),
+              quitAnyway: t("saveError.quitAnyway"),
+              cancel: t("common.cancel"),
+            }));
+          } catch (error) {
+            // A question that cannot be shown cancels the quit (unsaved-edits conventions).
+            logWarn("standalone quit question failed", { error: serializeError(error) });
+            settle("cancel");
+          }
+        })();
       });
     }
 

@@ -15,6 +15,7 @@ use std::{
 
 use serde_json::json;
 use tauri::{AppHandle, Emitter, Manager, Runtime, State};
+use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind, MessageDialogResult};
 
 use crate::logging;
 
@@ -236,6 +237,56 @@ fn log_session_save_expired() {
 #[tauri::command]
 pub fn session_end_saved(session_end: State<SessionEnd>, attempt: u32) {
     session_end.finish(attempt);
+}
+
+/// The quit save-failure question's text, in the interface language.
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QuitQuestion {
+    title: String,
+    body: String,
+    retry: String,
+    quit_anyway: String,
+    cancel: String,
+}
+
+/// The choice a standalone dialog's answer stands for. Closing the dialog
+/// without a button is Cancel, the safe path.
+fn quit_choice(result: &MessageDialogResult, question: &QuitQuestion) -> &'static str {
+    match result {
+        MessageDialogResult::Yes => "retry",
+        MessageDialogResult::No => "quitAnyway",
+        MessageDialogResult::Custom(label) if *label == question.retry => "retry",
+        MessageDialogResult::Custom(label) if *label == question.quit_anyway => "quitAnyway",
+        _ => "cancel",
+    }
+}
+
+/// Asks the quit save-failure question as a standalone dialog, for a main
+/// window that is minimized or hidden: a question never attaches to a hidden
+/// window or brings it back (window conventions, Background visibility and
+/// activation). Waits on a worker thread until the user answers.
+#[tauri::command]
+pub async fn ask_quit_save_failure_standalone<R: Runtime>(
+    app: AppHandle<R>,
+    question: QuitQuestion,
+) -> Result<&'static str, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let result = app
+            .dialog()
+            .message(&question.body)
+            .title(&question.title)
+            .kind(MessageDialogKind::Warning)
+            .buttons(MessageDialogButtons::YesNoCancelCustom(
+                question.retry.clone(),
+                question.quit_anyway.clone(),
+                question.cancel.clone(),
+            ))
+            .blocking_show_with_result();
+        quit_choice(&result, &question)
+    })
+    .await
+    .map_err(|error| error.to_string())
 }
 
 /// Hooks the OS-started quits into the save; called once from setup.

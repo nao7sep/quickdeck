@@ -35,6 +35,9 @@ sha2 = "0.11.1"
 chrono = { version = "0.4.45", features = ["serde"] }
 getrandom = "0.4.3"
 tauri-plugin-opener = "2.7.1"
+# The quit save-failure question as a standalone dialog when the main window is
+# minimized or hidden (window conventions; src/quit.rs).
+tauri-plugin-dialog = "2.8.3"
 # The system clipboard, behind the Copy control in the snapshots modal. The
 # webview's own navigator.clipboard is not reliably a secure context under the
 # tauri:// scheme, so the copy goes through a command instead.

@@ -116,4 +116,12 @@ describe("Records window lifecycle", () => {
     expect(between(menu, "Entry::About => Box::new(", ")?),")).toContain("ABOUT_MENU_ID");
     expect(between(core, "event.id() == ABOUT_MENU_ID", "}")).toContain("bring_main_forward(app)");
   });
+
+  // window-conventions: closing the main window ends the app on every
+  // platform; QuickDeck has no background icon to close to.
+  it("ends the app when the main window closes, taking Records with it", () => {
+    expect(core).not.toContain("prevent_exit");
+    expect(core).not.toMatch(/TrayIcon|tray_icon|ActivationPolicy::Accessory/);
+    expect(core).toContain("records_window::close_with_main(");
+  });
 });

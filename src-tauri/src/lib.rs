@@ -581,6 +581,7 @@ pub fn run() {
         .manage(storage::SnapshotConnection::default())
         .plugin(instance_owner::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .on_window_event(move |window, event| {
             window_placement::on_window_event(window, event, &event_placement_state);
             // The Records window never keeps the app running on its own.
@@ -670,6 +671,7 @@ pub fn run() {
             copy_text,
             log_event,
             quit::session_end_saved,
+            quit::ask_quit_save_failure_standalone,
         ])
         .build(tauri::generate_context!())
         .expect("error while running QuickDeck");

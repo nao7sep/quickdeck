@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => ({
   destroy: vi.fn(() => Promise.resolve()),
   logError: vi.fn(),
   logWarn: vi.fn(),
+  minimized: false,
 }));
 
 vi.mock("../src/state/AppStateContext", () => ({
@@ -34,7 +35,8 @@ vi.mock("@tauri-apps/api/window", () => ({
     setMinSize: () => Promise.resolve(),
     isMaximized: () => Promise.resolve(false),
     isFullscreen: () => Promise.resolve(false),
-    isMinimized: () => Promise.resolve(false),
+    isMinimized: () => Promise.resolve(mocks.minimized),
+    isVisible: () => Promise.resolve(true),
     onMoved: () => Promise.resolve(() => undefined),
     onScaleChanged: () => Promise.resolve(() => undefined),
     onCloseRequested: (handler: CloseHandler) => {
@@ -86,6 +88,7 @@ afterEach(async () => {
   vi.useRealTimers();
   mocks.closeHandler = null;
   mocks.sessionEnding = null;
+  mocks.minimized = false;
   mocks.invoke.mockReset();
   mocks.invoke.mockResolvedValue();
   mocks.destroy.mockReset();
@@ -255,6 +258,47 @@ describe("closing the window", () => {
     // The safe choice takes focus, never the one that loses work.
     expect(document.activeElement).toBe(button("Retry"));
     expect(mocks.logError).toHaveBeenCalledWith("save on close failed", expect.anything());
+  });
+
+  // window-conventions: a question never attaches to a hidden window or brings
+  // it back; it stands alone instead.
+  describe("while the window is minimized", () => {
+    function standaloneAnswers(answer: () => Promise<unknown>) {
+      mocks.minimized = true;
+      mocks.invoke.mockImplementation(((command: string) =>
+        command === "ask_quit_save_failure_standalone" ? answer() : Promise.resolve()) as never);
+    }
+
+    it("asks in a standalone dialog, never in the window, and quits on Quit anyway", async () => {
+      standaloneAnswers(() => Promise.resolve("quitAnyway"));
+      const state = createAppState({ saveNow: vi.fn(() => Promise.reject(new Error("read-only"))) });
+      await renderApp(state);
+
+      const { done } = await requestClose();
+      await act(async () => done);
+
+      expect(dialog()).toBeNull();
+      expect(mocks.invoke).toHaveBeenCalledWith("ask_quit_save_failure_standalone", {
+        question: expect.objectContaining({ retry: "Retry", quitAnyway: "Quit anyway", cancel: "Cancel" }),
+      });
+      expect(mocks.destroy).toHaveBeenCalledTimes(1);
+    });
+
+    it("stays open when the standalone dialog is cancelled or cannot be shown", async () => {
+      for (const answer of [() => Promise.resolve("cancel"), () => Promise.reject(new Error("no dialog"))]) {
+        standaloneAnswers(answer);
+        const state = createAppState({ saveNow: vi.fn(() => Promise.reject(new Error("read-only"))) });
+        await renderApp(state);
+
+        const { done } = await requestClose();
+        await act(async () => done);
+
+        expect(dialog()).toBeNull();
+        expect(mocks.destroy).not.toHaveBeenCalled();
+        await act(async () => root?.unmount());
+        root = null;
+      }
+    });
   });
 
   it("treats a save stalled past its bound as failed", async () => {

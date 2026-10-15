@@ -65,3 +65,26 @@ export function onSessionEnding(listener: (attempt: number) => void): Promise<()
 export function reportSessionEndSaved(attempt: number): Promise<void> {
   return invoke("session_end_saved", { attempt });
 }
+
+export type QuitQuestion = { title: string; body: string; retry: string; quitAnyway: string; cancel: string };
+type QuitChoice = "retry" | "quitAnyway" | "cancel";
+
+// Whether the main window is out of sight, minimized or hidden, so a question
+// must not attach to it (window conventions, Background visibility and
+// activation). A window that cannot say is treated as shown.
+export async function windowIsHidden(window: {
+  isMinimized: () => Promise<boolean>;
+  isVisible: () => Promise<boolean>;
+}): Promise<boolean> {
+  try {
+    const [minimized, visible] = await Promise.all([window.isMinimized(), window.isVisible()]);
+    return minimized || !visible;
+  } catch {
+    return false;
+  }
+}
+
+// The quit save-failure question as a standalone dialog, answered by the user.
+export function askQuitSaveFailureStandalone(question: QuitQuestion): Promise<QuitChoice> {
+  return invoke<QuitChoice>("ask_quit_save_failure_standalone", { question });
+}

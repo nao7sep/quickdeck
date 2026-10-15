@@ -145,6 +145,27 @@ fn exit_waits_for_backups_only_at_an_ordinary_quit() {
     assert_eq!(session_end.backup_wait(), Some(crate::backup_store::DRAIN_WAIT));
 }
 
+fn question() -> QuitQuestion {
+    QuitQuestion {
+        title: "t".into(),
+        body: "b".into(),
+        retry: "Retry".into(),
+        quit_anyway: "Quit Anyway".into(),
+        cancel: "Cancel".into(),
+    }
+}
+
+#[test]
+fn the_standalone_question_maps_its_buttons_and_treats_dismissal_as_cancel() {
+    let question = question();
+    assert_eq!(quit_choice(&MessageDialogResult::Custom("Retry".into()), &question), "retry");
+    assert_eq!(quit_choice(&MessageDialogResult::Custom("Quit Anyway".into()), &question), "quitAnyway");
+    assert_eq!(quit_choice(&MessageDialogResult::Custom("Cancel".into()), &question), "cancel");
+    assert_eq!(quit_choice(&MessageDialogResult::Yes, &question), "retry");
+    assert_eq!(quit_choice(&MessageDialogResult::No, &question), "quitAnyway");
+    assert_eq!(quit_choice(&MessageDialogResult::Cancel, &question), "cancel");
+}
+
 #[test]
 fn the_windows_report_settles_the_session_end_it_answers() {
     let session_end = SessionEnd::default();
