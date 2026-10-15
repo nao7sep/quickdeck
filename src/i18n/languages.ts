@@ -28,6 +28,18 @@ export const LANGUAGE_NAMES: Readonly<Record<Language, string>> = {
   "zh-Hans": "中文",
 };
 
+// A language's name in the interface language, as the System entry shows the
+// language it resolves to (localization-conventions, Translation); the list
+// itself names each language in its own script, at the same granularity.
+export function languageNameIn(language: Language, interfaceLanguage: Language): string {
+  try {
+    const names = new Intl.DisplayNames([interfaceLanguage], { type: "language" });
+    return names.of(language.split("-")[0]) ?? LANGUAGE_NAMES[language];
+  } catch {
+    return LANGUAGE_NAMES[language];
+  }
+}
+
 // The saved choice. System follows the computer's language on every launch.
 export type LanguagePreference = "system" | Language;
 

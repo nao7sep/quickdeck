@@ -46,7 +46,7 @@
   "settings.themeSystem": "システム",
   "settings.themeLight": "ライト",
   "settings.themeDark": "ダーク",
-  "settings.systemResolved": "{system}（{value}）",
+  "settings.systemResolved": "{system} ({value})",
   "settings.timeZone": "タイムゾーン",
   "settings.timeZoneSystem": "システム",
   "settings.zen": "Zen モード（フォーカス中のペインだけを表示）",

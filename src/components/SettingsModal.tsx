@@ -7,7 +7,7 @@ import { THEME_PREFERENCES } from "../utils/theme";
 import { SYSTEM_ZONE, systemTimeZone, timeZones } from "../utils/timeZone";
 import { systemTheme } from "../services/persistence";
 import { useI18n } from "../i18n/I18nContext";
-import { LANGUAGES, LANGUAGE_NAMES, normalizeLanguagePreference } from "../i18n/languages";
+import { LANGUAGES, LANGUAGE_NAMES, languageNameIn, normalizeLanguagePreference } from "../i18n/languages";
 import { ConfirmCloseModal } from "./ConfirmCloseModal";
 import { ModalBase } from "./ModalBase";
 
@@ -102,7 +102,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
               onChange={(event) => setField("language", normalizeLanguagePreference(event.target.value))}
             >
               <option value="system">
-                {systemWith(t("settings.languageSystem"), LANGUAGE_NAMES[systemLanguage])}
+                {systemWith(t("settings.languageSystem"), languageNameIn(systemLanguage, i18n.language))}
               </option>
               {LANGUAGES.map((language) => (
                 <option key={language} value={language} lang={language}>

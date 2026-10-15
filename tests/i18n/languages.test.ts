@@ -4,8 +4,11 @@ import {
   LANGUAGE_NAMES,
   effectiveLanguage,
   formattingLocale,
+  languageNameIn,
   normalizeLanguagePreference,
 } from "../../src/i18n/languages";
+import { loadCatalogue } from "../../src/i18n/catalogues";
+import { createTranslator } from "../../src/i18n/translate";
 
 describe("LANGUAGE_NAMES", () => {
   it("names every language differently", () => {
@@ -48,5 +51,27 @@ describe("formattingLocale", () => {
     expect(formattingLocale("zh-Hans", "zh-TW")).toBe("zh-Hans");
     expect(formattingLocale("en", null)).toBe("en");
     expect(formattingLocale("en", "not a locale")).toBe("en");
+  });
+});
+
+// localization-conventions, Translation: a System entry names its current value
+// in the interface language, the word and the value alike.
+describe("System entries", () => {
+  it("names the computer's language in the interface language", () => {
+    expect(languageNameIn("ja", "en")).toBe("Japanese");
+    expect(languageNameIn("ja", "ja")).toBe("日本語");
+    expect(languageNameIn("pt-BR", "en")).toBe("Portuguese");
+    expect(languageNameIn("zh-Hans", "en")).toBe("Chinese");
+  });
+
+  it("puts the value in parentheses after the System word in every language", async () => {
+    for (const language of LANGUAGES) await loadCatalogue(language);
+    expect(createTranslator("ja").t("settings.systemResolved", {
+      system: createTranslator("ja").t("settings.themeSystem"),
+      value: createTranslator("ja").t("settings.themeDark"),
+    })).toBe("システム (ダーク)");
+    for (const language of LANGUAGES) {
+      expect(createTranslator(language).t("settings.systemResolved", { system: "S", value: "V" })).toBe("S (V)");
+    }
   });
 });

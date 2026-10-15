@@ -74,8 +74,8 @@ describe("SettingsModal language", () => {
     const select = await renderSettings();
     const options = Array.from(select.options).map((option) => [option.value, option.textContent, option.lang]);
     expect(options).toEqual([
-      // System shows what it resolves to now: the computer's language.
-      ["system", "System (日本語)", ""],
+      // System shows what it resolves to now, named in the interface language.
+      ["system", "System (Japanese)", ""],
       ["en", "English", "en"],
       ["de", "Deutsch", "de"],
       ["es", "Español", "es"],
