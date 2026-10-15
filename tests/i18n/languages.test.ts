@@ -64,14 +64,17 @@ describe("System entries", () => {
     expect(languageNameIn("zh-Hans", "en")).toBe("Chinese");
   });
 
-  it("puts the value in parentheses after the System word in every language", async () => {
+  // Brackets follow each language's punctuation: full-width in Japanese and Chinese.
+  it("puts the value in the language's own brackets after the System word", async () => {
     for (const language of LANGUAGES) await loadCatalogue(language);
     expect(createTranslator("ja").t("settings.systemResolved", {
       system: createTranslator("ja").t("settings.themeSystem"),
       value: createTranslator("ja").t("settings.themeDark"),
-    })).toBe("システム (ダーク)");
+    })).toBe("システム（ダーク）");
     for (const language of LANGUAGES) {
-      expect(createTranslator(language).t("settings.systemResolved", { system: "S", value: "V" })).toBe("S (V)");
+      const fullWidth = language === "ja" || language === "zh-Hans";
+      expect(createTranslator(language).t("settings.systemResolved", { system: "S", value: "V" }))
+        .toBe(fullWidth ? "S（V）" : "S (V)");
     }
   });
 });
