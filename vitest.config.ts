@@ -1,12 +1,9 @@
 import { readFileSync } from "node:fs";
 import { defineConfig } from "vitest/config";
 
-// Single source of truth for the app version: src-tauri/tauri.conf.json (see
-// vite.config.ts, which injects it as __APP_VERSION__ for the built app).
-// Mirrored here so a test rendering version-facing UI (the About dialog) sees
-// the same global instead of a ReferenceError — vitest never runs through
-// vite.config.ts's own `define`.
-const { version } = JSON.parse(
+// The same app name and version globals vite.config.ts defines, read from the
+// same Tauri config; Vitest does not run through vite.config.ts's `define`.
+const { productName, version } = JSON.parse(
   readFileSync(new URL("./src-tauri/tauri.conf.json", import.meta.url), "utf8"),
 );
 
@@ -15,6 +12,7 @@ const { version } = JSON.parse(
 // KeyboardEvent and navigator globals the zoom/shortcut tests rely on.
 export default defineConfig({
   define: {
+    __APP_NAME__: JSON.stringify(productName),
     __APP_VERSION__: JSON.stringify(version),
   },
   test: {

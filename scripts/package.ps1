@@ -7,7 +7,7 @@ $ErrorActionPreference = "Stop"
 $Repo = Split-Path -Parent $PSScriptRoot
 Set-Location $Repo
 
-$AppName = "QuickDeck"
+$AppName = (node -p "require('./src-tauri/tauri.conf.json').productName")
 $Version = (node -p "require('./src-tauri/tauri.conf.json').version")
 if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($Version)) { throw "Could not read the application version" }
 $TauriCli = Join-Path $Repo "node_modules/.bin/tauri.cmd"
@@ -36,6 +36,6 @@ Copy-Item $setups[0].FullName "artifacts/$AppName-$Version-setup.exe"
 # Portable: the release exe plus the application licence. Tauri embeds the
 # frontend into the binary; WebView2 is a system runtime present on Windows
 # 10/11. The exe is named after the Cargo crate (quickdeck), not the productName.
-Compress-Archive -Path "src-tauri/target/release/quickdeck.exe", "LICENSE" -DestinationPath "artifacts/$AppName-$Version-win.zip" -Force
+Compress-Archive -Path $PortableExecutable, "LICENSE" -DestinationPath "artifacts/$AppName-$Version-win.zip" -Force
 
 Get-ChildItem artifacts

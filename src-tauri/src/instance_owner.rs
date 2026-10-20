@@ -145,7 +145,7 @@ pub fn init() -> tauri::plugin::TauriPlugin<tauri::Wry> {
                 Err(error) => {
                     // Before logging starts, so stderr is all there is; the
                     // load-error screen tells the user.
-                    let _ = writeln!(std::io::stderr(), "[quickdeck] {error}");
+                    crate::logging::to_stderr(format_args!("{error}"));
                     app.manage(crate::paths::ClaimFailure(error));
                 }
             }

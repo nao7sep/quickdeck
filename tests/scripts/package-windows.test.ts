@@ -26,7 +26,7 @@ function packageFixture(mode: string) {
     mkdirSync(join(root, directory), { recursive: true });
   }
   copyFileSync(new URL("../../scripts/package.ps1", import.meta.url), join(root, "scripts/package.ps1"));
-  writeFileSync(join(root, "src-tauri/tauri.conf.json"), JSON.stringify({ version: "2.0.0" }));
+  writeFileSync(join(root, "src-tauri/tauri.conf.json"), JSON.stringify({ productName: "QuickDeck", version: "2.0.0" }));
   writeFileSync(join(root, "LICENSE"), "fixture licence");
   writeFileSync(join(root, "artifacts/stale.exe"), "stale published installer");
   writeFileSync(join(root, "src-tauri/target/release/bundle/nsis/Old-setup.exe"), "stale installer");

@@ -92,7 +92,7 @@ try {
     # GUI app: launch non-blocking via Start-Process.
     Write-Step "Launching the built app"
     Start-Process -FilePath $exePath | Out-Null
-    Invoke-Native -FilePath "node" -ArgumentList @($runtimeHelper, "wait-process", $exePath, "30000")
+    Invoke-Native -FilePath "node" -ArgumentList @($runtimeHelper, "wait-process", $exePath)
 }
 catch {
     Write-Host ""

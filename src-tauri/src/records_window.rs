@@ -5,7 +5,7 @@
 //! main window goes, so does this one, and activating the app brings the main
 //! window back (lib.rs).
 
-use std::{io::Write, sync::Mutex};
+use std::sync::Mutex;
 
 use serde_json::json;
 use tauri::{AppHandle, Emitter, Manager, Theme, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
@@ -139,10 +139,7 @@ pub fn notify_changed(app: &AppHandle) {
         return;
     }
     if let Err(error) = app.emit_to(LABEL, RECORDS_CHANGED_EVENT, ()) {
-        let _ = writeln!(
-            std::io::stderr(),
-            "[quickdeck] records window signal failed: {error}"
-        );
+        logging::to_stderr(format_args!("records window signal failed: {error}"));
     }
 }
 

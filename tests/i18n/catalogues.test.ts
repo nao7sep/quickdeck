@@ -86,11 +86,14 @@ describe("catalogues", () => {
     }
   });
 
+  // A language may name the app twice where English names it once, so each
+  // placeholder is compared by presence, not by count.
   it.each(translations)("%s keeps every placeholder", (language) => {
+    const distinct = (names: string[]) => [...new Set(names)].sort();
     for (const [key, englishEntry] of Object.entries(english)) {
-      const expected = placeholders(typeof englishEntry === "string" ? englishEntry : englishEntry.other);
+      const expected = distinct(placeholders(typeof englishEntry === "string" ? englishEntry : englishEntry.other));
       for (const text of forms(catalogues[language][key] ?? "")) {
-        expect(placeholders(text), `${key}: ${text}`).toEqual(expected);
+        expect(distinct(placeholders(text)), `${key}: ${text}`).toEqual(expected);
       }
     }
   });
@@ -144,7 +147,6 @@ describe("catalogues", () => {
   // language, matching the macOS app-menu wording, so a label can't drift into
   // a bare "About" or its own phrasing (app-chrome-conventions, App identity).
   it.each(LANGUAGES)("%s: the in-window About menu item matches the macOS About wording", (language) => {
-    const nativeAbout = (catalogues[language]["nativeMenu.about"] as string).replace("{app}", "QuickDeck");
-    expect(catalogues[language]["menu.about"]).toBe(nativeAbout);
+    expect(catalogues[language]["menu.about"]).toBe(catalogues[language]["nativeMenu.about"]);
   });
 });

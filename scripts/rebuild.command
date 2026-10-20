@@ -11,7 +11,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-APP_NAME="QuickDeck"
+APP_NAME="$(node -p "require(process.argv[1]).productName" "$REPO_DIR/src-tauri/tauri.conf.json")"
 APP_EXECUTABLE="quickdeck"
 RUNTIME_HELPER="$SCRIPT_DIR/launcher-runtime.mjs"
 RUNTIME_TOKEN="rebuild-$$-$(date +%s)-$RANDOM"
@@ -72,4 +72,4 @@ log_step "Launching the packaged app"
 node "$RUNTIME_HELPER" claim "$RUNTIME_TOKEN"
 node "$RUNTIME_HELPER" stop
 open -n "$APP_BUNDLE"
-node "$RUNTIME_HELPER" wait-process "$APP_BUNDLE/Contents/MacOS/$APP_EXECUTABLE" 30000
+node "$RUNTIME_HELPER" wait-process "$APP_BUNDLE/Contents/MacOS/$APP_EXECUTABLE"

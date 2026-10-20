@@ -1,6 +1,8 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { DATA_DIR_ENV_VAR, DATA_DIR_NAME } from "../../src/utils/dataFolder";
+import { LANGUAGES } from "../../src/i18n/languages";
 
 // Where the Rust core and the pages meet by name rather than by type: events
 // sent between them, and the pages the core opens in windows. Both sides are
@@ -41,5 +43,17 @@ describe("Rust and page contract", () => {
       expect(vite).toContain(`new URL("./${page}", import.meta.url)`);
       expect(readFileSync(join(process.cwd(), page), "utf8")).toContain("<script");
     }
+  });
+
+  it("names the data folder and its environment variable as the core resolves them", () => {
+    const paths = readFileSync(join(process.cwd(), "src-tauri/src/paths.rs"), "utf8");
+    expect(/const DATA_DIR_NAME: &str = "([^"]+)"/.exec(paths)?.[1]).toBe(DATA_DIR_NAME);
+    expect(/const DATA_DIR_ENV_VAR: &str = "([^"]+)"/.exec(paths)?.[1]).toBe(DATA_DIR_ENV_VAR);
+  });
+
+  it("lists the interface languages in the same order on both sides", () => {
+    const i18n = readFileSync(join(process.cwd(), "src-tauri/src/i18n.rs"), "utf8");
+    const list = /pub const LANGUAGES: [^=]+= \[([^\]]+)\]/.exec(i18n)?.[1] ?? "";
+    expect(Array.from(list.matchAll(/"([^"]+)"/g), (match) => match[1])).toEqual([...LANGUAGES]);
   });
 });

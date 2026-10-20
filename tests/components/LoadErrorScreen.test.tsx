@@ -2,6 +2,7 @@
 import React, { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, expect, it } from "vitest";
+import { DATA_DIR_ENV_VAR, DATA_DIR_NAME } from "../../src/utils/dataFolder";
 import { LoadErrorScreen } from "../../src/components/LoadErrorScreen";
 import { message } from "../../src/i18n/translate";
 
@@ -30,7 +31,7 @@ it("names the file the halt left in place", async () => {
 });
 
 it("names the data folder when the load stopped before reaching a file", async () => {
-  expect(await render(null)).toEqual([".quickdeck", "QUICKDECK_DATA_DIR"]);
+  expect(await render(null)).toEqual([DATA_DIR_NAME, DATA_DIR_ENV_VAR]);
 });
 
 it("presents completed recovery facts beside the terminal halt", async () => {

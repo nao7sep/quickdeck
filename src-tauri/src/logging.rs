@@ -211,6 +211,12 @@ fn run_writer(
     }
 }
 
+/// Writes one line to stderr under the app's name, for what cannot reach the
+/// records database: before logging starts, or when the record itself failed.
+pub(crate) fn to_stderr(message: std::fmt::Arguments) {
+    let _ = writeln!(std::io::stderr(), "[{}] {message}", env!("CARGO_PKG_NAME"));
+}
+
 // Waits, at most `FLUSH_WAIT`, until every line sent so far is written: on exit
 // and after a panic (logging conventions, Flush and durability).
 pub fn flush() {
@@ -222,11 +228,7 @@ pub fn flush() {
         return;
     }
     if written.recv_timeout(FLUSH_WAIT).is_err() {
-        let _ = writeln!(
-            std::io::stderr(),
-            "[quickdeck] log flush gave up after {} ms",
-            FLUSH_WAIT.as_millis()
-        );
+        to_stderr(format_args!("log flush gave up after {} ms", FLUSH_WAIT.as_millis()));
     }
 }
 
@@ -454,10 +456,7 @@ fn write_record(
         None => Err("data directory unavailable".to_string()),
     };
     if let Err(error) = appended {
-        let _ = writeln!(
-            std::io::stderr(),
-            "[quickdeck] log record not written ({reason}; fallback: {error}): {line}"
-        );
+        to_stderr(format_args!("log record not written ({reason}; fallback: {error}): {line}"));
     }
     false
 }

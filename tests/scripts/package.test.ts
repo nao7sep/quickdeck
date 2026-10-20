@@ -18,7 +18,7 @@ function packageFixture(mode: string) {
     mkdirSync(join(root, dir), { recursive: true });
   }
   copyFileSync(script, join(root, "scripts/package.sh"));
-  writeFileSync(join(root, "src-tauri/tauri.conf.json"), JSON.stringify({ version: "2.0.0" }));
+  writeFileSync(join(root, "src-tauri/tauri.conf.json"), JSON.stringify({ productName: "QuickDeck", version: "2.0.0" }));
   writeFileSync(join(root, "src-tauri/target/release/bundle/dmg/Old-1.0.0.dmg"), "stale installer");
   writeFileSync(join(root, "node_modules/.bin/tauri"), `#!/bin/bash
 set -eu

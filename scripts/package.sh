@@ -13,7 +13,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$REPO"
 
-APP_NAME="QuickDeck"
+APP_NAME="$(node -p "require('./src-tauri/tauri.conf.json').productName")"
 VERSION="$(node -p "require('./src-tauri/tauri.conf.json').version")"
 TAURI_CLI="node_modules/.bin/tauri"
 DMG_DIR="src-tauri/target/release/bundle/dmg"

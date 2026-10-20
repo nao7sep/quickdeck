@@ -55,7 +55,7 @@ try {
 
     # GUI app: launch non-blocking via Start-Process.
     Start-Process -FilePath $exePath | Out-Null
-    & node $runtimeHelper wait-process $exePath 30000
+    & node $runtimeHelper wait-process $exePath
     if ($LASTEXITCODE -ne 0) { throw "QuickDeck did not start." }
 }
 catch {

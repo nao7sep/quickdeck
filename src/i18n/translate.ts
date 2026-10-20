@@ -61,9 +61,11 @@ export function createTranslator(language: Language, locale: string = language, 
     return typeof value === "number" ? numberFormat.format(value) : value;
   }
 
+  // {app} is the product name in every text, named once in tauri.conf.json.
   function t(key: MessageKey, values?: MessageValues): string {
+    const filled: MessageValues = { app: __APP_NAME__, ...values };
     return template(key, values).replace(PLACEHOLDER, (whole, name: string) =>
-      values !== undefined && name in values ? format(values[name]) : whole,
+      name in filled ? format(filled[name]) : whole,
     );
   }
 
@@ -73,7 +75,11 @@ export function createTranslator(language: Language, locale: string = language, 
     return parts.map((part, index) =>
       index % 2 === 0
         ? part
-        : createElement(Fragment, { key: index }, part in values ? values[part] : `{${part}}`),
+        : createElement(
+            Fragment,
+            { key: index },
+            part in values ? values[part] : part === "app" ? __APP_NAME__ : `{${part}}`,
+          ),
     );
   }
 

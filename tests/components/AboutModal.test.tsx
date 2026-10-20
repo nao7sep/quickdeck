@@ -50,7 +50,7 @@ describe("AboutModal header", () => {
     expect(title.classList.contains("visuallyHidden")).toBe(true);
     expect(document.querySelector(".modalHeader")?.classList.contains("modalHeader-bare")).toBe(true);
     expect(document.querySelector(".modalFooter")?.classList.contains("modalFooter-bare")).toBe(true);
-    expect(document.querySelector(".aboutText > p")?.textContent).toBe("QuickDeck");
+    expect(document.querySelector(".aboutText > p")?.textContent).toBe(__APP_NAME__);
   });
 });
 
@@ -71,7 +71,7 @@ describe("AboutModal link results", () => {
       .toBe("Could not open GitHub. Try again.");
     expect(mocks.logWarn).toHaveBeenCalledWith(
       "open url failed",
-      expect.objectContaining({ url: "https://github.com/nao7sep/quickdeck" }),
+      expect.objectContaining({ url: expect.stringMatching(/^https:\/\//) }),
     );
 
     await act(async () => button("Report Issue").click());

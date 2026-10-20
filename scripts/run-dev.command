@@ -63,7 +63,7 @@ npm install --no-audit --no-fund
 log_step "Starting QuickDeck in development mode"
 npm run tauri dev &
 DEV_PID=$!
-node "$RUNTIME_HELPER" wait-http "$DEV_URL" 60000
+node "$RUNTIME_HELPER" wait-http "$DEV_URL"
 node "$RUNTIME_HELPER" wait-process "$REPO_DIR/src-tauri/target/debug/quickdeck" 180000
 log_step "QuickDeck is ready at $DEV_URL"
 wait "$DEV_PID"

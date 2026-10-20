@@ -57,7 +57,7 @@ export function AboutModal({ onClose }: AboutModalProps) {
       }
     >
       <div className="aboutText">
-        <p className="aboutTitle">QuickDeck</p>
+        <p className="aboutTitle">{__APP_NAME__}</p>
         <p className="aboutVersion">{t("about.version", { version: __APP_VERSION__ })}</p>
         <p>{t("about.tagline")}</p>
         <div className="aboutLinks">

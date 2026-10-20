@@ -1,4 +1,5 @@
 import { isTauri } from "@tauri-apps/api/core";
+import { DATA_DIR_ENV_VAR, DATA_DIR_NAME } from "../utils/dataFolder";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useI18n } from "../i18n/I18nContext";
 import type { Message } from "../i18n/translate";
@@ -52,8 +53,8 @@ export function LoadErrorScreen({ error, path, recovery = [], onSetAsideAndReset
           {path !== null
             ? rich("load.hint", { path: <code>{path}</code> })
             : rich("load.hintDataFolder", {
-                folder: <code>.quickdeck</code>,
-                envVar: <code>QUICKDECK_DATA_DIR</code>,
+                folder: <code>{DATA_DIR_NAME}</code>,
+                envVar: <code>{DATA_DIR_ENV_VAR}</code>,
               })}
         </p>
         <div className="loadErrorActions">

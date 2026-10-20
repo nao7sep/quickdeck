@@ -16,7 +16,7 @@ pub(crate) fn prepare<T: Send + 'static>(name: &str, wait: Duration, work: impl 
 pub(crate) fn saved_config(config_path: Option<std::path::PathBuf>) -> Option<String> {
     prepare("saved appearance and language", PREPARE_WAIT, move || {
         config_path.and_then(|path| std::fs::read_to_string(path).ok())
-    }).unwrap_or_else(|error| { eprintln!("[quickdeck] {error}"); None })
+    }).unwrap_or_else(|error| { crate::logging::to_stderr(format_args!("{error}")); None })
 }
 
 // Unit-test stub: startup preparation is private to the native application.
