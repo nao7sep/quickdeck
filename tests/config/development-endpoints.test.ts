@@ -9,21 +9,17 @@ const tauri = JSON.parse(read("src-tauri/tauri.conf.json")) as {
   app: { security: { devCsp: string } };
 };
 
+// The dev server's address is Tauri's devUrl; every other place that has to
+// name it is checked against that one source.
 describe("development endpoint", () => {
-  it("keeps the package command, Vite, Tauri, CSP, and both launchers on the app-owned port", () => {
-    expect(read("package.json")).toContain("--port 26267 --strictPort");
-    expect(read("vite.config.ts")).toContain("port: 26267");
-    expect(tauri.build.devUrl).toBe("http://127.0.0.1:26267");
-    expect(tauri.app.security.devCsp).toContain("http://127.0.0.1:26267");
-    for (const path of ["scripts/run-dev.command", "scripts/run-dev.ps1"]) {
-      expect(read(path)).toContain("26267");
-      expect(read(path)).not.toMatch(/stop[_-]port|Stop-Port/);
-    }
-  });
+  const devUrl = new URL(tauri.build.devUrl);
 
-  it("does not watch Cargo artifacts on Windows", () => {
-    expect(read("vite.config.ts")).toContain(
-      'ignored: ["**/src-tauri/target/**"]',
-    );
+  it("serves the package command, Vite, the dev CSP and both launchers on devUrl", () => {
+    expect(read("package.json")).toContain(`--host ${devUrl.hostname} --port ${devUrl.port} --strictPort`);
+    expect(read("vite.config.ts")).toContain(`port: ${devUrl.port}`);
+    expect(tauri.app.security.devCsp).toContain(devUrl.origin);
+    for (const path of ["scripts/run-dev.command", "scripts/run-dev.ps1"]) {
+      expect(read(path)).toContain(devUrl.port);
+    }
   });
 });

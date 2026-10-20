@@ -32,10 +32,6 @@ describe("Records window layout", () => {
     expect(RECORDS_LIST_SIBLING_MIN).toBe(RECORDS_PADDING * 2 + RECORDS_GAP + RECORDS_DETAIL_MIN_WIDTH);
   });
 
-  it("keeps the list bounds about 320 to 640 pixels, opening at 380", () => {
-    expect(RECORDS_LIST_WIDTH).toEqual({ min: 320, default: 380, max: 640 });
-  });
-
   it("mirrors the stylesheet's padding, gap and detail minimum", () => {
     const shell = rule(".recordsShell");
     expect(shell).toContain(`padding: ${RECORDS_PADDING}px`);

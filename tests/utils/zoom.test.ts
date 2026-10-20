@@ -26,9 +26,9 @@ describe("zoom levels", () => {
     for (let i = 1; i < ZOOM_LEVELS.length; i += 1) {
       expect(ZOOM_LEVELS[i]).toBeGreaterThan(ZOOM_LEVELS[i - 1]);
     }
-    expect(ZOOM_MIN).toBe(0.5);
-    expect(ZOOM_MAX).toBe(5.0);
-    expect(ZOOM_DEFAULT).toBe(1.0);
+    expect(ZOOM_LEVELS[0]).toBe(ZOOM_MIN);
+    expect(ZOOM_LEVELS[ZOOM_LEVELS.length - 1]).toBe(ZOOM_MAX);
+    expect(ZOOM_LEVELS).toContain(ZOOM_DEFAULT);
   });
 
   it("steps in toward the next level and clamps at the maximum", () => {

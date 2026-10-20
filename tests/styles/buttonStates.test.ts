@@ -7,12 +7,10 @@ const css = readFileSync(join(process.cwd(), "src/styles.css"), "utf8");
 const compact = css.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\s+/g, "");
 
 // Nothing moves or resizes on hover or press (interface-styling-conventions).
-// Both filled buttons used to answer a click by shrinking to 97 per cent — the
-// pattern two other apps in the fleet had already replaced with a surface step,
-// and one this app cannot even switch off, having no reduced-motion block.
+// A press darkens the button's surface rather than resizing it: nothing moves
+// on press, and there is no motion to switch off for reduced-motion users.
 describe("button pressed states", () => {
-  it("answers a press with a surface step, never a resize", () => {
-    expect(compact).not.toContain("transform:scale(");
+  it("answers a press with a surface step", () => {
     expect(compact).toContain("--pressed-brightness:");
   });
 

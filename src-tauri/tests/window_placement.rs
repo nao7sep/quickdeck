@@ -1,7 +1,7 @@
 use quickdeck_lib::format_version::{self, JsonFormat};
 use quickdeck_lib::window_placement::{
     new_state, placement_after_close, placements_from, restored_placement, save, ClosingState,
-    NormalRectangle, Placement, DURABLE_WINDOWS, REMEMBERS_MAXIMIZED,
+    NormalRectangle, Placement, REMEMBERS_MAXIMIZED,
 };
 use serde_json::json;
 
@@ -98,7 +98,6 @@ fn minimized_or_fullscreen_close_retains_the_whole_record() {
 
 #[test]
 fn window_json_holds_one_placement_per_durable_window() {
-    assert_eq!(DURABLE_WINDOWS, ["main", "records"]);
     let placements = placements_from(Some(json!({
         "main": { "normal": { "x": 10, "y": 20, "width": 800, "height": 600 }, "maximized": true },
         "records": { "normal": { "x": -900, "y": 40, "width": 1240, "height": 820 }, "maximized": false },

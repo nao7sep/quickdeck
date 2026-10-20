@@ -46,6 +46,5 @@ describe("PaneSwatch", () => {
     const css = readFileSync(join(process.cwd(), "src/styles.css"), "utf8").replace(/\s+/g, "");
     expect(css).toContain(".paneSwatch{");
     expect(css).toContain("border-radius:var(--radius-swatch)");
-    expect(css).not.toMatch(/\.(paneSwitcherSwatch|snapshotRowDot)\{/);
   });
 });

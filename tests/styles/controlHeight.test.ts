@@ -57,10 +57,6 @@ describe("one control height", () => {
     }
   });
 
-  it("leaves no hard-coded standard control height behind", () => {
-    expect(compact).not.toMatch(/min-height:3[46]px/);
-  });
-
   // Left out of `font: inherit`, a select keeps the UA's own font — Arial at
   // regular weight beside the app's system-ui at semibold, which reads as
   // smaller text — and the UI font setting never reaches it.

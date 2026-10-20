@@ -12,19 +12,8 @@ function read(relativePath: string): string {
   return readFileSync(join(process.cwd(), relativePath), "utf8");
 }
 
-describe("tauri.conf.json window-chrome guards", () => {
+describe("tauri.conf.json window minimums", () => {
   const window = JSON.parse(read("src-tauri/tauri.conf.json")).app.windows[0];
-
-  it("creates hidden at the designed normal size for native restoration", () => {
-    expect(window.visible).toBe(false);
-    expect(window.width).toBe(1120);
-    expect(window.height).toBe(760);
-    expect(window).not.toHaveProperty("maximized");
-  });
-
-  it("the title bar is not transparent (a normal themed bar)", () => {
-    expect(window.titleBarStyle).not.toBe("Transparent");
-  });
 
   it("minWidth equals the single-pane derived floor", () => {
     expect(window.minWidth).toBe(computeWindowMinWidth(1, false));

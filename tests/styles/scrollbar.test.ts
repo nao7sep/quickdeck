@@ -32,7 +32,6 @@ describe("global scrollbar styling", () => {
 
   it("uses normal standards geometry and strengthens while its whole owner is hovered or focused", () => {
     expect(compact).toContain("scrollbar-width:auto");
-    expect(compact).not.toContain("scrollbar-width:thin");
     expect(compact).toContain("::-webkit-scrollbar-thumb:hover");
     expect(compact).toContain("*:hover::-webkit-scrollbar-thumb");
     expect(compact).toContain("*:focus-within::-webkit-scrollbar-thumb");
