@@ -19,6 +19,19 @@ describe("launcher process identity", () => {
       executablePath: `${REPO_ROOT}/src-tauri/target/release/bundle/macos/QuickDeck.app/Contents/MacOS/quickdeck`,
       commandLine: "",
     }, IDENTITY)).toBe(true);
+    // A launcher is any script beside the helper that runs it; packaging is not.
+    expect(ownsProcess({
+      pid: 13,
+      parentPid: 1,
+      executablePath: "/bin/bash",
+      commandLine: `bash ${REPO_ROOT}/scripts/run-dev.command`,
+    }, IDENTITY)).toBe(true);
+    expect(ownsProcess({
+      pid: 14,
+      parentPid: 1,
+      executablePath: "/bin/bash",
+      commandLine: `bash ${REPO_ROOT}/scripts/package.sh`,
+    }, IDENTITY)).toBe(false);
     expect(ownsProcess({
       pid: 12,
       parentPid: 1,

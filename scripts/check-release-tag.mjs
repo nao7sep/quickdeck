@@ -1,3 +1,5 @@
+// Fails unless RELEASE_TAG is "v" plus tauri.conf.json's version. The release
+// workflow runs it as `npm run check:release-tag` before it builds a tagged release.
 import { readFile } from "node:fs/promises";
 
 const tauriConfig = JSON.parse(

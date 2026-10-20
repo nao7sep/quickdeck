@@ -72,7 +72,7 @@ try {
     Write-Step "Starting QuickDeck in development mode"
     $devProcess = Start-Process -FilePath (Get-Command "npm.cmd").Source -ArgumentList @("run", "tauri", "dev") -NoNewWindow -PassThru
     Invoke-Native -FilePath "node" -ArgumentList @($runtimeHelper, "wait-http", $devUrl)
-    Invoke-Native -FilePath "node" -ArgumentList @($runtimeHelper, "wait-process", (Join-Path $repoDir "src-tauri/target/debug/quickdeck.exe"), "180000")
+    Invoke-Native -FilePath "node" -ArgumentList @($runtimeHelper, "wait-dev-build", (Join-Path $repoDir "src-tauri/target/debug/quickdeck.exe"))
     Write-Step "QuickDeck is ready at $devUrl"
     $devProcess.WaitForExit()
     if ($devProcess.ExitCode -notin @(0, 130, -1073741510)) {

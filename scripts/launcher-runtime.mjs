@@ -1,6 +1,13 @@
+// The launchers' shared helper: it keeps one QuickDeck runtime per checkout by
+// claiming ownership, stopping an earlier runtime of this repository, and waiting
+// for the new one to come up. The launchers in this folder run it as
+//   node launcher-runtime.mjs <command> [arguments]
+// with claim <token>, is-owner <token>, release-if-owner <token>, stop,
+// stop-if-owner <token>, check-endpoint <host> <port>, wait-http <url> [ms],
+// wait-process <executable> [ms] and wait-dev-build <executable>.
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { readFile, unlink, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
@@ -23,6 +30,15 @@ export const IDENTITY = {
   executable: /^\[package\][^[]*?^name = "([^"]+)"/m.exec(readFileSync(join(REPO_ROOT, "src-tauri/Cargo.toml"), "utf8"))[1],
 };
 
+// The launchers this helper serves are the scripts beside it that run it.
+const LAUNCHERS = readdirSync(SCRIPT_DIR)
+  .filter((name) => /\.(command|ps1)$/.test(name))
+  .filter((name) => readFileSync(join(SCRIPT_DIR, name), "utf8").includes("launcher-runtime.mjs"))
+  .map((name) => `/scripts/${name.toLowerCase()}`);
+
+// run-dev's first start compiles the whole Rust app before the window opens.
+const DEV_BUILD_WAIT = 180000;
+
 function normalized(value) {
   return normalize(value ?? "").replaceAll("\\", "/").toLowerCase();
 }
@@ -38,12 +54,7 @@ export function ownsProcess(processInfo, identity = IDENTITY) {
   const command = normalized(processInfo.commandLine);
   const combined = `${executable}\n${command}`;
   if (!underRoot(executable) && !underRoot(command)) return false;
-  if (combined.includes("/scripts/run-dev.command")
-    || combined.includes("/scripts/run-dev.ps1")
-    || combined.includes("/scripts/run-built.command")
-    || combined.includes("/scripts/run-built.ps1")
-    || combined.includes("/scripts/rebuild.command")
-    || combined.includes("/scripts/rebuild.ps1")) {
+  if (LAUNCHERS.some((launcher) => combined.includes(launcher))) {
     return true;
   }
 
@@ -311,6 +322,12 @@ async function main(args) {
     await waitForHttp(url, timeout);
     return;
   }
+  if (command === "wait-dev-build") {
+    const executablePath = args.shift();
+    if (!executablePath) throw new Error("Expected wait-dev-build <executable-path>.");
+    await waitForExecutable(executablePath, DEV_BUILD_WAIT);
+    return;
+  }
   if (command === "wait-process") {
     const executablePath = args.shift();
     const timeout = Number(args.shift() ?? "30000");
@@ -318,7 +335,7 @@ async function main(args) {
     await waitForExecutable(executablePath, timeout);
     return;
   }
-  throw new Error("Expected one of: claim, is-owner, release-if-owner, stop, stop-if-owner, check-endpoint, wait-http, wait-process.");
+  throw new Error("Expected one of: claim, is-owner, release-if-owner, stop, stop-if-owner, check-endpoint, wait-http, wait-process, wait-dev-build.");
 }
 
 const invokedPath = process.argv[1] ? resolve(process.argv[1]) : "";
