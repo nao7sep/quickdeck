@@ -1,11 +1,11 @@
-// Per-app text-cleanup helper realizing the fleet text-cleanup conventions.
+// Cleans text values before they are kept, logged or shown, so stray
+// whitespace and control characters never reach stored or displayed values.
 //
-// Two of the three canonical patterns are used here: single-line (scalar values
-// like the pane title) and multiline (snapshot bodies). The truncation pattern
-// is intentionally omitted — quickdeck renders full snapshot bodies and never
-// previews a clipped one. These algorithms are copied verbatim from the
-// convention's verified reference; do not rewrite them locally. Cleanup is a
-// commit/display-time operation — never run on a keystroke while the user types.
+// Single-line cleanup is for scalar values like the pane title, multiline for
+// snapshot bodies, and truncation for the one-line snapshot excerpt in a list
+// row. These algorithms are copied verbatim from the fleet's verified reference;
+// do not rewrite them locally. Cleanup runs when a value is committed or shown,
+// never on a keystroke while the user types.
 
 // Single-line cleanup for scalar values (titles, labels). Always trims the ends;
 // the two decisions are interior. Default (flatten on, minify off) collapses any

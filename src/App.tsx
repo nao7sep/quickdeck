@@ -606,7 +606,8 @@ export function App() {
               cancel: t("common.cancel"),
             }));
           } catch (error) {
-            // A question that cannot be shown cancels the quit (unsaved-edits conventions).
+            // A question that cannot be shown cancels the quit: quitting without
+            // the user's answer could lose the unsaved text.
             logWarn("standalone quit question failed", { error: serializeError(error) });
             settle("cancel");
           }
@@ -708,8 +709,8 @@ export function App() {
         closeUnlisten?.();
         sessionEndUnlisten?.();
       }
-      // A pending question settles through its safe path (modal-dialog
-      // conventions, Dialog Promises and Queues).
+      // A question still pending settles as Cancel, the choice that loses
+      // nothing, so the quit flow waiting on it is never left hanging.
       const resolve = quitChoiceRef.current;
       quitChoiceRef.current = null;
       resolve?.("cancel");

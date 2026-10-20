@@ -347,8 +347,7 @@ pub(crate) fn on_window_event(window: &Window<Wry>, event: &WindowEvent, state: 
 }
 
 // The exit write runs on its own thread so a stalled data volume
-// cannot hold the quit for longer than `SAVE_WAIT` (PLAYBOOK, "Bound every
-// external wait"). It writes into the root resolved at launch, and a data
+// cannot hold the quit for longer than `SAVE_WAIT`. It writes into the root resolved at launch, and a data
 // folder deleted while the app runs stays deleted.
 pub fn save(root: &Path, state: &PlacementState) {
     let Some(placements) = state

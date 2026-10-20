@@ -7,7 +7,7 @@ vi.mock("@tauri-apps/api/core", () => ({
   invoke: (...args: unknown[]) => invokeMock(...args),
 }));
 
-// QD-1: saveConfig, saveState and savePanes must serialize their writes the
+// saveConfig, saveState and savePanes must serialize their writes the
 // same way saveState already did, so a close-triggered save can never race an
 // in-flight autosave of the same store and let a stale write win.
 describe("persistence write queues", () => {

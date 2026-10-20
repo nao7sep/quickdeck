@@ -84,7 +84,8 @@ export function RecordsWindow({ initialListWidth }: { initialListWidth: number }
   const [listWidth, setListWidth] = useState(initialListWidth);
   const [dragWidth, setDragWidth] = useState<number | null>(null);
   const listGeneration = useRef(0);
-  // The busy claim for the next page (PLAYBOOK, Own the work in flight).
+  // Set while the next page is being read, so reaching the end again cannot
+  // start a second read of the same page.
   const fetchingMore = useRef(false);
   // The filters the current list was read for, for the live reads below.
   const filtersRef = useRef(filters);
@@ -239,8 +240,8 @@ export function RecordsWindow({ initialListWidth }: { initialListWidth: number }
     };
   }, [selectedId]);
 
-  // Loading more: composite-control-conventions, Integration Points. A failed
-  // page is read again when the end is reached again.
+  // The next page loads when the list reaches its end; a page that failed is
+  // read again when the end is reached again.
   const loadMore = () => {
     if (list.status !== "ready" || !list.more || fetchingMore.current) return;
     fetchingMore.current = true;
@@ -318,7 +319,8 @@ export function RecordsWindow({ initialListWidth }: { initialListWidth: number }
     }
   };
 
-  // Drag intent: window-conventions, Content-based minimum size.
+  // The width the user dragged to is kept as their intent; what shows is that
+  // width held to the panes' minimums in the window at hand.
   const commitListWidth = (width: number) => {
     setListWidth(width);
     setDragWidth(null);

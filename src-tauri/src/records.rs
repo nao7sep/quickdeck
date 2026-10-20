@@ -40,8 +40,9 @@ CREATE INDEX IF NOT EXISTS log_lines_time ON log_lines (time, id);
 
 pub const PAGE_SIZE: usize = 100;
 
-// How long a read may take before the window is told it failed (PLAYBOOK, "Bound
-// every external wait"). The abandoned read still finishes on its own thread.
+// How long a read may take before the window is told it failed, so a stalled
+// disk never leaves the Records window waiting. The abandoned read still
+// finishes on its own thread.
 pub const READ_WAIT: Duration = Duration::from_secs(5);
 
 // SQLite's own wait for a lock the writer holds, inside READ_WAIT.

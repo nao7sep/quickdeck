@@ -1,4 +1,3 @@
-// Pane sizing: window-conventions.
 // An adjustable pane's displayed width: the saved intent, held to the pane's own
 // bounds and to what the live container leaves after every sibling's minimum.
 export function clampPaneWidth(

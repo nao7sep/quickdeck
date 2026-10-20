@@ -102,8 +102,8 @@ fn close_key_window<R: Runtime>(app: &AppHandle<R>) {
     }
 }
 
-// File, database and clipboard work runs on a blocking thread, per the
-// PLAYBOOK's "Own the work in flight".
+// File, database and clipboard work runs on a blocking thread, so a slow disk
+// or clipboard never holds the main thread, which runs the windows.
 async fn off_main_thread<T: Send + 'static, E: From<String> + Send + 'static>(
     work: impl FnOnce() -> Result<T, E> + Send + 'static,
 ) -> Result<T, E> {
@@ -489,7 +489,8 @@ async fn records_window_setup(app: AppHandle) -> Result<RecordsWindowSetup, Stri
     .await
 }
 
-// Saved only when a splitter drag ends (window conventions).
+// Saved once when a splitter drag ends, not on every move of it, so a drag
+// writes window.json once and a half-finished drag is never kept.
 #[tauri::command]
 async fn save_records_list_width(app: AppHandle, width: u32) -> Result<(), String> {
     off_main_thread(move || {
