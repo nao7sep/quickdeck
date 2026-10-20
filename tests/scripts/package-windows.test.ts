@@ -28,7 +28,6 @@ function packageFixture(mode: string) {
   copyFileSync(new URL("../../scripts/package.ps1", import.meta.url), join(root, "scripts/package.ps1"));
   writeFileSync(join(root, "src-tauri/tauri.conf.json"), JSON.stringify({ version: "2.0.0" }));
   writeFileSync(join(root, "LICENSE"), "fixture licence");
-  writeFileSync(join(root, "THIRD_PARTY_NOTICES"), "fixture notices");
   writeFileSync(join(root, "artifacts/stale.exe"), "stale published installer");
   writeFileSync(join(root, "src-tauri/target/release/bundle/nsis/Old-setup.exe"), "stale installer");
   writeFileSync(join(root, "src-tauri/target/release/quickdeck.exe"), "stale portable");
@@ -48,7 +47,7 @@ if (mode !== "no-portable") writeFileSync("src-tauri/target/release/quickdeck.ex
 }
 
 describe.skipIf(process.platform !== "win32")("Windows current-build package collection", () => {
-  it("replaces stale output and packages the executable with both notices", () => {
+  it("replaces stale output and packages the executable with its licence", () => {
     const { root, result } = packageFixture("success");
     expect(result.status, result.stderr).toBe(0);
     expect(readdirSync(join(root, "artifacts")).sort()).toEqual(["QuickDeck-2.0.0-setup.exe", "QuickDeck-2.0.0-win.zip"]);
@@ -58,7 +57,6 @@ describe.skipIf(process.platform !== "win32")("Windows current-build package col
     expect(unpacked.status, unpacked.stderr).toBe(0);
     expect(readFileSync(join(root, "unpacked/quickdeck.exe"), "utf8")).toBe("current portable");
     expect(readFileSync(join(root, "unpacked/LICENSE"), "utf8")).toBe("fixture licence");
-    expect(readFileSync(join(root, "unpacked/THIRD_PARTY_NOTICES"), "utf8")).toBe("fixture notices");
   });
 
   it.each([
