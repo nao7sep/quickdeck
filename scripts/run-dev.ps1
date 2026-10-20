@@ -63,7 +63,7 @@ try {
 
     Write-Step "Replacing any existing QuickDeck runtime"
     Invoke-Native -FilePath "node" -ArgumentList @($runtimeHelper, "claim", $runtimeToken)
-    Invoke-Native -FilePath "node" -ArgumentList @($runtimeHelper, "stop", "tauri", "QuickDeck", "quickdeck")
+    Invoke-Native -FilePath "node" -ArgumentList @($runtimeHelper, "stop")
     Invoke-Native -FilePath "node" -ArgumentList @($runtimeHelper, "check-endpoint", $devHost, "26267")
 
     Write-Step "Installing dependencies required for launch"
@@ -87,7 +87,7 @@ catch {
 finally {
     & node $runtimeHelper is-owner $runtimeToken *> $null
     if ($LASTEXITCODE -eq 0) {
-        & node $runtimeHelper stop-if-owner $runtimeToken tauri "QuickDeck" "quickdeck" *> $null
+        & node $runtimeHelper stop-if-owner $runtimeToken *> $null
         Read-Host "Press Enter to close" | Out-Null
     }
 }

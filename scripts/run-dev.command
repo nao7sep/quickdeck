@@ -37,7 +37,7 @@ cleanup() {
   local status="$?"
   trap - EXIT
   if node "$RUNTIME_HELPER" is-owner "$RUNTIME_TOKEN" >/dev/null 2>&1; then
-    node "$RUNTIME_HELPER" stop-if-owner "$RUNTIME_TOKEN" tauri "QuickDeck" "quickdeck" >/dev/null 2>&1 || true
+    node "$RUNTIME_HELPER" stop-if-owner "$RUNTIME_TOKEN" >/dev/null 2>&1 || true
   fi
   pause_on_failure "$status"
   exit "$status"
@@ -54,7 +54,7 @@ cd "$REPO_DIR"
 
 log_step "Replacing any existing QuickDeck runtime"
 node "$RUNTIME_HELPER" claim "$RUNTIME_TOKEN"
-node "$RUNTIME_HELPER" stop tauri "QuickDeck" "quickdeck"
+node "$RUNTIME_HELPER" stop
 node "$RUNTIME_HELPER" check-endpoint "$DEV_HOST" 26267
 
 log_step "Installing dependencies required for launch"

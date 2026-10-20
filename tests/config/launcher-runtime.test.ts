@@ -3,30 +3,28 @@ import { describe, expect, it } from "vitest";
 
 // The launcher helper is plain ESM because both shell families execute it directly.
 // @ts-expect-error The directly executed .mjs helper intentionally has no declaration file.
-import { claimRuntime, isRuntimeOwner, ownsProcess, releaseRuntime, REPO_ROOT } from "../../scripts/launcher-runtime.mjs";
+import { claimRuntime, IDENTITY, isRuntimeOwner, ownsProcess, releaseRuntime, REPO_ROOT } from "../../scripts/launcher-runtime.mjs";
 
 describe("launcher process identity", () => {
-  const identity = { kind: "tauri", label: "QuickDeck", executable: "quickdeck" };
-
   it("owns only this repository's QuickDeck runtime", () => {
     expect(ownsProcess({
       pid: 10,
       parentPid: 1,
       executablePath: `${REPO_ROOT}/src-tauri/target/debug/quickdeck`,
       commandLine: "",
-    }, identity)).toBe(true);
+    }, IDENTITY)).toBe(true);
     expect(ownsProcess({
       pid: 11,
       parentPid: 1,
       executablePath: `${REPO_ROOT}/src-tauri/target/release/bundle/macos/QuickDeck.app/Contents/MacOS/quickdeck`,
       commandLine: "",
-    }, identity)).toBe(true);
+    }, IDENTITY)).toBe(true);
     expect(ownsProcess({
       pid: 12,
       parentPid: 1,
       executablePath: "/another/repo/src-tauri/target/debug/quickdeck",
       commandLine: "",
-    }, identity)).toBe(false);
+    }, IDENTITY)).toBe(false);
   });
 
   it("does not let a stale launcher generation clean up its replacement", async () => {

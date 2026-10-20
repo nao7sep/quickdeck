@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { readFile, unlink, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
@@ -15,6 +16,13 @@ const OWNER_FILE = join(
   `company-launcher-${createHash("sha256").update(REPO_ROOT).digest("hex").slice(0, 20)}.owner`,
 );
 
+// The runtime this helper manages, named once in the app's own manifests: the
+// product name from tauri.conf.json and the executable from the Cargo crate.
+export const IDENTITY = {
+  label: JSON.parse(readFileSync(join(REPO_ROOT, "src-tauri/tauri.conf.json"), "utf8")).productName,
+  executable: /^\[package\][^[]*?^name = "([^"]+)"/m.exec(readFileSync(join(REPO_ROOT, "src-tauri/Cargo.toml"), "utf8"))[1],
+};
+
 function normalized(value) {
   return normalize(value ?? "").replaceAll("\\", "/").toLowerCase();
 }
@@ -25,7 +33,7 @@ function underRoot(value) {
   return candidate === root || candidate.startsWith(`${root}/`) || candidate.includes(`${root}/`);
 }
 
-export function ownsProcess(processInfo, identity) {
+export function ownsProcess(processInfo, identity = IDENTITY) {
   const executable = normalized(processInfo.executablePath);
   const command = normalized(processInfo.commandLine);
   const combined = `${executable}\n${command}`;
@@ -41,33 +49,13 @@ export function ownsProcess(processInfo, identity) {
 
   const executableName = identity.executable.toLowerCase();
   const macBundleExecutable = `/${identity.label.toLowerCase()}.app/contents/macos/${executableName}`;
-  const windowsExecutable = `/${executableName}.exe`;
-  if (identity.kind === "electron") {
-    return combined.includes("/node_modules/.bin/electron-vite")
-      || combined.includes("/node_modules/electron-vite/")
-      || combined.includes("/node_modules/electron/dist/")
-      || combined.includes(macBundleExecutable)
-      || combined.includes(windowsExecutable);
-  }
-  if (identity.kind === "tauri") {
-    return combined.includes("/node_modules/.bin/tauri")
-      || combined.includes("/node_modules/@tauri-apps/cli/")
-      || combined.includes("/node_modules/.bin/vite")
-      || combined.includes("/node_modules/vite/")
-      || combined.includes(`/target/debug/${executableName}`)
-      || combined.includes(`/target/release/${executableName}`)
-      || combined.includes(macBundleExecutable);
-  }
-  if (identity.kind === "web") {
-    return combined.includes("/node_modules/.bin/vite")
-      || combined.includes("/node_modules/.bin/tsx")
-      || combined.includes("/node_modules/.bin/concurrently")
-      || combined.includes("/node_modules/vite/")
-      || combined.includes("/node_modules/tsx/")
-      || combined.includes("/node_modules/concurrently/")
-      || combined.includes("/scripts/run-dev.ts");
-  }
-  throw new Error(`Unknown runtime identity: ${identity.kind}`);
+  return combined.includes("/node_modules/.bin/tauri")
+    || combined.includes("/node_modules/@tauri-apps/cli/")
+    || combined.includes("/node_modules/.bin/vite")
+    || combined.includes("/node_modules/vite/")
+    || combined.includes(`/target/debug/${executableName}`)
+    || combined.includes(`/target/release/${executableName}`)
+    || combined.includes(macBundleExecutable);
 }
 
 function parsePosixProcesses(stdout) {
@@ -277,16 +265,6 @@ async function waitForExecutable(executablePath, timeoutMilliseconds) {
   throw new Error(`${executablePath} did not start within ${timeoutMilliseconds} ms.`);
 }
 
-function parseIdentity(args) {
-  const kind = args.shift();
-  const label = args.shift();
-  const executable = args.shift();
-  if (!["electron", "tauri", "web"].includes(kind) || !label || !executable) {
-    throw new Error("Expected runtime identity: <electron|tauri|web> <label> <executable-name>.");
-  }
-  return { kind, label, executable };
-}
-
 async function main(args) {
   const command = args.shift();
   if (command === "claim") {
@@ -308,15 +286,14 @@ async function main(args) {
     return;
   }
   if (command === "stop") {
-    await stopRuntime(parseIdentity(args));
+    await stopRuntime(IDENTITY);
     return;
   }
   if (command === "stop-if-owner") {
     const token = args.shift();
-    if (!token) throw new Error("Expected stop-if-owner <token> <identity...>.");
-    const identity = parseIdentity(args);
+    if (!token) throw new Error("Expected stop-if-owner <token>.");
     if (!await isRuntimeOwner(token)) return;
-    await stopRuntime(identity);
+    await stopRuntime(IDENTITY);
     await releaseRuntime(token);
     return;
   }

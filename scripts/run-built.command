@@ -45,7 +45,7 @@ fi
 
 built_at="$(stat -f '%Sm' -t '%Y-%m-%d %H:%M:%S %Z' "$APP_BUNDLE/Contents/MacOS" 2>/dev/null || echo 'unknown')"
 node "$RUNTIME_HELPER" claim "$RUNTIME_TOKEN"
-node "$RUNTIME_HELPER" stop tauri "QuickDeck" "quickdeck"
+node "$RUNTIME_HELPER" stop
 log_step "Launching the existing packaged app (built: $built_at)"
 echo "If you changed source since then, run rebuild instead."
 
