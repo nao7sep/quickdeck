@@ -19,20 +19,14 @@ import { hasMod } from "./shortcuts";
 // --- Keyboard shortcuts ---
 //
 // isZoomIn / isZoomOut / isZoomReset accept a KeyboardEvent and return true
-// when the event matches the corresponding zoom shortcut. All three require the
-// platform primary modifier (Cmd on macOS, Ctrl on Windows/Linux).
+// when the event matches the corresponding zoom shortcut. All three require
+// Cmd or Ctrl on every platform, with Alt excluded. Shift is allowed; matching
+// uses the produced character in event.key.
 //
 // --- Keyboard layout notes ---
 //
-// "+" is not a bare key on any major layout; it always requires Shift. The base
-// key that produces "+" varies across layouts:
-//   US / UK / French AZERTY  →  Shift + =  (physical = key, left of Backspace)
-//   Japanese JIS              →  Shift + ;  (physical ; key, near Enter)
-//   German QWERTZ             →  Shift + 1  (not covered here; numpad serves them)
-//
-// "-" is a bare key (no Shift) on US, UK, German, and Japanese layouts.
-// French AZERTY users need Shift for "-", so they are not covered by zoom out;
-// this is an accepted gap.
+// Layouts produce zoom characters with different physical keys and modifiers.
+// Shift-produced "+" and "-" work because Shift is allowed for every matcher.
 //
 // Using event.key (the produced character) rather than event.code (physical
 // position) means each case is handled automatically:
@@ -83,20 +77,20 @@ export function stepZoomOut(current: number): number {
 // local duplication here is exactly where the both-modifiers fix was forgotten
 // once, so zoom imports it instead.)
 
-// Returns true when the event is a zoom-in shortcut (primary modifier + zoom key).
+// Returns true when the event is a zoom-in shortcut (Cmd/Ctrl + zoom key).
 // Recognized zoom-in keys: "=", "+", ";"
 export function isZoomIn(event: KeyboardEvent): boolean {
   if (!hasMod(event)) return false;
   return event.key === "=" || event.key === "+" || event.key === ";";
 }
 
-// Returns true when the event is a zoom-out shortcut (primary modifier + "-").
+// Returns true when the event is a zoom-out shortcut (Cmd/Ctrl + "-").
 export function isZoomOut(event: KeyboardEvent): boolean {
   if (!hasMod(event)) return false;
   return event.key === "-";
 }
 
-// Returns true when the event is a zoom-reset shortcut (primary modifier + "0").
+// Returns true when the event is a zoom-reset shortcut (Cmd/Ctrl + "0").
 export function isZoomReset(event: KeyboardEvent): boolean {
   if (!hasMod(event)) return false;
   return event.key === "0";

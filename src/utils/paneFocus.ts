@@ -1,10 +1,10 @@
 // Decides whether a pane that has just become active should pull keyboard focus
 // into its editor textarea.
 //
-// A pane auto-focuses its editor when it becomes active so that switching panes
-// with Cmd/Ctrl+Arrow — or clicking a pane's body — lands the caret ready to
-// type. But that pull must respect the never-steal-focus rule from the
-// composite-control conventions: when focus currently lives on a control
+// A pane auto-focuses its editor when it becomes active so the caret is ready
+// after Cmd/Ctrl+PageUp/PageDown, Ctrl+Tab, or a click on its body. That pull
+// must respect the composite-control conventions' never-steal-focus rule:
+// when focus currently lives on a control
 // *outside* the pane deck — most importantly the zen-mode pane switcher in the
 // status bar, a follows-focus tablist that moves focus to its own tab on every
 // arrow key — the pane must not yank focus away, or the switcher could only ever
@@ -31,7 +31,7 @@ export function shouldPullEditorFocus(
   }
 
   // Focus is already inside the editing surface — a pane-to-pane move within the
-  // deck (Cmd/Ctrl+Arrow from another pane's editor, or a click on this pane's
+  // deck (a pane shortcut from another pane's editor, or a click on this pane's
   // body). Follow it into this pane.
   if (deck !== null && deck.contains(activeElement)) {
     return true;

@@ -41,13 +41,13 @@ describe("shouldPullEditorFocus", () => {
 
   it("pulls focus when focus is nowhere — null or the document body", () => {
     // Null/body happens on the first mount and when the previously focused pane
-    // unmounted during a zen Cmd/Ctrl+Arrow switch, dropping focus to the body.
+    // unmounted during a zen Cmd/Ctrl+PageUp/PageDown switch, dropping focus to the body.
     expect(shouldPullEditorFocus(null, editor, title, deck)).toBe(true);
     expect(shouldPullEditorFocus(document.body, editor, title, deck)).toBe(true);
   });
 
   it("pulls focus on a pane-to-pane move where focus is inside the deck", () => {
-    // Cmd/Ctrl+Arrow from another pane's editor (still mounted, in the deck).
+    // Cmd/Ctrl+PageUp/PageDown from another pane's editor (still mounted, in the deck).
     const otherPaneEditor = document.createElement("textarea");
     deck.append(otherPaneEditor);
     expect(shouldPullEditorFocus(otherPaneEditor, editor, title, deck)).toBe(true);
