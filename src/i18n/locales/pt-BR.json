@@ -36,6 +36,8 @@
   "pane.region": "Painel: {title}",
   "pane.words": "Palavras {count}",
   "pane.chars": "Caracteres {count}",
+  "pane.countsUnavailable": "Contagens indisponíveis",
+  "pane.retryCounts": "Tentar novamente",
   "pane.switch": "Trocar de painel",
 
   "settings.title": "Configurações",

@@ -1,8 +1,9 @@
-import { useEffect, useRef, type CSSProperties } from "react";
+import { useEffect, useId, useRef, useState, type CSSProperties } from "react";
 import { Trash2 } from "lucide-react";
 import type { Pane } from "../types";
 import { useAppState } from "../state/AppStateContext";
 import { X_LIMIT } from "../utils/counts";
+import { retryCountWorker } from "../services/textCounts";
 import { useTextCounts } from "../hooks/useTextCounts";
 import { darkPaneBackground, paneHeaderDeep } from "../utils/paneColors";
 import { shouldPullEditorFocus } from "../utils/paneFocus";
@@ -27,6 +28,8 @@ export function PaneView({ pane }: PaneViewProps) {
   } = useAppState();
   const i18n = useI18n();
   const { t } = i18n;
+  const titleId = useId();
+  const [countRetryRevision, setCountRetryRevision] = useState(0);
   const editorRef = useRef<HTMLTextAreaElement | null>(null);
   const titleRef = useRef<HTMLInputElement | null>(null);
   const pendingPasteSnapshotRef = useRef(false);
@@ -34,10 +37,10 @@ export function PaneView({ pane }: PaneViewProps) {
   // Word, character and X counts are O(this pane's content length), so they are
   // made off the UI thread once typing in this pane pauses; the footer shows the
   // latest finished ones.
-  const counts = useTextCounts(pane.content);
+  const counts = useTextCounts(pane.content, countRetryRevision);
   const shown = counts === null || counts === "failed" ? null : counts;
 
-  // When this pane becomes active, pull focus into the textarea so Cmd/Ctrl+Arrow
+  // When this pane becomes active, pull focus into the textarea so pane shortcuts
   // and click-to-edit land ready to type — but never steal focus from a control
   // outside the pane deck (most importantly the zen-mode pane switcher, a
   // follows-focus tablist in the status bar). The decision lives in a pure helper
@@ -72,6 +75,7 @@ export function PaneView({ pane }: PaneViewProps) {
       <header className="paneHeader">
         <input
           ref={titleRef}
+          id={titleId}
           aria-label={t("pane.titleLabel")}
           className="paneTitleInput"
           value={pane.title}
@@ -107,6 +111,8 @@ export function PaneView({ pane }: PaneViewProps) {
       </header>
       <textarea
         ref={editorRef}
+        aria-labelledby={pane.title ? titleId : undefined}
+        aria-label={pane.title ? undefined : t("pane.defaultTitle")}
         className="paneEditor"
         value={pane.content}
         onChange={(event) => {
@@ -143,6 +149,21 @@ export function PaneView({ pane }: PaneViewProps) {
           textDecoration: settings.editorUnderline ? "underline" : "none",
         }}
       />
+      {counts === "failed" && (
+        <div className="paneCountsFailure">
+          <span role="status">{t("pane.countsUnavailable")}</span>
+          <button
+            className="secondaryButton paneCountsRetry"
+            type="button"
+            onClick={() => {
+              retryCountWorker();
+              setCountRetryRevision((revision) => revision + 1);
+            }}
+          >
+            {t("pane.retryCounts")}
+          </button>
+        </div>
+      )}
       <footer className="paneFooter">
         {/* A dash stands in until the first count arrives or when one fails. */}
         <span>{t("pane.words", { count: shown === null ? "–" : shown.words })}</span>

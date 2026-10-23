@@ -2218,3 +2218,5 @@ kbd {
   gap: 8px;
   margin-top: 4px;
 }
+
+.paneCountsFailure { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 4px 8px; }

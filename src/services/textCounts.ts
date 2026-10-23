@@ -1,5 +1,4 @@
 import type { TextCounts } from "../types";
-import { getTextCounts } from "../utils/counts";
 
 // Pane counts are O(text length): in a pane of a megabyte or more they would
 // hold every keystroke for a noticeable time. They run in one shared worker
@@ -7,36 +6,25 @@ import { getTextCounts } from "../utils/counts";
 // never waits and a burst of edits never queues a backlog of counts.
 
 type Reply = { id: number; counts?: TextCounts; error?: string };
-type Waiting = { text: string; resolve: (counts: TextCounts) => void; reject: (error: Error) => void };
+type Waiting = { resolve: (counts: TextCounts) => void; reject: (error: Error) => void };
 
 let worker: Worker | null | undefined;
 const waiting = new Map<number, Waiting>();
 let nextId = 0;
-// Whether the worker has answered at all. One that fails before its first
-// answer could not start here, so counting falls back to the page for the rest
-// of the session instead of failing every time.
-let workerAnswered = false;
-
-function countOnPage(text: string): Promise<TextCounts> {
-  return new Promise((resolve) => setTimeout(resolve, 0)).then(() => getTextCounts(text));
-}
-
 function settleAll(error: Error) {
   const held = [...waiting.values()];
   waiting.clear();
-  for (const request of held) {
-    if (workerAnswered) request.reject(error);
-    else countOnPage(request.text).then(request.resolve, request.reject);
-  }
+  for (const request of held) request.reject(error);
 }
 
-// The shared worker, created on first use and again after one dies (an
-// out-of-memory count, say). null where the platform has no workers.
+// A worker that answered before dying is replaced on the next count. A failed
+// startup stays unavailable until explicit retry, so typing never restarts it.
 function countWorker(): Worker | null {
   if (worker !== undefined) return worker;
   if (typeof Worker === "undefined") return (worker = null);
   try {
     const created = new Worker(new URL("../workers/counts.worker.ts", import.meta.url), { type: "module" });
+    let workerAnswered = false;
     created.onmessage = ({ data }: MessageEvent<Reply>) => {
       workerAnswered = true;
       const request = waiting.get(data.id);
@@ -60,13 +48,23 @@ function countWorker(): Worker | null {
 
 export function countText(text: string): Promise<TextCounts> {
   const target = countWorker();
-  // No worker here: count after the current task rather than inside it.
-  if (target === null) return countOnPage(text);
+  if (target === null) return Promise.reject(new Error("count worker unavailable"));
   return new Promise((resolve, reject) => {
     const id = ++nextId;
-    waiting.set(id, { text, resolve, reject });
-    target.postMessage({ id, text });
+    waiting.set(id, { resolve, reject });
+    try {
+      target.postMessage({ id, text });
+    } catch (error) {
+      waiting.delete(id);
+      reject(error);
+    }
   });
+}
+
+// Retrying a failed startup must leave an available worker and its active
+// counts alone; the requesting pane schedules its count again separately.
+export function retryCountWorker(): void {
+  if (worker === null) worker = undefined;
 }
 
 // Runs one input at a time; inputs submitted meanwhile collapse to the newest,

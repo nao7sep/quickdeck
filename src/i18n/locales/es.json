@@ -36,6 +36,8 @@
   "pane.region": "Panel: {title}",
   "pane.words": "Palabras {count}",
   "pane.chars": "Caracteres {count}",
+  "pane.countsUnavailable": "Recuentos no disponibles",
+  "pane.retryCounts": "Reintentar",
   "pane.switch": "Cambiar de panel",
 
   "settings.title": "Configuración",

@@ -7,6 +7,7 @@ import type { Pane } from "../../src/types";
 const mocks = vi.hoisted(() => ({
   countText: vi.fn((text: string) =>
     Promise.resolve({ words: text.split(" ").length, chars: text.length, xWeightedChars: text.length, xLimit: 280, xValid: true })),
+  retryCountWorker: vi.fn(),
   recordSnapshot: vi.fn(),
   logWarn: vi.fn(),
 }));
@@ -14,6 +15,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock("../../src/services/textCounts", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../src/services/textCounts")>()),
   countText: mocks.countText,
+  retryCountWorker: mocks.retryCountWorker,
 }));
 vi.mock("../../src/services/logger", () => ({
   logWarn: mocks.logWarn,
@@ -59,6 +61,7 @@ afterEach(async () => {
   container = null;
   mocks.countText.mockClear();
   mocks.logWarn.mockClear();
+  mocks.retryCountWorker.mockClear();
   mocks.recordSnapshot.mockClear();
 });
 
@@ -147,12 +150,35 @@ describe("PaneView counts", () => {
   });
 
   it("shows a dash and logs when a count fails, never throwing", async () => {
-    mocks.countText.mockImplementationOnce(() => Promise.reject(new Error("out of memory")));
+    mocks.countText.mockImplementationOnce(() => Promise.reject(new Error("Error EACCES /internal/counts SECRET_SENTINEL")));
     mount();
     await show("hello");
     await pause();
+    expect(footer()).toContain("Words –");
+    expect(footer()).toContain("Chars –");
     expect(footer()).toContain("X –/280");
+    expect(container!.querySelector('[role="status"]')?.textContent).toBe("Counts unavailable");
+    expect(container!.textContent).not.toContain("SECRET_SENTINEL");
+    expect(container!.querySelector(".paneCountsRetry")?.textContent).toBe("Retry");
     expect(mocks.logWarn).toHaveBeenCalledWith("pane count failed", expect.anything());
+  });
+
+  it("retries unchanged text and clears the failure only after counting succeeds", async () => {
+    mocks.countText.mockImplementationOnce(() => Promise.reject(new Error("worker unavailable")));
+    mount();
+    await show("hello world");
+    await pause();
+    const retry = container!.querySelector<HTMLButtonElement>(".paneCountsRetry")!;
+    await act(async () => retry.click());
+    expect(mocks.retryCountWorker).toHaveBeenCalledTimes(1);
+    expect(container!.textContent).toContain("Counts unavailable");
+    expect(footer()).toContain("Words –");
+    await pause();
+    expect(mocks.countText).toHaveBeenCalledTimes(2);
+    expect(mocks.countText).toHaveBeenLastCalledWith("hello world");
+    expect(footer()).toContain("Words 2");
+    expect(container!.textContent).not.toContain("Counts unavailable");
+    expect(container!.querySelector(".paneCountsRetry")).toBeNull();
   });
 });
 
@@ -187,6 +213,27 @@ describe("PaneView editor font resolution", () => {
 });
 
 describe("PaneView title", () => {
+  it("names the editor from its visible title through a stable association", async () => {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    await act(async () => root?.render(<PaneView pane={pane("hello")} />));
+    const editor = container.querySelector<HTMLTextAreaElement>("textarea")!;
+    const title = container.querySelector<HTMLInputElement>("input.paneTitleInput")!;
+    const titleId = title.id;
+    expect(titleId).not.toBe("");
+    expect(editor.getAttribute("aria-labelledby")).toBe(titleId);
+    expect(document.getElementById(titleId)).toBe(title);
+    expect(title.value).toBe("Scratch");
+    expect(document.activeElement).toBe(editor);
+
+    await act(async () => root?.render(<PaneView pane={{ ...pane("hello"), title: "Draft" }} />));
+    expect(title.id).toBe(titleId);
+    expect(title.value).toBe("Draft");
+    expect(editor.getAttribute("aria-labelledby")).toBe(titleId);
+    expect(document.activeElement).toBe(editor);
+  });
+
   it("keeps a cleared title empty and shows the default name only as its placeholder", async () => {
     container = document.createElement("div");
     document.body.appendChild(container);
@@ -196,6 +243,9 @@ describe("PaneView title", () => {
     const input = container.querySelector("input.paneTitleInput") as HTMLInputElement;
     expect(input.value).toBe("");
     expect(input.placeholder).toBe("New Buffer");
+    const editor = container.querySelector("textarea")!;
+    expect(editor.getAttribute("aria-labelledby")).toBeNull();
+    expect(editor.getAttribute("aria-label")).toBe(input.placeholder);
   });
 });
 

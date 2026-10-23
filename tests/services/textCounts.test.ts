@@ -1,7 +1,11 @@
 // @vitest-environment node
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+const countOnUiThread = vi.hoisted(() => vi.fn());
+vi.mock("../../src/utils/counts", () => ({ getTextCounts: countOnUiThread }));
+
 afterEach(() => {
+  countOnUiThread.mockClear();
   vi.unstubAllGlobals();
   vi.resetModules();
 });
@@ -115,20 +119,99 @@ describe("countText", () => {
     expect(FakeWorker.created).toHaveLength(2);
   });
 
-  it("counts on the page for the session when the worker cannot start here", async () => {
+  it("requires explicit retry if a replacement worker cannot start", async () => {
     FakeWorker.created = [];
     vi.stubGlobal("Worker", FakeWorker);
     const { countText } = await import("../../src/services/textCounts");
-    const pending = countText("hello world");
+    const first = countText("one");
+    FakeWorker.created[0].reply({ id: FakeWorker.created[0].posted[0].id, counts: { words: 1 } });
+    await first;
     FakeWorker.created[0].die();
-    await expect(pending).resolves.toMatchObject({ words: 2, chars: 11 });
-    await expect(countText("one")).resolves.toMatchObject({ words: 1 });
-    expect(FakeWorker.created).toHaveLength(1);
+    const replacementCount = countText("two");
+    FakeWorker.created[1].die();
+    await expect(replacementCount).rejects.toThrow("worker crashed");
+    await expect(countText("three")).rejects.toThrow("unavailable");
+    expect(FakeWorker.created).toHaveLength(2);
+    expect(countOnUiThread).not.toHaveBeenCalled();
   });
 
-  it("counts on the page, after the current task, where there are no workers", async () => {
+  it("rejects every pending count on startup failure and waits for explicit retry", async () => {
+    FakeWorker.created = [];
+    vi.stubGlobal("Worker", FakeWorker);
+    const { countText, retryCountWorker } = await import("../../src/services/textCounts");
+    const first = countText("hello world");
+    const second = countText("another pane");
+    FakeWorker.created[0].die();
+    await expect(first).rejects.toThrow("worker crashed");
+    await expect(second).rejects.toThrow("worker crashed");
+    await expect(countText("one")).rejects.toThrow("unavailable");
+    expect(FakeWorker.created).toHaveLength(1);
+    expect(countOnUiThread).not.toHaveBeenCalled();
+
+    retryCountWorker();
+    const retried = countText("hello world");
+    expect(FakeWorker.created).toHaveLength(2);
+    const replacement = FakeWorker.created[1];
+    replacement.reply({ id: replacement.posted[0].id, counts: { words: 2, chars: 11 } });
+    await expect(retried).resolves.toMatchObject({ words: 2, chars: 11 });
+    expect(countOnUiThread).not.toHaveBeenCalled();
+  });
+
+  it("rejects without UI counting where there are no workers", async () => {
     vi.stubGlobal("Worker", undefined);
+    const { countText, retryCountWorker } = await import("../../src/services/textCounts");
+    await expect(countText("hello world")).rejects.toThrow("unavailable");
+    retryCountWorker();
+    await expect(countText("hello world")).rejects.toThrow("unavailable");
+    expect(countOnUiThread).not.toHaveBeenCalled();
+  });
+
+  it("remembers a constructor failure and can retry it", async () => {
+    const construct = vi.fn(function () { throw new Error("startup blocked"); });
+    vi.stubGlobal("Worker", construct);
+    const { countText, retryCountWorker } = await import("../../src/services/textCounts");
+    await expect(countText("one")).rejects.toThrow("unavailable");
+    await expect(countText("two")).rejects.toThrow("unavailable");
+    expect(construct).toHaveBeenCalledTimes(1);
+    expect(countOnUiThread).not.toHaveBeenCalled();
+    FakeWorker.created = [];
+    vi.stubGlobal("Worker", FakeWorker);
+    retryCountWorker();
+    const retried = countText("two");
+    const replacement = FakeWorker.created[0];
+    replacement.reply({ id: replacement.posted[0].id, counts: { words: 1 } });
+    await expect(retried).resolves.toMatchObject({ words: 1 });
+  });
+
+  it("leaves a healthy worker and its pending counts alone when retry is requested", async () => {
+    FakeWorker.created = [];
+    vi.stubGlobal("Worker", FakeWorker);
+    const { countText, retryCountWorker } = await import("../../src/services/textCounts");
+    const pending = countText("one");
+    retryCountWorker();
+    const other = countText("two");
+    const worker = FakeWorker.created[0];
+    expect(FakeWorker.created).toHaveLength(1);
+    expect(worker.terminated).toBe(false);
+    worker.reply({ id: worker.posted[0].id, counts: { words: 1 } });
+    worker.reply({ id: worker.posted[1].id, counts: { words: 2 } });
+    await expect(pending).resolves.toMatchObject({ words: 1 });
+    await expect(other).resolves.toMatchObject({ words: 2 });
+  });
+
+  it("rejects a postMessage failure and allows later requests on the same worker", async () => {
+    FakeWorker.created = [];
+    vi.stubGlobal("Worker", FakeWorker);
     const { countText } = await import("../../src/services/textCounts");
-    await expect(countText("hello world")).resolves.toMatchObject({ words: 2, chars: 11 });
+    const first = countText("one");
+    const worker = FakeWorker.created[0];
+    vi.spyOn(worker, "postMessage").mockImplementationOnce(() => { throw new Error("cannot send"); });
+    await expect(countText("bad")).rejects.toThrow("cannot send");
+    const next = countText("two");
+    worker.reply({ id: worker.posted[0].id, counts: { words: 1 } });
+    worker.reply({ id: worker.posted[1].id, counts: { words: 2 } });
+    await expect(first).resolves.toMatchObject({ words: 1 });
+    await expect(next).resolves.toMatchObject({ words: 2 });
+    expect(FakeWorker.created).toHaveLength(1);
   });
 });

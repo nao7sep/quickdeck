@@ -10,7 +10,7 @@ export const COUNT_DELAY_MS = 200;
 
 // The latest finished counts of a pane's text: null until the first arrives,
 // "failed" when the newest count could not be made. The editor never waits.
-export function useTextCounts(text: string): TextCounts | null | "failed" {
+export function useTextCounts(text: string, retryRevision = 0): TextCounts | null | "failed" {
   const [counts, setCounts] = useState<TextCounts | null | "failed">(null);
   const mounted = useRef(true);
   const submit = useRef<((text: string) => void) | null>(null);
@@ -36,7 +36,7 @@ export function useTextCounts(text: string): TextCounts | null | "failed" {
   useEffect(() => {
     const timer = setTimeout(() => submit.current?.(text), COUNT_DELAY_MS);
     return () => clearTimeout(timer);
-  }, [text]);
+  }, [text, retryRevision]);
 
   return counts;
 }
