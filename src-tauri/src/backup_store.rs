@@ -23,10 +23,11 @@
 //! uses. A BLOB comes back as raw bytes (`Vec<u8>`) for byte-identical
 //! hashing and compare.
 
+#[cfg(test)]
+use std::thread::JoinHandle;
 use std::{
     path::{Path, PathBuf},
     sync::{Arc, Condvar, Mutex, MutexGuard, OnceLock, PoisonError},
-    thread::JoinHandle,
     time::Duration,
 };
 
@@ -49,8 +50,7 @@ pub(crate) const DRAIN_WAIT: Duration = Duration::from_millis(500);
 /// text, so CR/LF, a BOM and non-UTF-8 bytes are stored byte-identically.
 /// `written_at_utc` is the serialized ISO-8601-ms form of the row's latest save
 /// (`2026-07-06T04:05:12.345Z`), a data value, never a filename stamp. The
-/// unique `(path, session_id)` owns the one row per file per session; rows from
-/// before sessions keep a null `session_id`, which never conflicts. The
+/// unique `(path, session_id)` owns the one row per file per session. The
 /// `(path, id)` index serves the latest-row lookup.
 const SCHEMA: &str = "
 CREATE TABLE IF NOT EXISTS backups (
@@ -60,16 +60,9 @@ CREATE TABLE IF NOT EXISTS backups (
   content_sha256 TEXT NOT NULL,
   byte_size      INTEGER NOT NULL,
   written_at_utc TEXT NOT NULL,
-  session_id     TEXT
+  session_id     TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_backups_path_id ON backups (path, id);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_backups_path_session ON backups (path, session_id);
-";
-
-/// A format-1 store, from before sessions, gains the session column; its rows
-/// stay as earlier history.
-const UPGRADE_FROM_1: &str = "
-ALTER TABLE backups ADD COLUMN session_id TEXT;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_backups_path_session ON backups (path, session_id);
 ";
 
@@ -94,13 +87,15 @@ type Shared = Arc<(Mutex<Queue>, Condvar)>;
 
 /// The writer for one store file.
 struct Writer {
+    #[cfg(test)]
     store_file: PathBuf,
     shared: Shared,
+    #[cfg(test)]
     thread: Option<JoinHandle<()>>,
 }
 
-/// The process's writer, started by the first save. Keyed by its store file so a
-/// test's throwaway root gets its own; the app's root never changes.
+/// The process's writer, started once by the first save. Tests can reset it
+/// between throwaway roots; the app's root never changes.
 static WRITER: Mutex<Option<Writer>> = Mutex::new(None);
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -135,14 +130,17 @@ pub fn record(store_file: &Path, absolute_path: &Path, bytes: &[u8]) {
         written_at_utc: chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
     };
     let mut writer = lock(&WRITER);
+    #[cfg(test)]
     if writer
         .as_ref()
-        .is_none_or(|writer| writer.store_file != store_file)
+        .is_some_and(|writer| writer.store_file != store_file)
     {
         // A writer for another root stops after its pending versions, unjoined.
         if let Some(previous) = writer.take() {
             previous.stop();
         }
+    }
+    if writer.is_none() {
         *writer = Some(Writer::start(store_file));
     }
     if let Some(writer) = writer.as_ref() {
@@ -175,6 +173,7 @@ pub fn drain(bound: Duration) -> bool {
 /// Stops the writer after its pending versions and waits for it, so the next
 /// `record` starts a fresh one. Tests call it to settle the store and release
 /// its file between throwaway roots.
+#[cfg(test)]
 pub fn close_backup_store() {
     let writer = lock(&WRITER).take();
     if let Some(mut writer) = writer {
@@ -187,14 +186,29 @@ pub fn close_backup_store() {
 
 impl Writer {
     fn start(store_file: &Path) -> Self {
+        #[cfg(test)]
+        return Self::start_inner(store_file, None);
+        #[cfg(not(test))]
+        Self::start_inner(store_file)
+    }
+
+    fn start_inner(
+        store_file: &Path,
+        #[cfg(test)] before_write: Option<Box<dyn FnOnce() + Send>>,
+    ) -> Self {
         let shared: Shared = Arc::default();
         let worker = shared.clone();
         let file = store_file.to_path_buf();
         let session = session_id();
         let thread = std::thread::Builder::new()
             .name("backups".to_string())
-            .spawn(move || run_writer(&file, session, &worker));
-        let thread = match thread {
+            .spawn(move || {
+                #[cfg(test)]
+                run_writer(&file, session, &worker, before_write);
+                #[cfg(not(test))]
+                run_writer(&file, session, &worker);
+            });
+        let _thread = match thread {
             Ok(thread) => Some(thread),
             Err(error) => {
                 warn_unavailable(store_file, &error.to_string());
@@ -203,9 +217,11 @@ impl Writer {
             }
         };
         Self {
+            #[cfg(test)]
             store_file: store_file.to_path_buf(),
             shared,
-            thread,
+            #[cfg(test)]
+            thread: _thread,
         }
     }
 
@@ -220,6 +236,7 @@ impl Writer {
         changed.notify_all();
     }
 
+    #[cfg(test)]
     fn stop(&self) {
         let (queue, changed) = &*self.shared;
         lock(queue).closed = true;
@@ -229,7 +246,12 @@ impl Writer {
 
 /// The writer thread: owns the store connection and applies each batch of
 /// pending versions in the order they were queued.
-fn run_writer(store_file: &Path, session: &str, shared: &Shared) {
+fn run_writer(
+    store_file: &Path,
+    session: &str,
+    shared: &Shared,
+    #[cfg(test)] mut before_write: Option<Box<dyn FnOnce() + Send>>,
+) {
     let (queue, changed) = &**shared;
     // None until the first batch opens it; Err after an open that failed.
     let mut store: Option<Result<Connection, ()>> = None;
@@ -237,7 +259,9 @@ fn run_writer(store_file: &Path, session: &str, shared: &Shared) {
     loop {
         let batch = {
             let mut queue = changed
-                .wait_while(lock(queue), |queue| queue.pending.is_empty() && !queue.closed)
+                .wait_while(lock(queue), |queue| {
+                    queue.pending.is_empty() && !queue.closed
+                })
                 .unwrap_or_else(PoisonError::into_inner);
             if queue.pending.is_empty() {
                 return;
@@ -245,6 +269,10 @@ fn run_writer(store_file: &Path, session: &str, shared: &Shared) {
             queue.writing = true;
             std::mem::take(&mut queue.pending)
         };
+        #[cfg(test)]
+        if let Some(before_write) = before_write.take() {
+            before_write();
+        }
         if let Ok(conn) = store.get_or_insert_with(|| open_store(store_file)) {
             for version in batch {
                 match apply(conn, session, &version) {
@@ -277,8 +305,7 @@ fn open_store(file: &Path) -> Result<Connection, ()> {
 }
 
 /// The format check, before anything that writes. A new store gets WAL, its
-/// schema and its format marker; a format-1 store is upgraded in place; a store
-/// in a newer format is left untouched.
+/// schema and its format marker; unsupported stores are left untouched.
 fn prepare_store(conn: &Connection) -> Result<(), String> {
     let to_string = |error: rusqlite::Error| error.to_string();
     // Only this process writes the store (instance.lock); the timeout covers a
@@ -298,9 +325,8 @@ fn prepare_store(conn: &Connection) -> Result<(), String> {
             let recorded: i64 = conn
                 .pragma_query_value(None, "user_version", |row| row.get(0))
                 .map_err(to_string)?;
-            if recorded == 1 {
-                format_version::create_sqlite(conn, UPGRADE_FROM_1, format_version::BACKUPS)
-                    .map_err(to_string)?;
+            if recorded != i64::from(format_version::BACKUPS) {
+                return Err(format!("{BACKUPS_DB_FILE_NAME} uses unsupported format {recorded} and is left in place"));
             }
             Ok(())
         }
@@ -335,15 +361,15 @@ fn sha256_hex(bytes: &[u8]) -> String {
 fn apply(conn: &Connection, session: &str, version: &Version) -> Result<(), String> {
     let path = version.path.to_string_lossy();
     let hash = sha256_hex(&version.bytes);
-    let latest: Option<(Option<String>, String)> = conn
+    let latest: Option<String> = conn
         .query_row(
-            "SELECT session_id, content_sha256 FROM backups WHERE path = ?1 ORDER BY id DESC LIMIT 1",
+            "SELECT content_sha256 FROM backups WHERE path = ?1 ORDER BY id DESC LIMIT 1",
             params![path],
-            |row| Ok((row.get(0)?, row.get(1)?)),
+            |row| row.get(0),
         )
         .optional()
         .map_err(|error| error.to_string())?;
-    if latest.is_some_and(|(_, latest_hash)| latest_hash == hash) {
+    if latest.is_some_and(|latest_hash| latest_hash == hash) {
         return Ok(());
     }
     conn.execute(

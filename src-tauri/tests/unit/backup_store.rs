@@ -1,6 +1,6 @@
 use super::*;
 use serial_test::serial;
-use std::time::Instant;
+use std::sync::mpsc;
 
 /// A store file in a throwaway directory, with the writer reset so each test
 /// starts its own against its own root.
@@ -9,7 +9,7 @@ fn fresh_store(dir: &Path) -> PathBuf {
     dir.join(BACKUPS_DB_FILE_NAME)
 }
 
-type Row = (Option<String>, Vec<u8>, String, i64, String);
+type Row = (String, Vec<u8>, String, i64, String);
 
 fn rows(store_file: &Path, path: &Path) -> Vec<Row> {
     let conn = Connection::open(store_file).unwrap();
@@ -21,7 +21,13 @@ fn rows(store_file: &Path, path: &Path) -> Vec<Row> {
         .unwrap();
     statement
         .query_map(params![path.to_string_lossy()], |row| {
-            Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?))
+            Ok((
+                row.get(0)?,
+                row.get(1)?,
+                row.get(2)?,
+                row.get(3)?,
+                row.get(4)?,
+            ))
         })
         .unwrap()
         .collect::<Result<_, _>>()
@@ -29,7 +35,10 @@ fn rows(store_file: &Path, path: &Path) -> Vec<Row> {
 }
 
 fn contents(store_file: &Path, path: &Path) -> Vec<Vec<u8>> {
-    rows(store_file, path).into_iter().map(|row| row.1).collect()
+    rows(store_file, path)
+        .into_iter()
+        .map(|row| row.1)
+        .collect()
 }
 
 fn version(path: &Path, bytes: &[u8]) -> Version {
@@ -61,8 +70,11 @@ fn content_blob_is_byte_identical_including_crlf_and_non_utf8() {
     close_backup_store();
 
     let [(session, content, sha, byte_size, _)] = rows(&store, &target).try_into().unwrap();
-    assert_eq!(session.as_deref(), Some(session_id()));
-    assert_eq!(content, bytes, "BLOB must be byte-identical to what was written");
+    assert_eq!(session, session_id());
+    assert_eq!(
+        content, bytes,
+        "BLOB must be byte-identical to what was written"
+    );
     assert_eq!(byte_size, bytes.len() as i64);
     assert_eq!(sha, sha256_hex(&bytes));
 }
@@ -83,7 +95,10 @@ fn written_at_utc_is_serialized_iso_ms_not_the_filename_stamp() {
     assert!(written.ends_with('Z'), "written_at_utc: {written}");
     assert_eq!(&written[19..20], ".", "written_at_utc: {written}");
     assert_eq!(&written[10..11], "T", "written_at_utc: {written}");
-    assert!(chrono::DateTime::parse_from_rfc3339(&written).is_ok(), "{written}");
+    assert!(
+        chrono::DateTime::parse_from_rfc3339(&written).is_ok(),
+        "{written}"
+    );
 }
 
 #[test]
@@ -118,12 +133,15 @@ fn each_session_adds_its_own_row_and_never_changes_an_earlier_one() {
     apply(&conn, "second", &version(&path, b"c")).unwrap();
     apply(&conn, "second", &version(&path, b"d")).unwrap();
 
-    let sessions: Vec<_> = rows(&store, &path).into_iter().map(|row| (row.0, row.1)).collect();
+    let sessions: Vec<_> = rows(&store, &path)
+        .into_iter()
+        .map(|row| (row.0, row.1))
+        .collect();
     assert_eq!(
         sessions,
         [
-            (Some("first".to_string()), b"b".to_vec()),
-            (Some("second".to_string()), b"d".to_vec()),
+            ("first".to_string(), b"b".to_vec()),
+            ("second".to_string(), b"d".to_vec()),
         ]
     );
 }
@@ -142,7 +160,10 @@ fn a_first_save_equal_to_the_previous_sessions_row_adds_nothing() {
 
     // A later change in that session still gets its row.
     apply(&conn, "second", &version(&path, b"changed")).unwrap();
-    assert_eq!(contents(&store, &path), [b"same".to_vec(), b"changed".to_vec()]);
+    assert_eq!(
+        contents(&store, &path),
+        [b"same".to_vec(), b"changed".to_vec()]
+    );
 }
 
 #[test]
@@ -191,26 +212,72 @@ fn a_blocked_store_holds_up_neither_a_save_nor_the_next_save_of_that_file() {
     let dir = tempfile::tempdir().unwrap();
     let store = fresh_store(dir.path());
     let path = dir.path().join("panes.json");
+    let (entered, entry) = mpsc::channel();
+    let (release, released) = mpsc::channel();
+    let writer = Writer::start_inner(&store, Some(Box::new(move || {
+        entered.send(()).unwrap();
+        released.recv().unwrap();
+    })));
+    let shared = writer.shared.clone();
+    *lock(&WRITER) = Some(writer);
     record(&store, &path, b"v1");
-    assert!(drain(Duration::from_secs(5)));
+    let blocked = entry.recv_timeout(Duration::from_secs(10));
+    if blocked.is_err() {
+        let _ = release.send(());
+        close_backup_store();
+        blocked.expect("backup writer did not reach its write boundary");
+    }
 
-    // Another connection holds the write lock, so the writer waits on it.
-    let blocker = Connection::open(&store).unwrap();
-    blocker.execute_batch("BEGIN EXCLUSIVE").unwrap();
-
-    let started = Instant::now();
-    record(&store, &path, b"v2");
-    record(&store, &path, b"v3");
-    assert!(
-        started.elapsed() < Duration::from_millis(100),
-        "record waited {:?}",
-        started.elapsed()
-    );
-    assert!(!drain(Duration::from_millis(100)), "the drain is bounded");
-
-    blocker.execute_batch("ROLLBACK").unwrap();
+    let (acknowledged, acknowledgement) = mpsc::channel();
+    let caller_store = store.clone();
+    let caller_path = path.clone();
+    let caller = std::thread::spawn(move || {
+        record(&caller_store, &caller_path, b"v2");
+        record(&caller_store, &caller_path, b"v3");
+        acknowledged.send(()).unwrap();
+    });
+    // The watchdog catches hangs; acknowledgement and pending work while the
+    // real writer is parked establish that recording does not wait for it.
+    let acknowledged = acknowledgement.recv_timeout(Duration::from_secs(10));
+    let (writing, pending) = {
+        let queue = lock(&shared.0);
+        (queue.writing, queue.pending.iter().map(|version| {
+            (version.path.clone(), version.bytes.clone())
+        }).collect::<Vec<_>>())
+    };
+    release.send(()).unwrap();
+    caller.join().unwrap();
     close_backup_store();
+    acknowledged.expect("backup recording blocked its caller");
+    assert!(writing, "the writer's admitted batch was still blocked");
+    assert_eq!(pending, [(path.clone(), b"v3".to_vec())]);
     assert_eq!(contents(&store, &path), [b"v3".to_vec()]);
+}
+
+#[test]
+#[serial(backup_store)]
+fn drain_returns_when_its_bound_expires_with_pending_work() {
+    close_backup_store();
+    let shared: Shared = Arc::default();
+    lock(&shared.0)
+        .pending
+        .push(version(Path::new("/pending/panes.json"), b"pending"));
+    *lock(&WRITER) = Some(Writer {
+        store_file: PathBuf::from("/pending/backups.sqlite3"),
+        shared: shared.clone(),
+        thread: None,
+    });
+    let (finished, completion) = mpsc::channel();
+    let waiter = std::thread::spawn(move || {
+        finished.send(drain(Duration::from_millis(10))).unwrap();
+    });
+    let result = completion.recv_timeout(Duration::from_secs(10));
+    // Release the waiter even if the bound stopped working, so cleanup cannot hang.
+    lock(&shared.0).pending.clear();
+    shared.1.notify_all();
+    waiter.join().unwrap();
+    close_backup_store();
+    assert!(!result.expect("backup drain did not honor its bound"));
 }
 
 #[test]
@@ -226,7 +293,10 @@ fn record_is_best_effort_when_the_store_cannot_be_opened() {
 
     record(&store, &target, b"content");
     record(&store, &target, b"content 2");
-    assert!(drain(Duration::from_secs(5)), "a disabled store still drains");
+    assert!(
+        drain(Duration::from_secs(5)),
+        "a disabled store still drains"
+    );
     close_backup_store();
     assert!(!store.exists(), "no store file should have been created");
 
@@ -252,8 +322,25 @@ fn a_new_store_records_its_format_version() {
 }
 
 #[test]
+fn current_backup_rows_require_a_session_id() {
+    let conn = Connection::open_in_memory().unwrap();
+    prepare_store(&conn).unwrap();
+    let error = conn
+        .execute(
+            "INSERT INTO backups (path, content, content_sha256, byte_size, written_at_utc)
+         VALUES ('/pane', x'00', 'hash', 1, '2026-10-23T00:00:00.000Z')",
+            [],
+        )
+        .unwrap_err();
+    assert_eq!(
+        error.sqlite_error_code(),
+        Some(rusqlite::ErrorCode::ConstraintViolation)
+    );
+}
+
+#[test]
 #[serial(backup_store)]
-fn a_store_from_before_sessions_is_upgraded_with_its_rows_kept_as_earlier_history() {
+fn an_older_store_is_refused_without_changing_its_bytes_or_schema() {
     let dir = tempfile::tempdir().unwrap();
     let store = fresh_store(dir.path());
     let path = dir.path().join("panes.json");
@@ -272,31 +359,41 @@ fn a_store_from_before_sessions_is_upgraded_with_its_rows_kept_as_earlier_histor
             conn.execute(
                 "INSERT INTO backups (path, content, content_sha256, byte_size, written_at_utc)
                  VALUES (?1, ?2, ?3, 5, '2026-07-06T04:05:12.345Z')",
-                params![path.to_string_lossy(), content.to_vec(), sha256_hex(content)],
+                params![
+                    path.to_string_lossy(),
+                    content.to_vec(),
+                    sha256_hex(content)
+                ],
             )
             .unwrap();
         }
     }
 
-    record(&store, &path, b"old 2"); // equal to the latest earlier row: nothing
-    close_backup_store();
+    let before = std::fs::read(&store).unwrap();
+    let conn = Connection::open(&store).unwrap();
+    let error = prepare_store(&conn).unwrap_err();
+    assert!(error.contains("unsupported format 1"), "{error}");
+    drop(conn);
     record(&store, &path, b"new");
     close_backup_store();
-
-    let sessions: Vec<_> = rows(&store, &path).into_iter().map(|row| (row.0, row.1)).collect();
-    assert_eq!(
-        sessions,
-        [
-            (None, b"old 1".to_vec()),
-            (None, b"old 2".to_vec()),
-            (Some(session_id().to_string()), b"new".to_vec()),
-        ]
-    );
-    let version: i64 = Connection::open(&store)
-        .unwrap()
+    assert_eq!(std::fs::read(&store).unwrap(), before);
+    let conn = Connection::open(&store).unwrap();
+    let version: i64 = conn
         .pragma_query_value(None, "user_version", |row| row.get(0))
         .unwrap();
-    assert_eq!(version, i64::from(format_version::BACKUPS));
+    assert_eq!(version, 1);
+    let columns: Vec<String> = conn
+        .prepare("PRAGMA table_info(backups)")
+        .unwrap()
+        .query_map([], |row| row.get(1))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    assert!(!columns.iter().any(|name| name == "session_id"));
+    let count: i64 = conn
+        .query_row("SELECT count(*) FROM backups", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(count, 2);
 }
 
 #[test]
