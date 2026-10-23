@@ -69,7 +69,6 @@ if [[ ! -d "$APP_BUNDLE/Contents/MacOS" ]]; then
 fi
 
 log_step "Launching the packaged app"
-node "$RUNTIME_HELPER" claim "$RUNTIME_TOKEN"
 node "$RUNTIME_HELPER" stop
-open -n "$APP_BUNDLE"
-node "$RUNTIME_HELPER" wait-process "$APP_BUNDLE/Contents/MacOS/$APP_EXECUTABLE"
+nohup env QUICKDECK_LAUNCHER_ROOT="$REPO_DIR" QUICKDECK_LAUNCHER_TOKEN="$RUNTIME_TOKEN" "$APP_BUNDLE/Contents/MacOS/$APP_EXECUTABLE" </dev/null >/dev/null 2>&1 &
+node "$RUNTIME_HELPER" wait-ready "$RUNTIME_TOKEN"

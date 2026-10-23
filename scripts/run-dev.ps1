@@ -50,7 +50,6 @@ $repoDir = Split-Path -Parent $scriptDir
 $runtimeHelper = Join-Path $scriptDir "launcher-runtime.mjs"
 $runtimeToken = [guid]::NewGuid().ToString("N")
 $devHost = if ($env:TAURI_DEV_HOST) { $env:TAURI_DEV_HOST } else { "127.0.0.1" }
-$devUrl = "http://${devHost}:26267"
 
 try {
     Set-Utf8Console
@@ -62,7 +61,6 @@ try {
     Set-Location $repoDir
 
     Write-Step "Replacing any existing QuickDeck runtime"
-    Invoke-Native -FilePath "node" -ArgumentList @($runtimeHelper, "claim", $runtimeToken)
     Invoke-Native -FilePath "node" -ArgumentList @($runtimeHelper, "stop")
     Invoke-Native -FilePath "node" -ArgumentList @($runtimeHelper, "check-endpoint", $devHost, "26267")
 
@@ -70,14 +68,10 @@ try {
     Invoke-Native -FilePath "npm" -ArgumentList @("install", "--no-audit", "--no-fund")
 
     Write-Step "Starting QuickDeck in development mode"
-    $devProcess = Start-Process -FilePath (Get-Command "npm.cmd").Source -ArgumentList @("run", "tauri", "dev") -NoNewWindow -PassThru
-    Invoke-Native -FilePath "node" -ArgumentList @($runtimeHelper, "wait-http", $devUrl)
-    Invoke-Native -FilePath "node" -ArgumentList @($runtimeHelper, "wait-dev-build", (Join-Path $repoDir "src-tauri/target/debug/quickdeck.exe"))
-    Write-Step "QuickDeck is ready at $devUrl"
-    $devProcess.WaitForExit()
-    if ($devProcess.ExitCode -notin @(0, 130, -1073741510)) {
-        throw "QuickDeck development runtime failed with exit code $($devProcess.ExitCode)."
-    }
+    $env:QUICKDECK_LAUNCHER_ROOT = $repoDir
+    $env:QUICKDECK_LAUNCHER_TOKEN = $runtimeToken
+    # The foreground CLI owns its build and dev server through settlement.
+    Invoke-Native -FilePath "npm" -ArgumentList @("run", "tauri", "dev") -AllowedExitCodes @(0, 130, -1073741510)
 }
 catch {
     Write-Host ""
@@ -85,11 +79,8 @@ catch {
     $scriptExitCode = 1
 }
 finally {
-    & node $runtimeHelper is-owner $runtimeToken *> $null
-    if ($LASTEXITCODE -eq 0) {
-        & node $runtimeHelper stop-if-owner $runtimeToken *> $null
-        Read-Host "Press Enter to close" | Out-Null
-    }
+    & node $runtimeHelper stop $runtimeToken
+    Read-Host "Press Enter to close" | Out-Null
 }
 
 exit $scriptExitCode

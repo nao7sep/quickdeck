@@ -47,15 +47,16 @@ try {
     }
 
     $builtAt = (Get-Item $exePath).LastWriteTime.ToString("yyyy-MM-dd HH:mm:ss")
-    & node $runtimeHelper claim $runtimeToken
     & node $runtimeHelper stop
     if ($LASTEXITCODE -ne 0) { throw "Could not replace the existing QuickDeck runtime." }
     Write-Step "Launching the existing built app (built: $builtAt)"
     Write-Host "If you changed source since then, run rebuild instead."
 
     # GUI app: launch non-blocking via Start-Process.
+    $env:QUICKDECK_LAUNCHER_ROOT = $repoDir
+    $env:QUICKDECK_LAUNCHER_TOKEN = $runtimeToken
     Start-Process -FilePath $exePath | Out-Null
-    & node $runtimeHelper wait-process $exePath
+    & node $runtimeHelper wait-ready $runtimeToken
     if ($LASTEXITCODE -ne 0) { throw "QuickDeck did not start." }
 }
 catch {

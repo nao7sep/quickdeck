@@ -11,7 +11,6 @@ REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 RUNTIME_HELPER="$SCRIPT_DIR/launcher-runtime.mjs"
 RUNTIME_TOKEN="run-dev-$$-$(date +%s)-$RANDOM"
 DEV_HOST="${TAURI_DEV_HOST:-127.0.0.1}"
-DEV_URL="http://$DEV_HOST:26267"
 
 log_step() {
   printf '\n==> %s\n' "$1"
@@ -36,9 +35,7 @@ pause_on_failure() {
 cleanup() {
   local status="$?"
   trap - EXIT
-  if node "$RUNTIME_HELPER" is-owner "$RUNTIME_TOKEN" >/dev/null 2>&1; then
-    node "$RUNTIME_HELPER" stop-if-owner "$RUNTIME_TOKEN" >/dev/null 2>&1 || true
-  fi
+  node "$RUNTIME_HELPER" stop "$RUNTIME_TOKEN" || true
   pause_on_failure "$status"
   exit "$status"
 }
@@ -53,7 +50,6 @@ require_command rustc
 cd "$REPO_DIR"
 
 log_step "Replacing any existing QuickDeck runtime"
-node "$RUNTIME_HELPER" claim "$RUNTIME_TOKEN"
 node "$RUNTIME_HELPER" stop
 node "$RUNTIME_HELPER" check-endpoint "$DEV_HOST" 26267
 
@@ -61,9 +57,6 @@ log_step "Installing dependencies required for launch"
 npm install --no-audit --no-fund
 
 log_step "Starting QuickDeck in development mode"
-npm run tauri dev &
-DEV_PID=$!
-node "$RUNTIME_HELPER" wait-http "$DEV_URL"
-node "$RUNTIME_HELPER" wait-dev-build "$REPO_DIR/src-tauri/target/debug/quickdeck"
-log_step "QuickDeck is ready at $DEV_URL"
-wait "$DEV_PID"
+# Keep the CLI in the foreground: it owns the build and dev server through
+# settlement, and reports startup failures immediately.
+QUICKDECK_LAUNCHER_ROOT="$REPO_DIR" QUICKDECK_LAUNCHER_TOKEN="$RUNTIME_TOKEN" npm run tauri dev
