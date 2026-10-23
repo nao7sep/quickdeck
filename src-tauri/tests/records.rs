@@ -361,3 +361,21 @@ fn a_records_database_without_its_marker_is_not_read() {
     let refused = read_bounded(file, read_sessions).err().unwrap();
     assert!(refused.contains("no format version"), "{refused}");
 }
+
+#[test]
+fn an_evicted_page_refetches_from_its_inclusive_anchor_after_new_inserts() {
+    let conn = database();
+    for index in 0..(PAGE_SIZE + 5) {
+        insert(&conn, LAUNCH, "2026-10-01T08:00:01.000Z", "info", &format!("line {index}"), "{}");
+    }
+    let original = read_page(&conn, &query()).unwrap();
+    let anchor = &original.records[0];
+    for index in 0..20 {
+        insert(&conn, LAUNCH, "2026-10-01T08:00:02.000Z", "info", &format!("new {index}"), "{}");
+    }
+    let recovered = read_page(&conn, &RecordsQuery {
+        through: Some(Cursor { time: anchor.time.clone(), id: anchor.id }),
+        ..query()
+    }).unwrap();
+    assert_eq!(recovered, original);
+}

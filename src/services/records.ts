@@ -26,6 +26,7 @@ export type RecordsQuery = {
   level: RecordLevelFilter | null;
   search: string;
   after: RecordCursor | null;
+  through?: RecordCursor;
 };
 
 export type RecordSummary = {

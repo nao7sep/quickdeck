@@ -2,12 +2,14 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useLayoutEffect,
   useRef,
   useState,
   type CSSProperties,
   type KeyboardEvent,
   type ReactNode,
 } from "react";
+import { HistoryPages, type HistoryPage } from "../components/HistoryPages";
 import { Search } from "lucide-react";
 import { PaneSplitter } from "../components/PaneSplitter";
 import { usePaneSize } from "../hooks/usePaneSize";
@@ -20,13 +22,14 @@ import {
   readRecordsPage,
   RECORD_LEVEL_FILTERS,
   saveRecordsListWidth,
+  type RecordCursor,
   type RecordDetail,
   type RecordLevelFilter,
   type RecordSources,
   type RecordsQuery,
   type RecordSummary,
 } from "../services/records";
-import { indexOfId, listboxDirection, nextIndex } from "../utils/compositeNav";
+import { listboxDirection, nextIndex } from "../utils/compositeNav";
 import {
   cursorAfter,
   formatStoredTime,
@@ -34,13 +37,21 @@ import {
   knownLevel,
   LEVEL_FILTER_LABELS,
   LEVEL_LABELS,
-  mergeNewestPage,
   pageReachesRecord,
   prettyJson,
 } from "./recordFormat";
 import { RECORDS_LIST_SIBLING_MIN, RECORDS_LIST_WIDTH } from "./recordsLayout";
 
-type Filters = Omit<RecordsQuery, "after">;
+type Filters = Omit<RecordsQuery, "after" | "through">;
+type History = HistoryPage<RecordSummary, { first: RecordCursor; last: RecordCursor }>;
+let nextPageKey = 0;
+function historyPage(records: RecordSummary[]): History {
+  const first = records[0];
+  const last = records.at(-1)!;
+  return { key: ++nextPageKey, cursor: { first: { time: first.time, id: first.id }, last: { time: last.time, id: last.id } },
+    count: records.length, height: records.length * 70, rows: records };
+}
+function pagesFor(records: RecordSummary[]): History[] { return records.length ? [historyPage(records)] : []; }
 
 const NO_FILTERS: Filters = { session: null, level: null, search: "" };
 const SEARCH_DELAY_MS = 300;
@@ -50,7 +61,7 @@ const LIVE_INTERVAL_MS = 1000;
 type ListState =
   | { status: "loading" }
   | { status: "failed" }
-  | { status: "ready"; records: RecordSummary[]; more: boolean; loadingMore: boolean; moreFailed: boolean };
+  | { status: "ready"; pages: History[]; more: boolean; loadingMore: boolean; moreFailed: boolean };
 
 type DetailState =
   | { status: "none" }
@@ -80,6 +91,13 @@ export function RecordsWindow({ initialListWidth }: { initialListWidth: number }
   const [searchText, setSearchText] = useState("");
   const [composingSearch, setComposingSearch] = useState(false);
   const [list, setList] = useState<ListState>({ status: "loading" });
+  const [revision, setRevision] = useState(0);
+  const [focusIndex, setFocusIndex] = useState<number | null>(null);
+  const [selectedIndex, setSelectedIndex] = useState(-1);
+  const listState = useRef(list);
+  listState.current = list;
+  const refetchActive = useRef(false);
+  const prependHeight = useRef(0);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [detail, setDetail] = useState<DetailState>({ status: "none" });
   const [listWidth, setListWidth] = useState(initialListWidth);
@@ -95,7 +113,7 @@ export function RecordsWindow({ initialListWidth }: { initialListWidth: number }
   // The filters the current list was read for, for the live reads below.
   const filtersRef = useRef(filters);
   // Anchor for the contiguous history already shown, read by the live callback.
-  const priorNewestRef = useRef<RecordSummary | null>(null);
+  const priorNewestRef = useRef<RecordCursor | null>(null);
   // New records arrived while the list was scrolled away from the top.
   const newestPending = useRef(false);
   // A failed read is itself logged as a record, whose signal would start the
@@ -125,7 +143,16 @@ export function RecordsWindow({ initialListWidth }: { initialListWidth: number }
   );
 
   useEffect(() => {
-    priorNewestRef.current = list.status === "ready" ? list.records[0] ?? null : null;
+    priorNewestRef.current = list.status === "ready" ? list.pages[0]?.cursor.first ?? null : null;
+  }, [list]);
+
+  useLayoutEffect(() => {
+    const scroll = scrollRef.current;
+    if (scroll && prependHeight.current !== 0) {
+      scroll.scrollTop += prependHeight.current;
+      prependHeight.current = 0;
+      scroll.dispatchEvent(new Event("scroll"));
+    }
   }, [list]);
 
   // The search applies once typing pauses, and never on an unfinished IME
@@ -167,6 +194,7 @@ export function RecordsWindow({ initialListWidth }: { initialListWidth: number }
     filtersRef.current = filters;
     const generation = ++listGeneration.current;
     fetchingMore.current = false;
+    setSelectedIndex(-1);
     newestPending.current = false;
     setList({ status: "loading" });
     void readRecordsPage({ ...filters, after: null }).then(
@@ -174,7 +202,7 @@ export function RecordsWindow({ initialListWidth }: { initialListWidth: number }
         if (generation !== listGeneration.current) return;
         pagePaused.current = false;
         syncLiveSuspension();
-        setList({ status: "ready", records: page.records, more: page.more, loadingMore: false, moreFailed: false });
+        setList({ status: "ready", pages: pagesFor(page.records), more: page.more, loadingMore: false, moreFailed: false });
       },
       (error: unknown) => {
         if (generation !== listGeneration.current) return;
@@ -207,22 +235,36 @@ export function RecordsWindow({ initialListWidth }: { initialListWidth: number }
     const priorNewest = priorNewestRef.current;
     void (async () => {
       let page = await readRecordsPage({ ...query, after: null });
-      const records = [...page.records];
-      while (generation === listGeneration.current && !pageReachesRecord(page, priorNewest)) {
+      const pages: History[] = [];
+      let residentHeight = 0;
+      const headWindow = (scrollRef.current?.clientHeight || 600) * 3;
+      for (;;) {
+        const additions = priorNewest === null ? page.records : page.records.filter((row) =>
+          row.time > priorNewest.time || (row.time === priorNewest.time && row.id > priorNewest.id));
+        if (additions.length) {
+          const added = historyPage(additions);
+          if (residentHeight > headWindow) added.rows = null;
+          residentHeight += added.height;
+          pages.push(added);
+        }
+        if (generation !== listGeneration.current || pageReachesRecord(page, priorNewest)) break;
         page = await readRecordsPage({ ...query, after: cursorAfter(page.records) });
-        records.push(...page.records);
       }
-      return { records, more: page.more };
+      return { pages, more: page.more };
     })().then(
       (page) => {
         if (generation !== listGeneration.current) return;
         pagePaused.current = false;
         syncLiveSuspension();
-        setList((current) =>
-          current.status === "ready"
-            ? { ...current, ...mergeNewestPage(current.records, current.more, page) }
-            : { status: "ready", records: page.records, more: page.more, loadingMore: false, moreFailed: false },
-        );
+        const addedCount = page.pages.reduce((count, item) => count + item.count, 0);
+        setSelectedIndex((index) => index < 0 ? index : index + addedCount);
+        setFocusIndex((index) => index === null ? null : index + addedCount);
+        if ((scrollRef.current?.scrollTop ?? 0) > 0) {
+          prependHeight.current += page.pages.reduce((height, item) => height + item.height, 0);
+        }
+        setList((current) => current.status === "ready" && current.pages.length > 0
+          ? { ...current, pages: [...page.pages, ...current.pages] }
+          : { status: "ready", pages: page.pages, more: page.more, loadingMore: false, moreFailed: false });
       },
       (error: unknown) => {
         if (generation !== listGeneration.current) return;
@@ -300,7 +342,7 @@ export function RecordsWindow({ initialListWidth }: { initialListWidth: number }
     fetchingMore.current = true;
     const generation = listGeneration.current;
     setList((current) => (current.status === "ready" ? { ...current, loadingMore: true, moreFailed: false } : current));
-    void readRecordsPage({ ...filters, after: cursorAfter(list.records) }).then(
+    void readRecordsPage({ ...filters, after: list.pages.at(-1)?.cursor.last ?? null }).then(
       (page) => {
         if (generation !== listGeneration.current) return;
         fetchingMore.current = false;
@@ -308,7 +350,7 @@ export function RecordsWindow({ initialListWidth }: { initialListWidth: number }
         syncLiveSuspension();
         setList((current) =>
           current.status === "ready"
-            ? { ...current, records: [...current.records, ...page.records], more: page.more, loadingMore: false }
+            ? { ...current, pages: [...current.pages, ...pagesFor(page.records)], more: page.more, loadingMore: false }
             : current,
         );
       },
@@ -342,13 +384,40 @@ export function RecordsWindow({ initialListWidth }: { initialListWidth: number }
     if (nearEnd(scroll)) loadMore();
   };
 
-  const records = list.status === "ready" ? list.records : [];
-  const keys = records.map((record) => rowKey(record.id));
+  const pages = list.status === "ready" ? list.pages : [];
+  const rowCount = pages.reduce((count, page) => count + page.count, 0);
   const selectedKey = selectedId === null ? null : rowKey(selectedId);
-  const tabStopKey = selectedKey !== null && keys.includes(selectedKey) ? selectedKey : (keys[0] ?? null);
+  const cached = pages.flatMap((page) => page.rows ?? []);
+  const tabStopKey = cached.some((row) => row.id === selectedId) ? selectedKey : (cached[0] ? rowKey(cached[0].id) : null);
 
-  const select = (record: RecordSummary) => {
+  const select = (record: RecordSummary, index: number) => {
+    setSelectedIndex(index);
     if (record.id !== selectedId) setSelectedId(record.id);
+  };
+
+  const retainPages = useCallback((keys: Set<number>) => {
+    const current = listState.current;
+    if (current.status !== "ready") return;
+    let changed = false;
+    for (const page of current.pages) {
+      if (!keys.has(page.key) && page.rows !== null) { page.rows = null; changed = true; }
+    }
+    if (changed) setRevision((value) => value + 1);
+  }, []);
+
+  const refetchPage = (page: History) => {
+    if (refetchActive.current || pagePaused.current) return;
+    refetchActive.current = true;
+    const generation = listGeneration.current;
+    void readRecordsPage({ ...filtersRef.current, after: null, through: page.cursor.first }).then((result) => {
+      if (generation !== listGeneration.current) return;
+      page.rows = result.records.slice(0, page.count);
+    }, (error: unknown) => {
+      if (generation !== listGeneration.current) return;
+      pagePaused.current = true;
+      syncLiveSuspension();
+      logWarn("records read failed", { error: serializeError(error) });
+    }).finally(() => { refetchActive.current = false; setRevision((value) => value + 1); });
   };
 
   // The list is one listbox (composite-control-conventions, Listbox); the
@@ -359,17 +428,15 @@ export function RecordsWindow({ initialListWidth }: { initialListWidth: number }
     if (direction === null) return;
     event.preventDefault();
     const container = listRef.current;
-    const focused = document.activeElement instanceof HTMLElement ? document.activeElement.dataset.recordId : undefined;
-    const current = indexOfId(keys, focused ?? selectedKey);
+    const focused = document.activeElement instanceof HTMLElement ? document.activeElement.dataset.historyIndex : undefined;
+    const current = focused === undefined ? selectedIndex : Number(focused);
     const firstOption = container?.querySelector<HTMLElement>("[data-record-id]");
     const viewport = scrollRef.current?.clientHeight ?? 0;
     const pageStep = firstOption?.offsetHeight ? Math.max(1, Math.floor(viewport / firstOption.offsetHeight)) : 8;
-    const target = nextIndex(direction, current, keys.length, pageStep);
+    const target = nextIndex(direction, current, rowCount, pageStep);
     if (target < 0) return;
-    const option = container?.querySelector<HTMLElement>(`[data-record-id="${CSS.escape(keys[target])}"]`);
-    option?.focus();
-    option?.scrollIntoView?.({ block: "nearest" });
-    if (target === keys.length - 1 && (direction === "next" || direction === "page-next" || direction === "last")) {
+    setFocusIndex(target);
+    if (target === rowCount - 1 && (direction === "next" || direction === "page-next" || direction === "last")) {
       loadMore();
     }
   };
@@ -443,7 +510,7 @@ export function RecordsWindow({ initialListWidth }: { initialListWidth: number }
             <p className="recordsNote errorText" role="alert">{t("records.loadFailed")}</p>
           ) : list.status === "loading" ? (
             <p className="recordsNote">{t("records.loading")}</p>
-          ) : records.length === 0 ? (
+          ) : rowCount === 0 ? (
             <p className="recordsNote">{t("records.empty")}</p>
           ) : (
             <div
@@ -453,7 +520,9 @@ export function RecordsWindow({ initialListWidth }: { initialListWidth: number }
               className="recordsList"
               onKeyDown={onListKeyDown}
             >
-              {records.map((record) => {
+              <HistoryPages pages={pages} scrollRef={scrollRef} revision={revision}
+                onNeed={refetchPage} onEvict={retainPages} focusIndex={focusIndex}
+                onFocused={() => setFocusIndex(null)} renderRow={(record, index) => {
                 const key = rowKey(record.id);
                 const level = knownLevel(record.level);
                 return (
@@ -463,9 +532,10 @@ export function RecordsWindow({ initialListWidth }: { initialListWidth: number }
                     aria-selected={key === selectedKey}
                     tabIndex={key === tabStopKey ? 0 : -1}
                     data-record-id={key}
+                    data-history-index={index}
                     className={`recordsRow${key === selectedKey ? " recordsRow-selected" : ""}`}
-                    onClick={() => select(record)}
-                    onFocus={() => select(record)}
+                    onClick={() => select(record, index)}
+                    onFocus={() => select(record, index)}
                   >
                     <span className="recordsRowMeta">
                       <span>{formatStoredTime(record.time, timeFormat)}</span>
@@ -477,7 +547,7 @@ export function RecordsWindow({ initialListWidth }: { initialListWidth: number }
                     {record.op !== null ? <span className="recordsRowText">{record.op}</span> : null}
                   </div>
                 );
-              })}
+              }} />
             </div>
           )}
           {list.status === "ready" && list.loadingMore ? <p className="recordsNote">{t("records.loading")}</p> : null}

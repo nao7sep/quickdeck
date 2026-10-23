@@ -84,6 +84,8 @@ pub struct RecordsQuery {
     pub level: Option<LevelFilter>,
     pub search: String,
     pub after: Option<Cursor>,
+    /// Inclusive first row of an evicted page, stable across newer inserts.
+    pub through: Option<Cursor>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -182,6 +184,11 @@ pub fn read_page(conn: &Connection, query: &RecordsQuery) -> rusqlite::Result<Re
         clauses.push("(time, id) < (?, ?)".to_string());
         params.push(Value::Text(after.time.clone()));
         params.push(Value::Integer(after.id));
+    }
+    if let Some(through) = &query.through {
+        clauses.push("(time, id) <= (?, ?)".to_string());
+        params.push(Value::Text(through.time.clone()));
+        params.push(Value::Integer(through.id));
     }
     let filter = if clauses.is_empty() {
         String::new()

@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   nextSelectionIndex,
-  selectionAfterRowsChange,
 } from "../../src/utils/snapshotSelection";
 
 describe("nextSelectionIndex", () => {
@@ -29,23 +28,5 @@ describe("nextSelectionIndex", () => {
     expect(nextSelectionIndex(0, "Enter", 3)).toBeNull();
     expect(nextSelectionIndex(0, "a", 3)).toBeNull();
     expect(nextSelectionIndex(-1, "ArrowDown", 0)).toBeNull();
-  });
-});
-
-describe("selectionAfterRowsChange", () => {
-  it("keeps the snapshot the user is reading when it survives the change", () => {
-    expect(selectionAfterRowsChange(["a", "b", "c"], "b")).toBe("b");
-  });
-
-  it("falls back to the top when the selection is gone", () => {
-    expect(selectionAfterRowsChange(["a", "b"], "z")).toBe("a");
-  });
-
-  it("starts at the top when nothing was selected", () => {
-    expect(selectionAfterRowsChange(["a", "b"], null)).toBe("a");
-  });
-
-  it("selects nothing when the list is empty", () => {
-    expect(selectionAfterRowsChange([], "a")).toBeNull();
   });
 });
