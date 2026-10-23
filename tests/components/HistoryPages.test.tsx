@@ -244,4 +244,27 @@ describe("HistoryPages", () => {
     expect(mountedKeys()).not.toContain(0);
   });
 
+  it("retires a delayed keyboard destination when the user focuses outside before its page arrives", async () => {
+    const original = pages(100);
+    const missing = original.map((page) => page.key === 90 ? { ...page, rows: null } : page);
+    const { onNeed, onFocused, render } = await mount(missing);
+    const row = document.querySelector<HTMLElement>('[data-history-index="0"]')!;
+    await act(async () => row.focus());
+    await render({ focusIndex: 452 });
+    expect(onNeed.mock.calls.some(([page]) => page.key === 90)).toBe(true);
+    expect(onFocused).not.toHaveBeenCalled();
+    const sibling = document.querySelector<HTMLElement>('[data-history-index="1"]')!;
+    await act(async () => sibling.focus());
+    expect(onFocused).not.toHaveBeenCalled();
+    const outside = document.getElementById("outside")!;
+    await act(async () => outside.focus());
+    expect(onFocused).toHaveBeenCalledOnce();
+    // The parent consumes the retired destination before its request settles.
+    await render({ focusIndex: null });
+    await render({ pages: original, revision: 1 });
+    expect(document.activeElement).toBe(outside);
+    expect(onFocused).toHaveBeenCalledOnce();
+    expect(scrollIntoView).not.toHaveBeenCalled();
+  });
+
 });

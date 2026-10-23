@@ -71,7 +71,16 @@ export function HistoryPages<T, C>({
       setFocusedPage((current) => current === key ? current : key);
     };
     const focusIn = (event: FocusEvent) => pin(event.target);
-    const focusOut = (event: FocusEvent) => pin(event.relatedTarget);
+    const focusOut = (event: FocusEvent) => {
+      pin(event.relatedTarget);
+      // Leaving the list retires a delayed keyboard destination. Its refetch
+      // must not reclaim focus after the user has moved to another control.
+      if (focusIndex !== null && completedFocus.current !== focusIndex
+        && !(event.relatedTarget instanceof Node && scroll.contains(event.relatedTarget))) {
+        completedFocus.current = focusIndex;
+        onFocused();
+      }
+    };
     const anchor = scroll.style.overflowAnchor;
     scroll.style.overflowAnchor = "none";
     scroll.addEventListener("scroll", updateViewport);
