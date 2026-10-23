@@ -125,6 +125,8 @@
   "records.levelDebug": "デバッグ",
   "records.loading": "ログを読み込み中…",
   "records.empty": "条件に一致する項目はありません。",
+  "records.livePaused": "自動更新が一時停止しました。再試行すると再開します。",
+  "records.retry": "再試行",
   "records.loadFailed": "ログを読み込めませんでした。",
   "records.detailFailed": "この項目を読み込めませんでした。",
   "records.noSelection": "項目を選択すると、その内容がすべて表示されます。",

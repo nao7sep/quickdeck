@@ -125,6 +125,8 @@
   "records.levelDebug": "调试",
   "records.loading": "正在加载日志…",
   "records.empty": "没有符合这些筛选条件的条目。",
+  "records.livePaused": "实时更新已暂停。请重试以恢复。",
+  "records.retry": "重试",
   "records.loadFailed": "无法读取日志。",
   "records.detailFailed": "无法读取此条目。",
   "records.noSelection": "选择一个条目即可查看其全部内容。",

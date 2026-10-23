@@ -125,6 +125,8 @@
   "records.levelDebug": "Depuración",
   "records.loading": "Cargando registros…",
   "records.empty": "Ningún registro coincide con estos filtros.",
+  "records.livePaused": "Las actualizaciones en vivo están en pausa. Reintenta para reanudarlas.",
+  "records.retry": "Reintentar",
   "records.loadFailed": "No se pudieron leer los registros.",
   "records.detailFailed": "No se pudo leer este registro.",
   "records.noSelection": "Selecciona un registro para ver todo lo que contiene.",

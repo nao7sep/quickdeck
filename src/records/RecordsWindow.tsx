@@ -75,6 +75,7 @@ export function RecordsWindow({ initialListWidth }: { initialListWidth: number }
   const { t, locale, timeZone } = useI18n();
   const [sources, setSources] = useState<RecordSources | null>(null);
   const [sourceReads, setSourceReads] = useState(0);
+  const [livePaused, setLivePaused] = useState(false);
   const [filters, setFilters] = useState<Filters>(NO_FILTERS);
   const [searchText, setSearchText] = useState("");
   const [composingSearch, setComposingSearch] = useState(false);
@@ -94,8 +95,17 @@ export function RecordsWindow({ initialListWidth }: { initialListWidth: number }
   // New records arrived while the list was scrolled away from the top.
   const newestPending = useRef(false);
   // A failed read is itself logged as a record, whose signal would start the
-  // next read; live reads stop after a failure and resume after a read succeeds.
+  // next read; live reads stop after a failure and resume after its owner retries.
   const liveSuspended = useRef(false);
+  const sourceFailed = useRef(false);
+  const observedRecord = useRef(false);
+  const pagePaused = useRef(false);
+  const newestReadActive = useRef(false);
+  const newestReadPending = useRef<number | null>(null);
+  const syncLiveSuspension = useCallback(() => {
+    liveSuspended.current = sourceFailed.current || pagePaused.current;
+    setLivePaused(liveSuspended.current);
+  }, []);
   const listRef = useRef<HTMLDivElement | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
@@ -128,17 +138,24 @@ export function RecordsWindow({ initialListWidth }: { initialListWidth: number }
     let cancelled = false;
     void readRecordSources().then(
       (next) => {
-        if (!cancelled) setSources(next);
+        if (cancelled) return;
+        setSources(observedRecord.current && !next.sessions.includes(next.currentSession)
+          ? { ...next, sessions: [...next.sessions, next.currentSession].sort().reverse() }
+          : next);
+        sourceFailed.current = false;
+        syncLiveSuspension();
       },
       (error: unknown) => {
-        liveSuspended.current = true;
+        if (cancelled) return;
+        sourceFailed.current = true;
+        syncLiveSuspension();
         logWarn("record sources read failed", { error: serializeError(error) });
       },
     );
     return () => {
       cancelled = true;
     };
-  }, [sourceReads]);
+  }, [sourceReads, syncLiveSuspension]);
 
   // A page applies only while the filters it was read for are still the newest
   // ones asked for.
@@ -151,24 +168,37 @@ export function RecordsWindow({ initialListWidth }: { initialListWidth: number }
     void readRecordsPage({ ...filters, after: null }).then(
       (page) => {
         if (generation !== listGeneration.current) return;
-        liveSuspended.current = false;
+        pagePaused.current = false;
+        syncLiveSuspension();
         setList({ status: "ready", records: page.records, more: page.more, loadingMore: false, moreFailed: false });
       },
       (error: unknown) => {
         if (generation !== listGeneration.current) return;
-        liveSuspended.current = true;
+        pagePaused.current = true;
+        syncLiveSuspension();
         logWarn("records read failed", { error: serializeError(error) });
         setList({ status: "failed" });
       },
     );
-  }, [filters]);
+    return () => {
+      if (generation === listGeneration.current) {
+        listGeneration.current += 1;
+        newestReadPending.current = null;
+      }
+    };
+  }, [filters, syncLiveSuspension]);
 
   // The newest page read again for new records. It joins the rows already shown
   // rather than replacing them, so the list never falls back to the loading note
   // and the pages already read stay. A burst can exceed one page: bridge back
   // to the prior newest row before joining, so ordinary paging skips no interval.
-  const readNewest = useCallback(() => {
+  const readNewest = useCallback(function readLatest() {
     const generation = listGeneration.current;
+    if (newestReadActive.current) {
+      newestReadPending.current = generation;
+      return;
+    }
+    newestReadActive.current = true;
     const query = filtersRef.current;
     const priorNewest = priorNewestRef.current;
     void (async () => {
@@ -182,7 +212,8 @@ export function RecordsWindow({ initialListWidth }: { initialListWidth: number }
     })().then(
       (page) => {
         if (generation !== listGeneration.current) return;
-        liveSuspended.current = false;
+        pagePaused.current = false;
+        syncLiveSuspension();
         setList((current) =>
           current.status === "ready"
             ? { ...current, ...mergeNewestPage(current.records, current.more, page) }
@@ -191,11 +222,25 @@ export function RecordsWindow({ initialListWidth }: { initialListWidth: number }
       },
       (error: unknown) => {
         if (generation !== listGeneration.current) return;
-        liveSuspended.current = true;
+        pagePaused.current = true;
+        syncLiveSuspension();
         logWarn("records read failed", { error: serializeError(error) });
       },
-    );
-  }, []);
+    ).finally(() => {
+      newestReadActive.current = false;
+      const pendingGeneration = newestReadPending.current;
+      newestReadPending.current = null;
+      if (pendingGeneration === listGeneration.current && !liveSuspended.current) readLatest();
+    });
+  }, [syncLiveSuspension]);
+
+  const retryLive = () => {
+    sourceFailed.current = false;
+    pagePaused.current = false;
+    syncLiveSuspension();
+    setSourceReads((count) => count + 1);
+    readNewest();
+  };
 
   // A stored record reaches the list at once while it is scrolled to the top;
   // otherwise it waits until the list is back there, so the list never moves
@@ -203,10 +248,14 @@ export function RecordsWindow({ initialListWidth }: { initialListWidth: number }
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout> | null = null;
     const unsubscribe = onRecordsChanged(() => {
+      observedRecord.current = true;
+      setSources((current) => current === null || current.sessions.includes(current.currentSession)
+        ? current
+        : { ...current, sessions: [...current.sessions, current.currentSession].sort().reverse() });
       if (timer !== null || liveSuspended.current) return;
       timer = setTimeout(() => {
         timer = null;
-        setSourceReads((count) => count + 1);
+        if (liveSuspended.current) return;
         const scroll = scrollRef.current;
         if (scroll === null || atTop(scroll)) readNewest();
         else newestPending.current = true;
@@ -251,7 +300,8 @@ export function RecordsWindow({ initialListWidth }: { initialListWidth: number }
       (page) => {
         if (generation !== listGeneration.current) return;
         fetchingMore.current = false;
-        liveSuspended.current = false;
+        pagePaused.current = false;
+        syncLiveSuspension();
         setList((current) =>
           current.status === "ready"
             ? { ...current, records: [...current.records, ...page.records], more: page.more, loadingMore: false }
@@ -261,7 +311,8 @@ export function RecordsWindow({ initialListWidth }: { initialListWidth: number }
       (error: unknown) => {
         if (generation !== listGeneration.current) return;
         fetchingMore.current = false;
-        liveSuspended.current = true;
+        pagePaused.current = true;
+        syncLiveSuspension();
         logWarn("records read failed", { error: serializeError(error) });
         setList((current) => (current.status === "ready" ? { ...current, loadingMore: false, moreFailed: true } : current));
       },
@@ -371,6 +422,12 @@ export function RecordsWindow({ initialListWidth }: { initialListWidth: number }
             />
           </div>
         </div>
+        {livePaused && (
+          <div className="recordsNote errorText">
+            <p role="alert">{t("records.livePaused")}</p>
+            <button type="button" className="secondaryButton" onClick={retryLive}>{t("records.retry")}</button>
+          </div>
+        )}
         <div
           ref={scrollRef}
           className="recordsListScroll"

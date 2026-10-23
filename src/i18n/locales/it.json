@@ -125,6 +125,8 @@
   "records.levelDebug": "Debug",
   "records.loading": "Caricamento del log…",
   "records.empty": "Nessuna voce corrisponde a questi filtri.",
+  "records.livePaused": "Gli aggiornamenti in tempo reale sono in pausa. Riprova per riprenderli.",
+  "records.retry": "Riprova",
   "records.loadFailed": "Impossibile leggere il log.",
   "records.detailFailed": "Impossibile leggere questa voce.",
   "records.noSelection": "Seleziona una voce per vedere tutto ciò che contiene.",

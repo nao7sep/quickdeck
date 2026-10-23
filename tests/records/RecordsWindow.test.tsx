@@ -393,12 +393,62 @@ describe("RecordsWindow", () => {
 
     expect(mocks.readRecordsPage).toHaveBeenCalledTimes(2);
     expect(lastQuery()).toEqual({ session: null, level: null, search: "", after: null });
-    expect(mocks.readRecordSources).toHaveBeenCalledTimes(2);
+    expect(mocks.readRecordSources).toHaveBeenCalledOnce();
     expect(options()).toHaveLength(2);
     expect(document.body.textContent).not.toContain("Loading records…");
 
     await act(async () => next.resolve({ records: [newer, failure, warning], more: false }));
     expect(titles()).toEqual(["boundary ok", "boundary failed", "set zoom failed"]);
+  });
+
+  it("coalesces new signals while a delayed refresh bridge is still running", async () => {
+    await mount();
+    vi.useFakeTimers();
+    const bridge = deferred<RecordsPage>();
+    mocks.readRecordsPage.mockResolvedValueOnce({ records: [newer], more: true });
+    mocks.readRecordsPage.mockReturnValueOnce(bridge.promise);
+    mocks.readRecordsPage.mockResolvedValueOnce({ records: [newer, failure, warning], more: false });
+
+    await signal();
+    await act(async () => vi.advanceTimersByTime(1000));
+    expect(mocks.readRecordsPage).toHaveBeenCalledTimes(3);
+    for (let index = 0; index < 3; index++) {
+      await signal();
+      await act(async () => vi.advanceTimersByTime(1000));
+    }
+    expect(mocks.readRecordsPage).toHaveBeenCalledTimes(3);
+
+    await act(async () => bridge.resolve({ records: [failure, warning], more: false }));
+    expect(mocks.readRecordsPage).toHaveBeenCalledTimes(4);
+    expect(lastQuery().after).toBeNull();
+    expect(titles()).toEqual(["boundary ok", "boundary failed", "set zoom failed"]);
+    expect(mocks.readRecordSources).toHaveBeenCalledOnce();
+  });
+
+  it("keeps a first record signal received before historical launches finish loading", async () => {
+    const sources = deferred<RecordSources>();
+    mocks.readRecordSources.mockReturnValueOnce(sources.promise);
+    await mount();
+    await signal();
+    await act(async () => sources.resolve({ currentSession: SESSION, sessions: [] }));
+    const launch = document.querySelector("select")!;
+    expect(Array.from(launch.options).map((option) => option.value)).toEqual(["", SESSION]);
+    expect(mocks.readRecordSources).toHaveBeenCalledOnce();
+  });
+
+  it("adds this launch on its first record signal without rereading historical launches", async () => {
+    const historical = ["2026-10-01T08:00:00.000Z", "2026-09-30T08:00:00.000Z"];
+    mocks.readRecordSources.mockResolvedValueOnce({ currentSession: SESSION, sessions: historical });
+    await mount();
+    const launch = document.querySelector("select")!;
+    expect(Array.from(launch.options).map((option) => option.value)).toEqual(["", ...historical]);
+    vi.useFakeTimers();
+    for (let index = 0; index < 3; index++) {
+      await signal();
+      await act(async () => vi.advanceTimersByTime(1000));
+    }
+    expect(Array.from(launch.options).map((option) => option.value)).toEqual(["", SESSION, ...historical]);
+    expect(mocks.readRecordSources).toHaveBeenCalledOnce();
   });
 
   it("leaves the list alone while scrolled down, and shows new records once back at the top", async () => {
@@ -484,12 +534,15 @@ describe("RecordsWindow", () => {
     await signal();
     await act(async () => vi.advanceTimersByTime(1000));
     expect(lastQuery().after).toEqual(cursorOf(newer));
+    await signal();
+    await act(async () => vi.advanceTimersByTime(1000));
 
     mocks.readRecordsPage.mockResolvedValueOnce({ records: [warning], more: false });
     await choose(document.querySelectorAll("select")[1]!, "warn");
     await act(async () => bridge.resolve({ records: [failure, warning], more: false }));
     expect(titles()).toEqual(["set zoom failed"]);
     expect(lastQuery().level).toBe("warn");
+    expect(mocks.readRecordsPage).toHaveBeenCalledTimes(4);
   });
 
   it("stops reading on new-record signals after a failed read, until a read succeeds", async () => {
@@ -513,6 +566,104 @@ describe("RecordsWindow", () => {
     await signal();
     await act(async () => vi.advanceTimersByTime(1000));
     expect(mocks.readRecordsPage).toHaveBeenCalledTimes(4);
+  });
+
+  it("shows a persistent pause and retries live updates while keeping rows and selection", async () => {
+    await mount();
+    await act(async () => options()[1]!.click());
+    vi.useFakeTimers();
+    mocks.readRecordsPage.mockRejectedValueOnce(new Error("SQLITE_BUSY /private/sentinel"));
+    await signal();
+    await act(async () => vi.advanceTimersByTime(1000));
+    expect(document.body.textContent).toContain("Live updates paused. Retry to resume.");
+    expect(document.body.textContent).not.toContain("sentinel");
+    expect(titles()).toEqual(["boundary failed", "set zoom failed"]);
+    expect(options()[1]!.getAttribute("aria-selected")).toBe("true");
+
+    await signal();
+    await act(async () => vi.advanceTimersByTime(1000));
+    expect(mocks.readRecordsPage).toHaveBeenCalledTimes(2);
+    mocks.readRecordsPage.mockResolvedValueOnce({ records: [newer, failure, warning], more: false });
+    const retry = Array.from(document.querySelectorAll("button")).find((button) => button.textContent === "Retry")!;
+    await act(async () => retry.click());
+    expect(mocks.readRecordSources).toHaveBeenCalledTimes(2);
+    expect(mocks.readRecordsPage).toHaveBeenCalledTimes(3);
+    expect(document.body.textContent).not.toContain("Live updates paused.");
+    expect(options()[2]!.getAttribute("aria-selected")).toBe("true");
+    await signal();
+    await act(async () => vi.advanceTimersByTime(1000));
+    expect(mocks.readRecordsPage).toHaveBeenCalledTimes(4);
+  });
+
+  it("keeps a source-read failure paused after unrelated page successes", async () => {
+    const initial = deferred<RecordsPage>();
+    mocks.readRecordSources.mockRejectedValueOnce(new Error("source unavailable"));
+    mocks.readRecordsPage.mockReturnValueOnce(initial.promise);
+    await mount();
+    expect(document.body.textContent).toContain("Live updates paused.");
+    await act(async () => initial.resolve({ records: [failure, warning], more: false }));
+    expect(document.body.textContent).toContain("Live updates paused.");
+    await choose(document.querySelectorAll("select")[1]!, "attention");
+    expect(document.body.textContent).toContain("Live updates paused.");
+    vi.useFakeTimers();
+    await signal();
+    await act(async () => vi.advanceTimersByTime(1000));
+    expect(mocks.readRecordsPage).toHaveBeenCalledTimes(2);
+
+    const retry = Array.from(document.querySelectorAll("button")).find((button) => button.textContent === "Retry")!;
+    await act(async () => retry.click());
+    expect(mocks.readRecordSources).toHaveBeenCalledTimes(2);
+    expect(document.body.textContent).not.toContain("Live updates paused.");
+    expect(titles()).toEqual(["boundary failed", "set zoom failed"]);
+  });
+
+  it("keeps source retry failures visible even when the retried page succeeds", async () => {
+    mocks.readRecordSources.mockRejectedValue(new Error("sources still unavailable"));
+    await mount();
+    const retry = Array.from(document.querySelectorAll("button")).find((button) => button.textContent === "Retry")!;
+    await act(async () => retry.click());
+    expect(mocks.readRecordSources).toHaveBeenCalledTimes(2);
+    expect(mocks.readRecordsPage).toHaveBeenCalledTimes(2);
+    expect(document.body.textContent).toContain("Live updates paused.");
+    expect(titles()).toEqual(["boundary failed", "set zoom failed"]);
+  });
+
+  it("keeps a failed page paused when a delayed source read succeeds", async () => {
+    const sources = deferred<RecordSources>();
+    mocks.readRecordSources.mockReturnValueOnce(sources.promise);
+    mocks.readRecordsPage.mockRejectedValueOnce(new Error("page unavailable"));
+    await mount();
+    await act(async () => sources.resolve({ currentSession: SESSION, sessions: [SESSION] }));
+    expect(document.body.textContent).toContain("Live updates paused.");
+    expect(document.body.textContent).toContain("The records could not be read.");
+  });
+
+  it("retries a failed initial list without changing filters", async () => {
+    mocks.readRecordsPage.mockRejectedValueOnce(new Error("busy"));
+    await mount();
+    expect(options()).toHaveLength(0);
+    expect(document.body.textContent).toContain("Live updates paused.");
+    const retry = Array.from(document.querySelectorAll("button")).find((button) => button.textContent === "Retry")!;
+    await act(async () => retry.click());
+    expect(titles()).toEqual(["boundary failed", "set zoom failed"]);
+    expect(lastQuery()).toEqual({ session: null, level: null, search: "", after: null });
+    expect(document.body.textContent).not.toContain("Live updates paused.");
+  });
+
+  it("discards pending refreshes and late results after closing", async () => {
+    await mount();
+    vi.useFakeTimers();
+    const pending = deferred<RecordsPage>();
+    mocks.readRecordsPage.mockReturnValueOnce(pending.promise);
+    await signal();
+    await act(async () => vi.advanceTimersByTime(1000));
+    await signal();
+    await act(async () => vi.advanceTimersByTime(1000));
+    await act(async () => root?.unmount());
+    root = null;
+    await act(async () => pending.resolve({ records: [newer, failure], more: false }));
+    expect(mocks.readRecordsPage).toHaveBeenCalledTimes(2);
+    expect(mocks.logWarn).not.toHaveBeenCalled();
   });
 
   it("stops listening for new records when it closes", async () => {

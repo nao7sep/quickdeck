@@ -125,6 +125,8 @@
   "records.levelDebug": "Debug",
   "records.loading": "Loading records…",
   "records.empty": "No records match these filters.",
+  "records.livePaused": "Live updates paused. Retry to resume.",
+  "records.retry": "Retry",
   "records.loadFailed": "The records could not be read.",
   "records.detailFailed": "This record could not be read.",
   "records.noSelection": "Select a record to see everything it holds.",

@@ -9,8 +9,11 @@
 
 use std::{
     path::{Path, PathBuf},
-    sync::mpsc,
-    time::Duration,
+    sync::{
+        atomic::{AtomicBool, AtomicUsize, Ordering},
+        mpsc, Arc, LazyLock, Mutex,
+    },
+    time::{Duration, Instant},
 };
 
 use rusqlite::{params_from_iter, types::Value, Connection, OpenFlags, OptionalExtension, Row};
@@ -41,8 +44,8 @@ CREATE INDEX IF NOT EXISTS log_lines_time ON log_lines (time, id);
 pub const PAGE_SIZE: usize = 100;
 
 // How long a read may take before the window is told it failed, so a stalled
-// disk never leaves the Records window waiting. The abandoned read still
-// finishes on its own thread.
+// disk never leaves the Records window waiting. Cancellation interrupts SQLite;
+// capacity stays owned until the blocking work has actually ended.
 pub const READ_WAIT: Duration = Duration::from_secs(5);
 
 // SQLite's own wait for a lock the writer holds, inside READ_WAIT.
@@ -246,27 +249,110 @@ fn open(file: &Path) -> Result<Connection, String> {
     }
 }
 
-/// Runs one read on its own thread and waits for it at most `READ_WAIT`.
+// Admission counts queued and running blocking work, including a stalled open.
+// A timed-out caller cannot free capacity still occupied by its read.
+struct ReadAdmission {
+    active: AtomicUsize,
+    limit: usize,
+}
+
+impl ReadAdmission {
+    fn acquire(self: &Arc<Self>) -> Result<ReadPermit, String> {
+        let mut active = self.active.load(Ordering::Acquire);
+        loop {
+            if active >= self.limit {
+                return Err("records reads are at capacity".to_string());
+            }
+            match self.active.compare_exchange_weak(
+                active,
+                active + 1,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            ) {
+                Ok(_) => return Ok(ReadPermit(Arc::clone(self))),
+                Err(current) => active = current,
+            }
+        }
+    }
+}
+
+struct ReadPermit(Arc<ReadAdmission>);
+
+impl Drop for ReadPermit {
+    fn drop(&mut self) {
+        self.0.active.fetch_sub(1, Ordering::AcqRel);
+    }
+}
+
+static READ_ADMISSION: LazyLock<Arc<ReadAdmission>> = LazyLock::new(|| {
+    Arc::new(ReadAdmission {
+        active: AtomicUsize::new(0),
+        // Opening the view may read its sources, page and selected detail together.
+        limit: std::thread::available_parallelism().map_or(3, |count| count.get().max(3)),
+    })
+});
+
+/// Runs an admitted read on the runtime's blocking pool, waiting at most `READ_WAIT`.
 pub fn read_bounded<T: Send + 'static>(
     file: PathBuf,
     read: impl FnOnce(&Connection) -> rusqlite::Result<T> + Send + 'static,
 ) -> Result<T, String> {
+    read_with_wait(file, read, READ_WAIT, Arc::clone(&READ_ADMISSION), open)
+}
+
+fn read_with_wait<T: Send + 'static>(
+    file: PathBuf,
+    read: impl FnOnce(&Connection) -> rusqlite::Result<T> + Send + 'static,
+    wait: Duration,
+    admission: Arc<ReadAdmission>,
+    open: impl FnOnce(&Path) -> Result<Connection, String> + Send + 'static,
+) -> Result<T, String> {
+    let deadline = Instant::now() + wait;
+    let permit = admission.acquire()?;
+    let cancelled = Arc::new(AtomicBool::new(false));
+    let interrupt = Arc::new(Mutex::new(None::<rusqlite::InterruptHandle>));
     let (done, result) = mpsc::channel();
-    std::thread::Builder::new()
-        .name("records-read".to_string())
-        .spawn(move || {
-            let outcome =
-                open(&file).and_then(|conn| read(&conn).map_err(|error| error.to_string()));
-            // After a timeout nobody waits for the outcome any more; dropping it
-            // is the abandonment READ_WAIT describes.
-            let _ = done.send(outcome);
-        })
-        .map_err(|error| error.to_string())?;
-    match result.recv_timeout(READ_WAIT) {
+    let worker_cancelled = Arc::clone(&cancelled);
+    let worker_interrupt = Arc::clone(&interrupt);
+    tauri::async_runtime::spawn_blocking(move || {
+        let _permit = permit;
+        let outcome = open(&file).and_then(|conn| {
+            let progress_cancelled = Arc::clone(&worker_cancelled);
+            conn.progress_handler(
+                1000,
+                Some(move || {
+                    progress_cancelled.load(Ordering::Acquire) || Instant::now() >= deadline
+                }),
+            )
+            .map_err(|error| error.to_string())?;
+            *worker_interrupt.lock().unwrap() = Some(conn.get_interrupt_handle());
+            // Publication can race with caller cancellation while opening the
+            // file. Check again here even if SQLite has not begun a statement.
+            if worker_cancelled.load(Ordering::Acquire) || Instant::now() >= deadline {
+                return Err("records read cancelled after its deadline".to_string());
+            }
+            read(&conn).map_err(|error| error.to_string())
+        });
+        let _ = done.send(outcome);
+    });
+    match result.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
         Ok(outcome) => outcome,
-        Err(_) => Err(format!(
-            "records read gave up after {} s",
-            READ_WAIT.as_secs()
-        )),
+        Err(mpsc::RecvTimeoutError::Timeout) => {
+            cancelled.store(true, Ordering::Release);
+            if let Some(handle) = interrupt.lock().unwrap().as_ref() {
+                handle.interrupt();
+            }
+            Err(format!(
+                "records read gave up after {} s",
+                wait.as_secs_f64()
+            ))
+        }
+        Err(mpsc::RecvTimeoutError::Disconnected) => {
+            Err("records read worker stopped before returning a result".to_string())
+        }
     }
 }
+
+#[cfg(test)]
+#[path = "../tests/unit/records_bounded.rs"]
+mod bounded_read_tests;
