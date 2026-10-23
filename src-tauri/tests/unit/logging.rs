@@ -251,98 +251,55 @@ fn write_record_falls_back_when_the_insert_fails() {
 fn the_writer_thread_writes_lines_in_order_before_answering_a_flush() {
     let dir = tempfile::tempdir().unwrap();
     let file = dir.path().join("records.sqlite3");
-    let (writer, lines) = mpsc::channel();
-    let thread_session = session(Some(dir.path()));
+    let (logger, lines) = Logger::channel(session(Some(dir.path())), true, 64 * 1024, 8);
+    let thread_session = logger.session.clone();
     let thread_file = file.clone();
-    let thread =
-        std::thread::spawn(move || run_writer(Ok(thread_file), thread_session, lines, || {}));
+    let budget = logger.budget.clone();
+    let thread = std::thread::spawn(move || run_writer(Ok(thread_file), thread_session, lines, budget, || {}));
     for message in ["first", "second"] {
-        writer
-            .send(Message::Line {
-                level: Level::Info,
-                message: message.to_string(),
-                time: "2026-01-01T00:00:01.000Z".to_string(),
-                fields: Map::new(),
-            })
-            .unwrap();
+        assert!(logger.write_event(Level::Info, message, now_iso(), Map::new()));
     }
-    let (done, written) = mpsc::sync_channel(1);
-    writer.send(Message::Flush(done)).unwrap();
-    // A test machine under load may need longer than the shipped bound.
-    written.recv_timeout(Duration::from_secs(10)).unwrap();
-
-    let conn = rusqlite::Connection::open(&file).unwrap();
-    let messages: Vec<String> = conn
-        .prepare("SELECT message FROM log_lines ORDER BY id")
-        .unwrap()
-        .query_map([], |row| row.get(0))
-        .unwrap()
-        .collect::<Result<_, _>>()
-        .unwrap();
-    assert_eq!(messages, ["first", "second"]);
-    drop(writer);
+    logger.flush();
+    drop(logger);
     thread.join().unwrap();
+
+    let conn = Connection::open(&file).unwrap();
+    let messages: Vec<String> = conn.prepare("SELECT message FROM log_lines ORDER BY id").unwrap()
+        .query_map([], |row| row.get(0)).unwrap().collect::<Result<_, _>>().unwrap();
+    assert_eq!(messages, ["first", "second"]);
 }
 
 #[test]
 fn the_writer_thread_falls_back_when_the_database_cannot_open() {
     let dir = tempfile::tempdir().unwrap();
-    let (writer, lines) = mpsc::channel();
-    writer
-        .send(Message::Line {
-            level: Level::Info,
-            message: "kept".to_string(),
-            time: "2026-01-01T00:00:01.000Z".to_string(),
-            fields: Map::new(),
-        })
-        .unwrap();
-    drop(writer);
+    let (logger, lines) = Logger::channel(session(Some(dir.path())), true, 64 * 1024, 8);
+    assert!(logger.write_event(Level::Info, "kept", now_iso(), Map::new()));
+    let thread_session = logger.session.clone();
+    let budget = logger.budget.clone();
+    drop(logger);
     let stored = std::cell::Cell::new(0);
-    run_writer(
-        Err("no data directory".to_string()),
-        session(Some(dir.path())),
-        lines,
-        || stored.set(stored.get() + 1),
-    );
-    // A line that went to the fallback file is not in the database, so the
-    // Records window is not told about it.
+    run_writer(Err("no data directory".to_string()), thread_session, lines, budget,
+        || stored.set(stored.get() + 1));
     assert_eq!(stored.get(), 0);
-
-    let contents =
-        std::fs::read_to_string(dir.path().join("logs").join("20260101-000000-000-utc.log"))
-            .unwrap();
-    let messages: Vec<Value> = contents
-        .lines()
-        .map(|line| serde_json::from_str::<Value>(line).unwrap()["message"].clone())
-        .collect();
-    assert_eq!(
-        messages,
-        [json!("records database unavailable"), json!("kept")]
-    );
+    let contents = fs::read_to_string(dir.path().join("logs/20260101-000000-000-utc.log")).unwrap();
+    let messages: Vec<Value> = contents.lines()
+        .map(|line| serde_json::from_str::<Value>(line).unwrap()["message"].clone()).collect();
+    assert_eq!(messages, [json!("records database unavailable"), json!("kept")]);
 }
 
 #[test]
 fn the_writer_thread_signals_each_row_the_database_stored() {
     let dir = tempfile::tempdir().unwrap();
-    let (writer, lines) = mpsc::channel();
+    let (logger, lines) = Logger::channel(session(Some(dir.path())), true, 64 * 1024, 8);
     for message in ["first", "second"] {
-        writer
-            .send(Message::Line {
-                level: Level::Info,
-                message: message.to_string(),
-                time: "2026-01-01T00:00:01.000Z".to_string(),
-                fields: Map::new(),
-            })
-            .unwrap();
+        assert!(logger.write_event(Level::Info, message, now_iso(), Map::new()));
     }
-    drop(writer);
+    let thread_session = logger.session.clone();
+    let budget = logger.budget.clone();
+    drop(logger);
     let stored = std::cell::Cell::new(0);
-    run_writer(
-        Ok(dir.path().join("records.sqlite3")),
-        session(Some(dir.path())),
-        lines,
-        || stored.set(stored.get() + 1),
-    );
+    run_writer(Ok(dir.path().join("records.sqlite3")), thread_session, lines, budget,
+        || stored.set(stored.get() + 1));
     assert_eq!(stored.get(), 2);
 }
 
@@ -408,4 +365,187 @@ fn a_records_database_without_its_marker_is_left_untouched() {
     let refused = open_records(&file).err().unwrap();
     assert!(refused.contains("records.sqlite3"), "{refused}");
     assert_eq!(fs::read(&file).unwrap(), before);
+}
+
+#[test]
+fn caller_admission_bounds_count_and_keeps_in_flight_diagnostics_until_sink_settles() {
+    let (logger, lines) = Logger::channel(session(None), true, 64 * 1024, 2);
+    let budget = logger.budget.clone();
+    let (entered, started) = mpsc::sync_channel(1);
+    let (release, held) = mpsc::sync_channel(1);
+    let writer_budget = budget.clone();
+    let thread = std::thread::spawn(move || {
+        let mut output = Vec::new();
+        run_messages(lines, &writer_budget, |level, message, _, fields| {
+            if message == "first" {
+                entered.send(()).unwrap();
+                held.recv().unwrap();
+            }
+            output.push((level.as_str(), message.to_string(), fields.clone()));
+        });
+        output
+    });
+    let detail = "complete diagnostic\n".repeat(100);
+    let fields = map(json!({ "nested": [{ "detail": detail }] }));
+    assert!(logger.write_event(Level::Error, "first", now_iso(), fields.clone()));
+    started.recv_timeout(Duration::from_secs(10)).unwrap();
+    let in_flight = budget.retained.load(Ordering::Relaxed);
+    assert!(in_flight > detail.len());
+    assert!(logger.write_event(Level::Info, "second", now_iso(), Map::new()));
+    assert!(logger.write_event(Level::Info, "third", now_iso(), Map::new()));
+    let admitted = budget.retained.load(Ordering::Relaxed);
+    assert!(!logger.write_event(Level::Warn, "full", now_iso(), Map::new()));
+    assert_eq!(budget.retained.load(Ordering::Relaxed), admitted);
+    assert_eq!(budget.dropped.load(Ordering::Relaxed), 1);
+    // A full control queue returns without waiting for the stalled sink.
+    let logger = Arc::new(logger);
+    let caller_logger = logger.clone();
+    let (flushed, finished) = mpsc::sync_channel(1);
+    let caller = std::thread::spawn(move || { caller_logger.flush(); flushed.send(()).unwrap(); });
+    finished.recv_timeout(Duration::from_secs(10)).unwrap();
+    caller.join().unwrap();
+    assert!(budget.retained.load(Ordering::Relaxed) >= in_flight);
+    release.send(()).unwrap();
+    drop(logger);
+    let output = thread.join().unwrap();
+    assert_eq!(budget.retained.load(Ordering::Relaxed), 0);
+    assert_eq!(output.iter().filter(|(_, message, _)| message != "log events dropped")
+        .map(|(_, message, _)| message.as_str()).collect::<Vec<_>>(), ["first", "second", "third"]);
+    assert_eq!(output[0].2, fields);
+    let summary = output.iter().find(|(_, message, _)| message == "log events dropped").unwrap();
+    assert_eq!(summary.0, "warn");
+    assert_eq!(summary.2["dropped"], json!(1));
+}
+
+#[test]
+fn caller_admission_bounds_retained_bytes_and_rejects_oversize_diagnostics() {
+    let (logger, lines) = Logger::channel(session(None), true, 2048, 100);
+    let budget = logger.budget.clone();
+    let writer_budget = budget.clone();
+    let (entered, started) = mpsc::sync_channel(1);
+    let (release, held) = mpsc::sync_channel(1);
+    let writer = std::thread::spawn(move || run_messages(lines, &writer_budget, |_, message, _, _| {
+        if message == "first" {
+            entered.send(()).unwrap();
+            held.recv().unwrap();
+        }
+    }));
+    let fields = map(json!({ "detail": "x".repeat(700) }));
+    assert!(logger.write_event(Level::Info, "first", now_iso(), fields.clone()));
+    started.recv_timeout(Duration::from_secs(10)).unwrap();
+    assert!(!logger.write_event(Level::Info, "second", now_iso(), fields));
+    let retained = budget.retained.load(Ordering::Relaxed);
+    assert!(retained <= 2048);
+    assert!(!logger.write_event(Level::Error, "oversize", now_iso(), map(json!({ "detail": "x".repeat(4096) }))));
+    assert_eq!(budget.retained.load(Ordering::Relaxed), retained);
+    assert_eq!(budget.dropped.load(Ordering::Relaxed), 2);
+    release.send(()).unwrap();
+    drop(logger);
+    writer.join().unwrap();
+    assert_eq!(budget.retained.load(Ordering::Relaxed), 0);
+}
+
+#[test]
+fn flush_is_bounded_when_an_admitted_control_message_waits_behind_a_blocked_sink() {
+    let (logger, lines) = Logger::channel(session(None), true, 4096, 2);
+    let budget = logger.budget.clone();
+    let (entered, started) = mpsc::sync_channel(1);
+    let (release, held) = mpsc::sync_channel(1);
+    let writer = std::thread::spawn(move || run_messages(lines, &budget, |_, _, _, _| {
+        entered.send(()).unwrap();
+        held.recv().unwrap();
+    }));
+    assert!(logger.write_event(Level::Info, "held", now_iso(), Map::new()));
+    started.recv_timeout(Duration::from_secs(10)).unwrap();
+    let (finished, flushed) = mpsc::sync_channel(1);
+    let caller = std::thread::spawn(move || {
+        logger.flush();
+        finished.send(()).unwrap();
+    });
+    // The sink remains blocked; this watchdog proves flush completes on its
+    // own bound without imposing a sub-millisecond scheduling requirement.
+    flushed.recv_timeout(Duration::from_secs(10)).unwrap();
+    release.send(()).unwrap();
+    caller.join().unwrap();
+    writer.join().unwrap();
+}
+
+#[test]
+fn disconnected_writer_never_uses_a_caller_thread_fallback() {
+    let dir = tempfile::tempdir().unwrap();
+    let (logger, lines) = Logger::channel(session(Some(dir.path())), true, 4096, 2);
+    drop(lines);
+    assert!(!logger.write_event(Level::Error, "disconnected", now_iso(), Map::new()));
+    logger.flush();
+    assert_eq!(logger.budget.retained.load(Ordering::Relaxed), 0);
+    assert_eq!(logger.budget.dropped.load(Ordering::Relaxed), 1);
+    assert!(fs::read_dir(dir.path()).unwrap().next().is_none());
+}
+
+#[test]
+fn flush_reports_drops_even_without_an_admitted_event() {
+    let (logger, lines) = Logger::channel(session(None), true, 1, 2);
+    assert!(!logger.write_event(Level::Error, "oversize", now_iso(), Map::new()));
+    let budget = logger.budget.clone();
+    let thread = std::thread::spawn(move || {
+        let mut output = Vec::new();
+        run_messages(lines, &budget, |_, message, _, fields| output.push((message.to_owned(), fields.clone())));
+        output
+    });
+    logger.flush();
+    drop(logger);
+    let output = thread.join().unwrap();
+    assert_eq!(output.len(), 1);
+    assert_eq!(output[0].0, "log events dropped");
+    assert_eq!(output[0].1["dropped"], json!(1));
+}
+
+#[test]
+fn external_sqlite_lock_falls_back_on_writer_then_next_healthy_insert_works() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("records.sqlite3");
+    let (logger, lines) = Logger::channel(session(Some(dir.path())), true, 64 * 1024, 8);
+    let budget = logger.budget.clone();
+    let thread_session = logger.session.clone();
+    let writer_file = file.clone();
+    let (stored, observed) = mpsc::channel();
+    let writer = std::thread::spawn(move || run_writer(Ok(writer_file), thread_session, lines, budget,
+        || { stored.send(()).unwrap(); }));
+    assert!(logger.write_event(Level::Info, "before lock", now_iso(), Map::new()));
+    observed.recv_timeout(Duration::from_secs(10)).unwrap();
+    let external = Connection::open(&file).unwrap();
+    external.execute_batch("BEGIN IMMEDIATE").unwrap();
+    assert!(logger.write_event(Level::Error, "while locked", now_iso(), map(json!({ "detail": "retained" }))));
+    let (done, written) = mpsc::sync_channel(1);
+    assert!(logger.writer.try_send(Message::Flush(done)).is_ok());
+    written.recv_timeout(Duration::from_secs(10)).unwrap();
+    let fallback = fs::read_to_string(dir.path().join("logs/20260101-000000-000-utc.log")).unwrap();
+    assert!(fallback.contains("while locked"));
+    assert!(fallback.contains("retained"));
+    external.execute_batch("ROLLBACK").unwrap();
+    assert!(logger.write_event(Level::Info, "after lock", now_iso(), Map::new()));
+    observed.recv_timeout(Duration::from_secs(10)).unwrap();
+    drop(logger);
+    writer.join().unwrap();
+    let messages = external.prepare("SELECT message FROM log_lines ORDER BY id").unwrap()
+        .query_map([], |row| row.get::<_, String>(0)).unwrap().collect::<Result<Vec<_>, _>>().unwrap();
+    assert_eq!(messages, ["before lock", "after lock"]);
+}
+
+#[test]
+fn admission_accounts_for_nested_string_and_array_spare_capacity() {
+    let (logger, lines) = Logger::channel(session(None), true, 1024, 4);
+    let mut text = String::with_capacity(4096);
+    text.push_str("short");
+    let mut fields = Map::new();
+    fields.insert("nested".into(), Value::Array(vec![Value::String(text)]));
+    assert!(!logger.write_event(Level::Error, "string capacity", now_iso(), fields));
+    let mut array = Vec::with_capacity(128);
+    array.push(Value::Null);
+    let mut fields = Map::new();
+    fields.insert("nested".into(), Value::Array(vec![Value::Array(array)]));
+    assert!(!logger.write_event(Level::Error, "array capacity", now_iso(), fields));
+    assert!(matches!(lines.try_recv(), Err(mpsc::TryRecvError::Empty)));
+    assert_eq!(logger.budget.retained.load(Ordering::Relaxed), 0);
+    assert_eq!(logger.budget.dropped.load(Ordering::Relaxed), 2);
 }

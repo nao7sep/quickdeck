@@ -10,7 +10,7 @@ use std::{
     fs::{self, OpenOptions},
     io::Write,
     path::{Path, PathBuf},
-    sync::{mpsc, OnceLock},
+    sync::{atomic::{AtomicUsize, Ordering}, mpsc, Arc, OnceLock},
     time::{Duration, Instant},
 };
 
@@ -80,15 +80,114 @@ enum Message {
         message: String,
         time: String,
         fields: Map<String, Value>,
+        reservation: Reservation,
     },
     Flush(mpsc::SyncSender<()>),
 }
 
-// `session` is kept here too, for the fallback when the writer thread is gone.
+// The budget includes queued and in-flight events: a blocked filesystem write
+// must not release its reservation merely because the channel was drained.
+struct Budget {
+    limit: usize,
+    retained: AtomicUsize,
+    dropped: AtomicUsize,
+}
+
+struct Reservation {
+    budget: Arc<Budget>,
+    bytes: usize,
+}
+
+impl Budget {
+    fn reserve(self: &Arc<Self>, bytes: usize) -> Option<Reservation> {
+        self.retained.try_update(Ordering::Relaxed, Ordering::Relaxed, |retained| {
+            retained.checked_add(bytes).filter(|next| *next <= self.limit)
+        }).ok()?;
+        Some(Reservation { budget: self.clone(), bytes })
+    }
+}
+
+impl Drop for Reservation {
+    fn drop(&mut self) {
+        self.budget.retained.fetch_sub(self.bytes, Ordering::Relaxed);
+    }
+}
+
 struct Logger {
+    // Sources still identify this launch even if its writer cannot start.
     session: Session,
-    writer: mpsc::Sender<Message>,
+    writer: mpsc::SyncSender<Message>,
+    budget: Arc<Budget>,
     debug_enabled: bool,
+}
+
+impl Logger {
+    fn channel(session: Session, debug_enabled: bool, byte_budget: usize, slots: usize) -> (Self, mpsc::Receiver<Message>) {
+        let (writer, lines) = mpsc::sync_channel(slots);
+        let budget = Arc::new(Budget {
+            limit: byte_budget,
+            retained: AtomicUsize::new(0),
+            dropped: AtomicUsize::new(0),
+        });
+        (Self { session, writer, budget, debug_enabled }, lines)
+    }
+
+    fn write_event(&self, level: Level, message: &str, time: String, fields: Map<String, Value>) -> bool {
+        if level == Level::Debug && !self.debug_enabled {
+            return false;
+        }
+        let message = message.to_string();
+        let bytes = std::mem::size_of::<Message>()
+            .saturating_add(message.capacity())
+            .saturating_add(time.capacity())
+            .saturating_add(retained_fields(&fields));
+        let Some(reservation) = self.budget.reserve(bytes) else {
+            self.budget.dropped.fetch_add(1, Ordering::Relaxed);
+            return false;
+        };
+        let line = Message::Line { level, message, time, fields, reservation };
+        match self.writer.try_send(line) {
+            Ok(()) => true,
+            Err(rejected) => {
+                self.budget.dropped.fetch_add(1, Ordering::Relaxed);
+                drop(rejected);
+                false
+            }
+        }
+    }
+
+    fn flush(&self) {
+        let (done, written) = mpsc::sync_channel(1);
+        if self.writer.try_send(Message::Flush(done)).is_err() {
+            return;
+        }
+        if written.recv_timeout(FLUSH_WAIT).is_err() {
+            to_stderr(format_args!("log flush gave up after {} ms", FLUSH_WAIT.as_millis()));
+        }
+    }
+}
+
+// serde_json does not expose its object map's allocation capacity. Estimate
+// spare entries and hash/index overhead conservatively; strings and arrays use
+// their retained capacities, including nested diagnostics, without serializing.
+fn retained_fields(fields: &Map<String, Value>) -> usize {
+    fields.iter().fold(std::mem::size_of::<Map<String, Value>>(), |total, (key, value)| {
+        total.saturating_add(2 * (std::mem::size_of::<(String, Value)>() + 4 * std::mem::size_of::<usize>()))
+            .saturating_add(key.capacity())
+            .saturating_add(retained_value(value))
+    })
+}
+
+fn retained_value(value: &Value) -> usize {
+    match value {
+        Value::String(text) => text.capacity(),
+        Value::Array(items) => items.iter().fold(
+            items.capacity().saturating_mul(std::mem::size_of::<Value>()),
+            |total, item| total.saturating_add(retained_value(item)),
+        ),
+        Value::Object(fields) => retained_fields(fields),
+        _ => 0,
+    }
 }
 
 static LOGGER: OnceLock<Logger> = OnceLock::new();
@@ -112,8 +211,8 @@ fn notify_stored() {
 
 // Installs the panic hook, starts the writer thread, which opens the records
 // database, and writes the startup line. Safe to call once; later calls are
-// ignored. Never fails the app: without the database or the thread every line
-// takes the fallback.
+// ignored. A missing database uses the writer-owned fallback; a missing writer
+// is reported once to stderr and subsequent diagnostics are dropped.
 pub fn init(app: &AppHandle, version: &str) {
     let debug_enabled = cfg!(debug_assertions)
         || std::env::var("QUICKDECK_DEBUG")
@@ -132,12 +231,12 @@ pub fn init(app: &AppHandle, version: &str) {
         stamp: session_stamp(started),
         root: root.clone().ok(),
     };
-    let (writer, lines) = mpsc::channel();
-    let logger = Logger {
-        session: session.clone(),
-        writer,
-        debug_enabled,
-    };
+    // Ordinary diagnostic bursts get 256 KiB per available worker. Slots bound
+    // tiny events as well, while the byte budget bounds large structured ones.
+    let workers = std::thread::available_parallelism().map(usize::from).unwrap_or(1);
+    let byte_budget = workers.saturating_mul(256 * 1024);
+    let (logger, lines) = Logger::channel(session.clone(), debug_enabled, byte_budget, byte_budget / 1024);
+    let budget = logger.budget.clone();
 
     if LOGGER.set(logger).is_err() {
         return;
@@ -148,12 +247,9 @@ pub fn init(app: &AppHandle, version: &str) {
     let file = root.map(|root| root.join(RECORDS_DB_FILE_NAME));
     let spawned = std::thread::Builder::new()
         .name("records".to_string())
-        .spawn(move || run_writer(file, session, lines, notify_stored));
+        .spawn(move || run_writer(file, session, lines, budget, notify_stored));
     if let Err(error) = spawned {
-        warn(
-            "records writer unavailable",
-            json!({ "error": error.to_string() }),
-        );
+        to_stderr(format_args!("records writer unavailable: {error}"));
     }
 
     write_event(
@@ -175,6 +271,7 @@ fn run_writer(
     file: Result<PathBuf, String>,
     session: Session,
     lines: mpsc::Receiver<Message>,
+    budget: Arc<Budget>,
     stored: impl Fn(),
 ) {
     let records = file.and_then(|file| open_records(&file));
@@ -192,23 +289,41 @@ fn run_writer(
             None
         }
     };
+    run_messages(lines, &budget, |level, message, time, fields| {
+        if write_record(records.as_ref(), &session, level, message, time, fields) {
+            stored();
+        }
+    });
+}
+
+// The reservation stays owned by this frame until the sink returns, including
+// any database, fallback-file or filesystem stall.
+fn run_messages(
+    lines: mpsc::Receiver<Message>,
+    budget: &Budget,
+    mut sink: impl FnMut(Level, &str, &str, &Map<String, Value>),
+) {
+    let report_dropped = |sink: &mut dyn FnMut(Level, &str, &str, &Map<String, Value>)| {
+        let dropped = budget.dropped.swap(0, Ordering::Relaxed);
+        if dropped != 0 {
+            sink(Level::Warn, "log events dropped", &now_iso(), &into_map(json!({ "dropped": dropped })));
+        }
+    };
     for line in lines {
         match line {
-            Message::Line {
-                level,
-                message,
-                time,
-                fields,
-            } => {
-                if write_record(records.as_ref(), &session, level, &message, &time, &fields) {
-                    stored();
-                }
+            Message::Line { level, message, time, fields, reservation } => {
+                sink(level, &message, &time, &fields);
+                drop((message, time, fields));
+                drop(reservation);
+                report_dropped(&mut sink);
             }
             Message::Flush(done) => {
+                report_dropped(&mut sink);
                 let _ = done.send(());
             }
         }
     }
+    report_dropped(&mut sink);
 }
 
 /// Writes one line to stderr under the app's name, for what cannot reach the
@@ -223,13 +338,7 @@ pub fn flush() {
     let Some(logger) = LOGGER.get() else {
         return;
     };
-    let (done, written) = mpsc::sync_channel(1);
-    if logger.writer.send(Message::Flush(done)).is_err() {
-        return;
-    }
-    if written.recv_timeout(FLUSH_WAIT).is_err() {
-        to_stderr(format_args!("log flush gave up after {} ms", FLUSH_WAIT.as_millis()));
-    }
+    logger.flush();
 }
 
 // not recorded: records.sqlite3 is written only here, never through the
@@ -238,7 +347,9 @@ pub fn flush() {
 fn open_records(file: &Path) -> Result<Connection, String> {
     let to_string = |error: rusqlite::Error| error.to_string();
     let conn = Connection::open(file).map_err(to_string)?;
-    conn.pragma_update(None, "busy_timeout", 5000)
+    // Diagnostics fall back on this writer immediately when another process
+    // holds SQLite, instead of backing up later records behind repeated waits.
+    conn.pragma_update(None, "busy_timeout", 0)
         .map_err(to_string)?;
     match format_version::check_sqlite(&conn, RECORDS_DB_FILE_NAME, format_version::RECORDS)? {
         SqliteFormat::Newer(recorded) => {
@@ -391,27 +502,7 @@ fn write_event(level: Level, message: &str, time: String, fields: Map<String, Va
         return;
     };
 
-    // Debug never reaches an end-user disk.
-    if level == Level::Debug && !logger.debug_enabled {
-        return;
-    }
-
-    let line = Message::Line {
-        level,
-        message: message.to_string(),
-        time,
-        fields,
-    };
-    // A writer thread that never started or has stopped leaves the fallback.
-    if let Err(mpsc::SendError(Message::Line {
-        level,
-        message,
-        time,
-        fields,
-    })) = logger.writer.send(line)
-    {
-        write_record(None, &logger.session, level, &message, &time, &fields);
-    }
+    logger.write_event(level, message, time, fields);
 }
 
 // Inserts one row, or appends the line to the fallback file when there is no
