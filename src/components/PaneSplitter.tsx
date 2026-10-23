@@ -1,4 +1,4 @@
-import { useRef, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
+import { useEffect, useRef, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
 
 // How far one arrow key moves the splitter.
 export const SPLITTER_KEY_STEP = 16;
@@ -34,6 +34,7 @@ export function PaneSplitter({
   max,
   onResize,
   onCommit,
+  onCancel,
 }: {
   label: string;
   width: number;
@@ -41,30 +42,58 @@ export function PaneSplitter({
   max: number;
   onResize: (width: number) => void;
   onCommit: (width: number) => void;
+  onCancel?: () => void;
 }) {
   // A keyed width not yet committed.
   const keyed = useRef<number | null>(null);
+  const dragCleanup = useRef<(() => void) | null>(null);
+
+  useEffect(() => () => dragCleanup.current?.(), []);
 
   function onPointerDown(event: ReactPointerEvent<HTMLDivElement>) {
     event.preventDefault();
+    dragCleanup.current?.();
+    const pointerId = event.pointerId;
     const startX = event.clientX;
     const startWidth = width;
+    const { cursor, userSelect } = document.body.style;
     let latest = startWidth;
 
     const move = (moveEvent: PointerEvent) => {
+      if (moveEvent.pointerId !== pointerId) return;
       latest = Math.max(min, Math.min(max, Math.round(startWidth + (moveEvent.clientX - startX))));
       onResize(latest);
     };
-    const up = () => {
+    const cleanup = () => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
-      document.body.style.cursor = "";
-      document.body.style.userSelect = "";
+      window.removeEventListener("pointercancel", cancel);
+      window.removeEventListener("lostpointercapture", cancel);
+      window.removeEventListener("blur", blur);
+      document.body.style.cursor = cursor;
+      document.body.style.userSelect = userSelect;
+      dragCleanup.current = null;
+    };
+    const up = (upEvent: PointerEvent) => {
+      if (upEvent.pointerId !== pointerId) return;
+      cleanup();
       onCommit(latest);
     };
+    const cancel = (cancelEvent: PointerEvent) => {
+      if (cancelEvent.pointerId === pointerId) blur();
+    };
 
+    const blur = () => {
+      cleanup();
+      onCancel?.();
+    };
+
+    dragCleanup.current = cleanup;
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", cancel);
+    window.addEventListener("lostpointercapture", cancel);
+    window.addEventListener("blur", blur);
     // The resize cursor and no text selection anywhere for the drag.
     document.body.style.cursor = "col-resize";
     document.body.style.userSelect = "none";

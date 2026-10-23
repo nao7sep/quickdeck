@@ -17,6 +17,14 @@ const mocks = vi.hoisted(() => ({
   logWarn: vi.fn(),
   openRecordsWindow: vi.fn<() => Promise<void>>(() => Promise.resolve()),
   aboutRequested: null as (() => void) | null,
+  onCloseRequested: vi.fn<(
+    listener: (event: { preventDefault: () => void }) => Promise<void>,
+  ) => Promise<() => void>>(() => Promise.resolve(() => undefined)),
+  onSessionEnding: vi.fn<(listener: (attempt: number) => void) => Promise<() => void>>(
+    () => Promise.resolve(() => undefined),
+  ),
+  reportSessionEndSaved: vi.fn(() => Promise.resolve()),
+  destroy: vi.fn(() => Promise.resolve()),
 }));
 
 vi.mock("../src/state/AppStateContext", () => ({
@@ -33,8 +41,8 @@ vi.mock("@tauri-apps/api/window", () => ({
     isMinimized: mocks.isMinimized,
     onMoved: () => Promise.resolve(() => undefined),
     onScaleChanged: () => Promise.resolve(() => undefined),
-    onCloseRequested: () => Promise.resolve(() => undefined),
-    destroy: () => Promise.resolve(),
+    onCloseRequested: mocks.onCloseRequested,
+    destroy: mocks.destroy,
   }),
   LogicalSize: class LogicalSize {
     constructor(public width: number, public height: number) {}
@@ -66,6 +74,11 @@ vi.mock("../src/services/logger", () => ({
   logWarn: mocks.logWarn,
   serializeError: (error: unknown) => ({ value: String(error) }),
 }));
+vi.mock("../src/services/quit", async (importOriginal) => ({
+  ...await importOriginal<typeof import("../src/services/quit")>(),
+  onSessionEnding: mocks.onSessionEnding,
+  reportSessionEndSaved: mocks.reportSessionEndSaved,
+}));
 
 import { App } from "../src/App";
 
@@ -88,6 +101,12 @@ afterEach(async () => {
   mocks.setMinSize.mockReset();
   mocks.setMinSize.mockResolvedValue();
   mocks.logWarn.mockReset();
+  mocks.onCloseRequested.mockReset();
+  mocks.onCloseRequested.mockImplementation(() => Promise.resolve(() => undefined));
+  mocks.onSessionEnding.mockReset();
+  mocks.onSessionEnding.mockImplementation(() => Promise.resolve(() => undefined));
+  mocks.reportSessionEndSaved.mockClear();
+  mocks.destroy.mockClear();
 });
 
 function createAppState() {
@@ -154,6 +173,112 @@ async function flushEffects() {
     await Promise.resolve();
   });
 }
+
+describe("App close listener lifetime", () => {
+  function delayedRegistration() {
+    let resolve!: (unlisten: () => void) => void;
+    const promise = new Promise<() => void>((settle) => { resolve = settle; });
+    const unlisten = vi.fn();
+    return { promise, unlisten, resolve: () => resolve(unlisten) };
+  }
+
+  it("disposes listener registrations that arrive after unmount and ignores their callbacks", async () => {
+    const close = delayedRegistration();
+    const session = delayedRegistration();
+    mocks.onCloseRequested.mockReturnValueOnce(close.promise);
+    mocks.onSessionEnding.mockReturnValueOnce(session.promise);
+    const state = createAppState();
+    mocks.appState = state;
+    const container = document.createElement("div");
+    document.body.append(container);
+    root = createRoot(container);
+    await act(async () => root?.render(<App />));
+    const closeCallback = mocks.onCloseRequested.mock.calls[0][0];
+    const sessionCallback = mocks.onSessionEnding.mock.calls[0][0];
+    await act(async () => root?.unmount());
+    root = null;
+    await act(async () => { close.resolve(); session.resolve(); });
+    expect(close.unlisten).toHaveBeenCalledOnce();
+    expect(session.unlisten).toHaveBeenCalledOnce();
+    const preventDefault = vi.fn();
+    await act(async () => {
+      await closeCallback({ preventDefault });
+      sessionCallback(1);
+    });
+    expect(preventDefault).not.toHaveBeenCalled();
+    expect(state.snapshotAllPanes).not.toHaveBeenCalled();
+    expect(state.saveNow).not.toHaveBeenCalled();
+    expect(mocks.reportSessionEndSaved).not.toHaveBeenCalled();
+  });
+
+  it("retires delayed registrations from StrictMode replay while keeping the live owner", async () => {
+    const closes = [delayedRegistration(), delayedRegistration()];
+    const sessions = [delayedRegistration(), delayedRegistration()];
+    mocks.onCloseRequested.mockReturnValueOnce(closes[0].promise).mockReturnValueOnce(closes[1].promise);
+    mocks.onSessionEnding.mockReturnValueOnce(sessions[0].promise).mockReturnValueOnce(sessions[1].promise);
+    const state = createAppState();
+    mocks.appState = state;
+    const container = document.createElement("div");
+    document.body.append(container);
+    root = createRoot(container);
+    await act(async () => root?.render(<React.StrictMode><App /></React.StrictMode>));
+    expect(mocks.onCloseRequested).toHaveBeenCalledTimes(2);
+    expect(mocks.onSessionEnding).toHaveBeenCalledTimes(2);
+    await act(async () => {
+      closes.forEach((registration) => registration.resolve());
+      sessions.forEach((registration) => registration.resolve());
+    });
+    expect(closes[0].unlisten).toHaveBeenCalledOnce();
+    expect(sessions[0].unlisten).toHaveBeenCalledOnce();
+    expect(closes[1].unlisten).not.toHaveBeenCalled();
+    expect(sessions[1].unlisten).not.toHaveBeenCalled();
+    const preventDefault = vi.fn();
+    await act(async () => {
+      await mocks.onCloseRequested.mock.calls[0][0]({ preventDefault });
+      mocks.onSessionEnding.mock.calls[0][0](1);
+    });
+    expect(preventDefault).not.toHaveBeenCalled();
+    expect(state.snapshotAllPanes).not.toHaveBeenCalled();
+    expect(state.saveNow).not.toHaveBeenCalled();
+    await act(async () => { mocks.onSessionEnding.mock.calls[1][0](1); });
+    expect(state.snapshotAllPanes).toHaveBeenCalledOnce();
+    expect(state.saveNow).toHaveBeenCalledOnce();
+    expect(mocks.reportSessionEndSaved).toHaveBeenCalledExactlyOnceWith(1);
+    await act(async () => root?.unmount());
+    root = null;
+    expect(closes[1].unlisten).toHaveBeenCalledOnce();
+    expect(sessions[1].unlisten).toHaveBeenCalledOnce();
+  });
+
+  it("retires callbacks during native destruction without calling unsafe unlisten handles", async () => {
+    const close = delayedRegistration();
+    const session = delayedRegistration();
+    mocks.onCloseRequested.mockReturnValueOnce(close.promise);
+    mocks.onSessionEnding.mockReturnValueOnce(session.promise);
+    const state = { ...createAppState(), saveNow: vi.fn(() => Promise.resolve(true)) };
+    mocks.appState = state;
+    const container = document.createElement("div");
+    document.body.append(container);
+    root = createRoot(container);
+    await act(async () => root?.render(<App />));
+    const preventDefault = vi.fn();
+    await act(async () => { await mocks.onCloseRequested.mock.calls[0][0]({ preventDefault }); });
+    expect(preventDefault).toHaveBeenCalledOnce();
+    expect(mocks.destroy).toHaveBeenCalledOnce();
+    await act(async () => root?.unmount());
+    root = null;
+    await act(async () => { close.resolve(); session.resolve(); });
+    expect(close.unlisten).not.toHaveBeenCalled();
+    expect(session.unlisten).not.toHaveBeenCalled();
+    await act(async () => {
+      await mocks.onCloseRequested.mock.calls[0][0]({ preventDefault });
+      mocks.onSessionEnding.mock.calls[0][0](1);
+    });
+    expect(preventDefault).toHaveBeenCalledOnce();
+    expect(state.saveNow).toHaveBeenCalledOnce();
+    expect(mocks.reportSessionEndSaved).not.toHaveBeenCalled();
+  });
+});
 
 describe("App window-chrome results", () => {
   it("applies the content-derived window minimum on startup", async () => {

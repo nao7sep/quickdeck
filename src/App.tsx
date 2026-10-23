@@ -561,6 +561,7 @@ export function App() {
     const appWindow = isTauri() ? getCurrentWindow() : null;
     let closeUnlisten: (() => void) | undefined;
     let sessionEndUnlisten: (() => void) | undefined;
+    let retired = false;
     let closing: Promise<boolean> | null = null;
     let sessionEnding = false;
     let sessionAttempt: number | null = null;
@@ -584,6 +585,7 @@ export function App() {
     // goes unseen nor brings the window back (window conventions). A session
     // end can still settle either through quitChoiceRef.
     function askAfterQuitSaveFailure(): Promise<QuitSaveErrorChoice> {
+      if (retired) return Promise.resolve("cancel");
       return new Promise((resolve) => {
         quitChoiceRef.current = resolve;
         const settle = (choice: QuitSaveErrorChoice) => {
@@ -592,7 +594,9 @@ export function App() {
           resolve(choice);
         };
         void (async () => {
-          if (appWindow === null || !(await windowIsHidden(appWindow))) {
+          const hidden = appWindow !== null && await windowIsHidden(appWindow);
+          if (retired) return;
+          if (!hidden) {
             if (quitChoiceRef.current === resolve) setQuitSaveFailed(true);
             return;
           }
@@ -625,9 +629,12 @@ export function App() {
     // conventions, Quitting).
     async function saveBeforeClose(): Promise<boolean> {
       for (;;) {
-        if (await saveForQuit(quitSteps)) return true;
+        const saved = await saveForQuit(quitSteps);
+        if (retired) return false;
+        if (saved) return true;
         if (sessionEnding) return false;
         const choice = await askAfterQuitSaveFailure();
+        if (retired) return false;
         if (choice === "quitAnyway") {
           logWarn("quit without saving", {});
           return true;
@@ -637,6 +644,7 @@ export function App() {
     }
 
     function handleBeforeUnload() {
+      if (retired) return;
       void saveForQuit(quitSteps);
     }
 
@@ -644,6 +652,7 @@ export function App() {
 
     if (appWindow) {
       void appWindow.onCloseRequested(async (event) => {
+        if (retired) return;
         // We own the close lifecycle on every invocation. preventDefault must
         // run before the in-flight guard, otherwise a second close request
         // arriving during a slow save would let Tauri tear the window down
@@ -652,20 +661,26 @@ export function App() {
         if (closing || sessionEnding) return;
         closing = saveBeforeClose();
         try {
-          if (!(await closing) || sessionEnding) {
+          if (!(await closing) || retired || sessionEnding) {
             return;
           }
           appDestroyingRef.current = true;
           await appWindow.destroy();
         } catch (error) {
+          if (retired) return;
           logError("close window failed", { error: serializeError(error) });
           showToastRef.current("window-close:destroy", "error", message("toast.closeFailed"));
         } finally {
           closing = null;
         }
       }).then((unlisten) => {
-        closeUnlisten = unlisten;
+        if (retired) {
+          if (!appDestroyingRef.current) unlisten();
+        } else {
+          closeUnlisten = unlisten;
+        }
       }).catch((error) => {
+        if (retired) return;
         logWarn("register close handler failed", { error: serializeError(error) });
         showToastRef.current(
           "window-close:registration",
@@ -678,7 +693,7 @@ export function App() {
       // its failures are logged, and the Rust core exits once it hears back or
       // its own bound passes (unsaved-edits conventions, Quitting).
       void onSessionEnding((attempt) => {
-        if (sessionAttempt === attempt) return;
+        if (retired || sessionAttempt === attempt) return;
         const previousSessionEnding = sessionEnding;
         sessionAttempt = attempt;
         sessionEnding = true;
@@ -690,20 +705,28 @@ export function App() {
         const saving = previousSessionEnding ? saveForQuit(quitSteps) : closing ?? saveForQuit(quitSteps);
         closing = saving;
         void saving
-          .then(() => reportSessionEndSaved(attempt))
+          .then(() => {
+            if (!retired) return reportSessionEndSaved(attempt);
+          })
           .catch((error) => logWarn("session end report failed", { error: serializeError(error) }))
           .finally(() => {
             if (sessionAttempt === attempt) sessionEnding = false;
             if (closing === saving) closing = null;
           });
       }).then((unlisten) => {
-        sessionEndUnlisten = unlisten;
+        if (retired) {
+          if (!appDestroyingRef.current) unlisten();
+        } else {
+          sessionEndUnlisten = unlisten;
+        }
       }).catch((error) => {
+        if (retired) return;
         logWarn("register session end handler failed", { error: serializeError(error) });
       });
     }
 
     return () => {
+      retired = true;
       window.removeEventListener("beforeunload", handleBeforeUnload);
       if (!appDestroyingRef.current) {
         closeUnlisten?.();

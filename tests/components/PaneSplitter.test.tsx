@@ -12,6 +12,8 @@ afterEach(async () => {
   if (root !== null) await act(async () => root?.unmount());
   root = null;
   document.body.innerHTML = "";
+  document.body.style.cursor = "";
+  document.body.style.userSelect = "";
 });
 
 describe("keyedWidth", () => {
@@ -27,6 +29,100 @@ describe("keyedWidth", () => {
     expect(keyedWidth("End", 500, 320, 640)).toBe(640);
     expect(keyedWidth("ArrowUp", 500, 320, 640)).toBeNull();
     expect(keyedWidth("a", 500, 320, 640)).toBeNull();
+  });
+});
+
+describe("PaneSplitter pointer drag", () => {
+  async function splitter() {
+    const onResize = vi.fn();
+    const onCommit = vi.fn();
+    const onCancel = vi.fn();
+    const container = document.createElement("div");
+    document.body.append(container);
+    root = createRoot(container);
+    await act(async () =>
+      root?.render(<PaneSplitter label="Resize" width={380} min={320} max={640} onResize={onResize} onCommit={onCommit} onCancel={onCancel} />),
+    );
+    return { handle: container.querySelector<HTMLElement>("[role='separator']")!, onResize, onCommit, onCancel };
+  }
+
+  async function pointer(target: EventTarget, type: string, pointerId = 1, clientX = 100) {
+    const event = new MouseEvent(type, { bubbles: true, clientX });
+    Object.defineProperty(event, "pointerId", { value: pointerId });
+    await act(async () => { target.dispatchEvent(event); });
+  }
+
+  it("streams only its pointer and commits once on release, restoring body styles", async () => {
+    const { handle, onResize, onCommit } = await splitter();
+    document.body.style.cursor = "crosshair";
+    document.body.style.userSelect = "text";
+    await pointer(handle, "pointerdown");
+    expect(document.body.style.cursor).toBe("col-resize");
+    expect(document.body.style.userSelect).toBe("none");
+    await pointer(window, "pointermove", 2, 200);
+    await pointer(window, "pointerup", 2);
+    await pointer(window, "pointercancel", 2);
+    await pointer(window, "lostpointercapture", 2);
+    expect(onResize).not.toHaveBeenCalled();
+    expect(onCommit).not.toHaveBeenCalled();
+    await pointer(window, "pointermove", 1, 150);
+    expect(onResize).toHaveBeenLastCalledWith(430);
+    await pointer(window, "pointerup");
+    await pointer(window, "pointerup");
+    await pointer(window, "pointermove", 1, 200);
+    expect(onResize).toHaveBeenCalledOnce();
+    expect(onCommit).toHaveBeenCalledExactlyOnceWith(430);
+    expect(document.body.style.cursor).toBe("crosshair");
+    expect(document.body.style.userSelect).toBe("text");
+  });
+
+  it.each(["pointercancel", "lostpointercapture", "blur"])("retires a drag on %s without committing", async (type) => {
+    const { handle, onResize, onCommit, onCancel } = await splitter();
+    document.body.style.cursor = "crosshair";
+    document.body.style.userSelect = "text";
+    await pointer(handle, "pointerdown");
+    await pointer(window, "pointermove", 1, 150);
+    await pointer(window, type);
+    expect(onCancel).toHaveBeenCalledOnce();
+    await pointer(window, "pointermove", 1, 200);
+    await pointer(window, "pointerup");
+    expect(onResize).toHaveBeenCalledExactlyOnceWith(430);
+    expect(onCommit).not.toHaveBeenCalled();
+    expect(document.body.style.cursor).toBe("crosshair");
+    expect(document.body.style.userSelect).toBe("text");
+  });
+
+  it("cleans up an unmounted drag without committing or responding afterward", async () => {
+    const { handle, onResize, onCommit } = await splitter();
+    document.body.style.cursor = "crosshair";
+    document.body.style.userSelect = "text";
+    await pointer(handle, "pointerdown");
+    await act(async () => root?.unmount());
+    root = null;
+    await pointer(window, "pointermove", 1, 150);
+    await pointer(window, "pointerup");
+    expect(onResize).not.toHaveBeenCalled();
+    expect(onCommit).not.toHaveBeenCalled();
+    expect(document.body.style.cursor).toBe("crosshair");
+    expect(document.body.style.userSelect).toBe("text");
+  });
+
+  it("retires the previous drag before starting another", async () => {
+    const { handle, onResize, onCommit } = await splitter();
+    document.body.style.cursor = "crosshair";
+    document.body.style.userSelect = "text";
+    await pointer(handle, "pointerdown");
+    await pointer(handle, "pointerdown", 2, 200);
+    await pointer(window, "pointermove", 1, 150);
+    await pointer(window, "pointerup", 1);
+    expect(onResize).not.toHaveBeenCalled();
+    expect(onCommit).not.toHaveBeenCalled();
+    await pointer(window, "pointermove", 2, 250);
+    await pointer(window, "pointerup", 2);
+    expect(onResize).toHaveBeenCalledExactlyOnceWith(430);
+    expect(onCommit).toHaveBeenCalledExactlyOnceWith(430);
+    expect(document.body.style.cursor).toBe("crosshair");
+    expect(document.body.style.userSelect).toBe("text");
   });
 });
 

@@ -488,6 +488,7 @@ export function RecordsWindow({ initialListWidth }: { initialListWidth: number }
         max={RECORDS_LIST_WIDTH.max}
         onResize={setDragWidth}
         onCommit={commitListWidth}
+        onCancel={() => setDragWidth(null)}
       />
       <section className="recordsPane recordsDetailPane" aria-busy={detail.status === "loading"}>
         {detail.status === "ready" ? (
