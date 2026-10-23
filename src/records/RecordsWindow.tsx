@@ -83,6 +83,10 @@ export function RecordsWindow({ initialListWidth }: { initialListWidth: number }
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [detail, setDetail] = useState<DetailState>({ status: "none" });
   const [listWidth, setListWidth] = useState(initialListWidth);
+  const widthTouched = useRef(false);
+  useEffect(() => {
+    if (!widthTouched.current) setListWidth(initialListWidth);
+  }, [initialListWidth]);
   const [dragWidth, setDragWidth] = useState<number | null>(null);
   const listGeneration = useRef(0);
   // Set while the next page is being read, so reaching the end again cannot
@@ -373,6 +377,7 @@ export function RecordsWindow({ initialListWidth }: { initialListWidth: number }
   // The width the user dragged to is kept as their intent; what shows is that
   // width held to the panes' minimums in the window at hand.
   const commitListWidth = (width: number) => {
+    widthTouched.current = true;
     setListWidth(width);
     setDragWidth(null);
     void saveRecordsListWidth(width).catch((error: unknown) =>
@@ -486,7 +491,7 @@ export function RecordsWindow({ initialListWidth }: { initialListWidth: number }
         width={shownListWidth}
         min={RECORDS_LIST_WIDTH.min}
         max={RECORDS_LIST_WIDTH.max}
-        onResize={setDragWidth}
+        onResize={(width) => { widthTouched.current = true; setDragWidth(width); }}
         onCommit={commitListWidth}
         onCancel={() => setDragWidth(null)}
       />

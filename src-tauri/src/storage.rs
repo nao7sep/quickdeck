@@ -84,7 +84,7 @@ pub struct LoadedAppData {
     pub snapshots_path: String,
     pub data_dir: String,
     // The computer's language and regional locale, read at launch. Set by the
-    // command layer from i18n::LanguageState; storage leaves them empty.
+    // command layer from presentation::PresentationState; storage leaves them empty.
     pub system_language: String,
     pub system_locale: Option<String>,
 }
@@ -883,10 +883,10 @@ fn read_rebuildable_store(path: &Path, version: u32) -> Result<Rebuildable, Stri
 /// config.json's settings for the reads made before the load path runs (the
 /// menu language, the window theme): None for a file that does not parse or
 /// is in a newer format, as the load path will report it.
-pub fn launch_config(text: &str) -> Option<serde_json::Map<String, JsonValue>> {
+pub fn launch_config(text: &str) -> Option<JsonValue> {
     let value = serde_json::from_str(text).ok()?;
     match format_version::read_json(value, format_version::CONFIG).ok()? {
-        JsonFormat::Readable(fields) => Some(fields),
+        JsonFormat::Readable(fields) => Some(JsonValue::Object(fields)),
         JsonFormat::Newer(_) => None,
     }
 }

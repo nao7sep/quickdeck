@@ -59,7 +59,8 @@ export type RecordsWindowSetup = {
   language: string;
   systemLocale: string | null;
   displayZone: string;
-  listWidth: number | null;
+  uiFontFamily: string;
+  revision: number;
 };
 
 export async function openRecordsWindow(): Promise<void> {
@@ -69,6 +70,10 @@ export async function openRecordsWindow(): Promise<void> {
 
 export function recordsWindowSetup(): Promise<RecordsWindowSetup> {
   return invoke<RecordsWindowSetup>("records_window_setup");
+}
+
+export function recordsListWidth(): Promise<number | null> {
+  return invoke<number | null>("records_list_width");
 }
 
 export function saveRecordsListWidth(width: number): Promise<void> {
@@ -89,22 +94,16 @@ export function readRecordSources(): Promise<RecordSources> {
 
 // The event names the Rust core sends the window (src-tauri/src/records_window.rs).
 const RECORDS_CHANGED_EVENT = "records-changed";
-const LANGUAGE_EVENT = "records-language";
-const DISPLAY_ZONE_EVENT = "records-display-zone";
+const PRESENTATION_EVENT = "records-presentation";
 
 // Calls `listener` after each record the database stored. Returns the unsubscribe.
 export function onRecordsChanged(listener: () => void): () => void {
   return subscribe(RECORDS_CHANGED_EVENT, listen(RECORDS_CHANGED_EVENT, () => listener()));
 }
 
-// Calls `listener` with the language tag when a saved change moves it.
-export function onLanguageChanged(listener: (language: string) => void): () => void {
-  return subscribe(LANGUAGE_EVENT, listen<string>(LANGUAGE_EVENT, (event) => listener(event.payload)));
-}
-
-// Calls `listener` with the display zone setting when a saved change moves it.
-export function onDisplayZoneChanged(listener: (zone: string) => void): () => void {
-  return subscribe(DISPLAY_ZONE_EVENT, listen<string>(DISPLAY_ZONE_EVENT, (event) => listener(event.payload)));
+// Resolves only once registration is active, so the snapshot read can follow it.
+export function onPresentationChanged(listener: (presentation: RecordsWindowSetup) => void): Promise<() => void> {
+  return listen<RecordsWindowSetup>(PRESENTATION_EVENT, (event) => listener(event.payload));
 }
 
 // A listener registers asynchronously; one unsubscribed before that settles is

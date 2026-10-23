@@ -18,28 +18,28 @@ fn system_and_unknown_values_follow_the_os() {
 #[test]
 fn saved_theme_comes_from_the_config_theme_field() {
     assert_eq!(
-        saved_window_theme(r#"{"formatVersion":1,"theme":"dark","zen":false}"#),
+        saved_window_theme(quickdeck_lib::storage::launch_config(r#"{"formatVersion":1,"theme":"dark","zen":false}"#).as_ref()),
         Some(Theme::Dark)
     );
     assert_eq!(
-        saved_window_theme(r#"{"formatVersion":1,"theme":"light"}"#),
+        saved_window_theme(quickdeck_lib::storage::launch_config(r#"{"formatVersion":1,"theme":"light"}"#).as_ref()),
         Some(Theme::Light)
     );
     assert_eq!(
-        saved_window_theme(r#"{"formatVersion":1,"theme":"system"}"#),
+        saved_window_theme(quickdeck_lib::storage::launch_config(r#"{"formatVersion":1,"theme":"system"}"#).as_ref()),
         None
     );
 }
 
 #[test]
 fn a_missing_retired_or_corrupt_config_follows_the_os() {
-    assert_eq!(saved_window_theme(r#"{"dark":true}"#), None);
+    assert_eq!(saved_window_theme(quickdeck_lib::storage::launch_config(r#"{"dark":true}"#).as_ref()), None);
     assert_eq!(
-        saved_window_theme(r#"{"formatVersion":1,"theme":true}"#),
+        saved_window_theme(quickdeck_lib::storage::launch_config(r#"{"formatVersion":1,"theme":true}"#).as_ref()),
         None
     );
-    assert_eq!(saved_window_theme("{not json"), None);
-    assert_eq!(saved_window_theme("[]"), None);
+    assert_eq!(saved_window_theme(quickdeck_lib::storage::launch_config("{not json").as_ref()), None);
+    assert_eq!(saved_window_theme(quickdeck_lib::storage::launch_config("[]").as_ref()), None);
 }
 
 #[test]
@@ -56,13 +56,13 @@ fn each_theme_has_its_own_window_background() {
 
 #[test]
 fn a_config_from_a_newer_build_or_without_its_marker_follows_the_os() {
-    assert_eq!(saved_window_theme(r#"{"theme":"dark"}"#), None);
+    assert_eq!(saved_window_theme(quickdeck_lib::storage::launch_config(r#"{"theme":"dark"}"#).as_ref()), None);
     assert_eq!(
-        saved_window_theme(r#"{"formatVersion":1,"theme":"dark"}"#),
+        saved_window_theme(quickdeck_lib::storage::launch_config(r#"{"formatVersion":1,"theme":"dark"}"#).as_ref()),
         Some(Theme::Dark)
     );
     assert_eq!(
-        saved_window_theme(r#"{"formatVersion":2,"theme":"dark"}"#),
+        saved_window_theme(quickdeck_lib::storage::launch_config(r#"{"formatVersion":2,"theme":"dark"}"#).as_ref()),
         None
     );
 }

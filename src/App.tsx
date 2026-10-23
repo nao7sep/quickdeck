@@ -32,7 +32,7 @@ import { matchesShortcut } from "./shortcuts";
 import { applyWindowTheme } from "./services/windowTheme";
 import { applyTopmost } from "./services/windowTopmost";
 import { onAboutRequested } from "./services/appMenu";
-import { saveFailureMessage, applyDisplayZone, applyLanguage } from "./services/persistence";
+import { saveFailureMessage, applyDisplayPreferences, applyLanguage } from "./services/persistence";
 import { openRecordsWindow } from "./services/records";
 import {
   askQuitSaveFailureStandalone,
@@ -196,12 +196,12 @@ export function App() {
     };
   }, [language, loadStatus]);
 
-  // An open Records window shows its times in the saved display zone.
+  // An open Records window follows the saved display zone and UI font.
   useEffect(() => {
     if (!isTauri() || loadStatus !== "ready") return;
-    void applyDisplayZone(settings.displayZone).catch((error) =>
-      logWarn("apply display zone failed", { zone: settings.displayZone, error: serializeError(error) }));
-  }, [loadStatus, settings.displayZone]);
+    void applyDisplayPreferences(settings.displayZone, settings.uiFontFamily).catch((error) =>
+      logWarn("apply display preferences failed", { zone: settings.displayZone, error: serializeError(error) }));
+  }, [loadStatus, settings.displayZone, settings.uiFontFamily]);
 
   // Apply zoom level to the Tauri webview whenever it changes.
   useEffect(() => {

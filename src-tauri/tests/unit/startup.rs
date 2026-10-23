@@ -6,8 +6,9 @@ fn successful_preparation_returns_the_saved_first_frame_choices() {
     let path = dir.path().join("config.json");
     std::fs::write(&path, r#"{"formatVersion":1,"language":"ja","theme":"dark"}"#).unwrap();
     let config = saved_config(Some(path)).unwrap();
-    assert_eq!(crate::i18n::saved_preference(&config), Some("ja"));
-    assert_eq!(crate::theme::saved_window_theme(&config), Some(tauri::Theme::Dark));
+    let config = crate::storage::launch_config(&config);
+    assert_eq!(crate::presentation::PresentationState::detect(config.as_ref()).current(), "ja");
+    assert_eq!(crate::theme::saved_window_theme(config.as_ref()), Some(tauri::Theme::Dark));
 }
 
 #[test]
@@ -17,8 +18,9 @@ fn optional_missing_or_newer_settings_retain_system_first_frame_fallback() {
     assert!(saved_config(Some(path.clone())).is_none());
     std::fs::write(&path, r#"{"formatVersion":2,"language":"ja","theme":"dark"}"#).unwrap();
     let config = saved_config(Some(path)).unwrap();
-    assert_eq!(crate::i18n::saved_preference(&config), None);
-    assert_eq!(crate::theme::saved_window_theme(&config), None);
+    let config = crate::storage::launch_config(&config);
+    assert!(config.is_none());
+    assert_eq!(crate::theme::saved_window_theme(config.as_ref()), None);
 }
 
 #[test]

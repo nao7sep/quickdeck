@@ -161,13 +161,13 @@ export async function applyLanguage(language: string): Promise<void> {
   await invoke("apply_language", { language });
 }
 
-// Tells the Rust core the display zone, which an open Records window follows.
-export async function applyDisplayZone(zone: string): Promise<void> {
+// Shares the committed display zone and UI font with an open Records window.
+export async function applyDisplayPreferences(zone: string, uiFontFamily: string): Promise<void> {
   if (!isTauri()) {
     return;
   }
 
-  await invoke("apply_display_zone", { zone });
+  await invoke("apply_display_preferences", { zone, uiFontFamily });
 }
 
 // The OS appearance, which Settings shows as System's current value.

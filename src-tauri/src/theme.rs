@@ -19,11 +19,10 @@ pub fn window_theme_for(preference: &str) -> Option<Theme> {
     }
 }
 
-/// The window theme saved in a config.json body; anything unparseable, or a
-/// file in a newer format, follows the OS.
-pub fn saved_window_theme(config: &str) -> Option<Theme> {
-    let value = crate::storage::launch_config(config)?;
-    window_theme_for(value.get("theme")?.as_str()?)
+/// The window theme from the already parsed launch configuration. Missing or
+/// unsupported choices follow the OS.
+pub fn saved_window_theme(config: Option<&serde_json::Value>) -> Option<Theme> {
+    window_theme_for(config?.get("theme")?.as_str()?)
 }
 
 /// The window background behind the page — styles.css's --app-bg in each

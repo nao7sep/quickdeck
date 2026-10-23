@@ -7,8 +7,6 @@
 //! The computer's language is read once, at launch, before anything can
 //! override it; System resolves against that reading for the whole session.
 
-use std::sync::Mutex;
-
 use serde_json::{Map, Value as JsonValue};
 
 /// The supported tags, in the frontend's LANGUAGES order.
@@ -58,53 +56,6 @@ pub fn system_language<'a>(locales: impl IntoIterator<Item = &'a str>) -> &'stat
 pub fn normalize_preference(value: Option<&str>) -> Option<&'static str> {
     let value = value?;
     LANGUAGES.iter().copied().find(|tag| *tag == value)
-}
-
-/// The preference saved in a config.json body; anything unparseable, or a file
-/// in a newer format, is System.
-pub fn saved_preference(config: &str) -> Option<&'static str> {
-    let value = crate::storage::launch_config(config)?;
-    normalize_preference(value.get("language")?.as_str())
-}
-
-/// The language the computer and the saved choice settle on at launch, and the
-/// language the native menu currently speaks.
-pub struct LanguageState {
-    pub system_language: &'static str,
-    /// The computer's first preferred locale, for regional date and number
-    /// formats in the frontend.
-    pub system_locale: Option<String>,
-    pub current: Mutex<&'static str>,
-}
-
-impl LanguageState {
-    /// Reads the computer's languages and the saved choice. Must run before
-    /// the macOS override in `align_appkit`, which would otherwise be read back
-    /// as the computer's language.
-    pub fn detect(config: Option<&str>) -> Self {
-        let locales: Vec<String> = sys_locale::get_locales().collect();
-        let system_language = system_language(locales.iter().map(String::as_str));
-        let preference = config.and_then(saved_preference);
-        LanguageState {
-            system_language,
-            system_locale: locales.into_iter().next(),
-            current: Mutex::new(preference.unwrap_or(system_language)),
-        }
-    }
-
-    pub fn current(&self) -> &'static str {
-        *self
-            .current
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-    }
-
-    pub fn set_current(&self, language: &'static str) {
-        *self
-            .current
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner()) = language;
-    }
 }
 
 /// One language's catalogue, for the few strings the native side draws.

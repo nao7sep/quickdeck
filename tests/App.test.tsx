@@ -63,7 +63,7 @@ vi.mock("../src/services/windowTheme", () => ({
 }));
 vi.mock("../src/services/persistence", () => ({
   applyLanguage: mocks.applyLanguage,
-  applyDisplayZone: () => Promise.resolve(),
+  applyDisplayPreferences: () => Promise.resolve(),
   systemTheme: () => Promise.resolve("dark"),
 }));
 vi.mock("../src/services/records", () => ({

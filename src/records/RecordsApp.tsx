@@ -5,70 +5,75 @@ import { loadCatalogue } from "../i18n/catalogues";
 import { I18nProvider } from "../i18n/I18nContext";
 import { formattingLocale, isLanguage, type Language } from "../i18n/languages";
 import { logWarn, serializeError } from "../services/logger";
-import { onDisplayZoneChanged, onLanguageChanged, recordsWindowSetup } from "../services/records";
+import { onPresentationChanged, recordsListWidth, recordsWindowSetup, type RecordsWindowSetup } from "../services/records";
 import { isDisplayZone, resolveTimeZone, SYSTEM_ZONE } from "../utils/timeZone";
 import { RecordsWindow } from "./RecordsWindow";
 import { initialListWidth, RECORDS_LIST_WIDTH, RECORDS_WINDOW_MIN_HEIGHT, RECORDS_WINDOW_MIN_WIDTH } from "./recordsLayout";
 
-type Setup = { language: Language; systemLocale: string | null; displayZone: string; listWidth: number };
+type Setup = Omit<RecordsWindowSetup, "language"> & { language: Language };
 
-// The Records window speaks the interface language from its first text and
-// opens the list at its saved width, so nothing renders until both are known; it
-// follows the language when Settings changes it in the main window.
+// Required presentation settles before text appears; optional layout can arrive later.
 export function RecordsApp() {
   const [setup, setSetup] = useState<Setup | null>(null);
+  const [listWidth, setListWidth] = useState<number>(RECORDS_LIST_WIDTH.default);
 
-  // The setup and every later language change load a catalogue, and loads can
-  // settle in any order. Each step runs after the one before, so the last
-  // language asked for is the one shown: a change that arrives while the setup
-  // is still loading follows it rather than being lost to it.
   useEffect(() => {
     let cancelled = false;
-    const setupRequest = recordsWindowSetup();
-    let steps: Promise<void> = (async () => {
+    let stopListening: (() => void) | undefined;
+    let highestRevision = -1;
+    let generation = 0;
+    const accept = async (next: RecordsWindowSetup) => {
+      if (cancelled || next.revision <= highestRevision) return;
+      highestRevision = next.revision;
+      const requested = ++generation;
+      const language = isLanguage(next.language) ? next.language : "en";
+      const displayZone = isDisplayZone(next.displayZone) ? next.displayZone : SYSTEM_ZONE;
       try {
-        const result = await setupRequest;
-        const language = isLanguage(result.language) ? result.language : "en";
         await loadCatalogue(language);
-        if (!cancelled) {
-          setSetup({
-            language,
-            systemLocale: result.systemLocale,
-            displayZone: isDisplayZone(result.displayZone) ? result.displayZone : SYSTEM_ZONE,
-            listWidth: initialListWidth(result.listWidth),
-          });
+        if (!cancelled && requested === generation) {
+          setSetup({ ...next, language, displayZone });
         }
       } catch (error: unknown) {
+        logWarn("catalogue load failed", { language, error: serializeError(error) });
+        if (!cancelled && requested === generation) {
+          setSetup((current) => current ?? { ...next, language: "en", displayZone });
+        }
+      }
+    };
+    void (async () => {
+      try {
+        const stop = await onPresentationChanged((next) => { void accept(next); });
+        if (cancelled) { stop(); return; }
+        stopListening = stop;
+      } catch (error: unknown) {
+        logWarn("records listener failed", { error: serializeError(error) });
+        if (cancelled) return;
+      }
+      try {
+        await accept(await recordsWindowSetup());
+      } catch (error: unknown) {
         logWarn("records window setup failed", { error: serializeError(error) });
-        if (!cancelled) {
-          setSetup({ language: "en", systemLocale: null, displayZone: SYSTEM_ZONE, listWidth: RECORDS_LIST_WIDTH.default });
+        // A newer event already owns presentation if the initial request fails.
+        if (!cancelled && highestRevision < 0) {
+          setSetup({ revision: -1, language: "en", systemLocale: null, displayZone: SYSTEM_ZONE, uiFontFamily: "" });
         }
       }
     })();
-    const stopListening = onLanguageChanged((tag) => {
-      if (!isLanguage(tag)) return;
-      steps = steps.then(() =>
-        loadCatalogue(tag).then(
-          () => {
-            if (!cancelled) setSetup((current) => (current === null ? current : { ...current, language: tag }));
-          },
-          (error: unknown) => logWarn("catalogue load failed", { language: tag, error: serializeError(error) }),
-        ),
-      );
-    });
-    // A zone change needs no catalogue, but it waits for the setup like a language does.
-    const stopZone = onDisplayZoneChanged((zone) => {
-      if (!isDisplayZone(zone)) return;
-      steps = steps.then(() => {
-        if (!cancelled) setSetup((current) => (current === null ? current : { ...current, displayZone: zone }));
-      });
-    });
+    void recordsListWidth().then(
+      (width) => { if (!cancelled) setListWidth(initialListWidth(width)); },
+      (error: unknown) => logWarn("records list width read failed", { error: serializeError(error) }),
+    );
     return () => {
       cancelled = true;
-      stopListening();
-      stopZone();
+      stopListening?.();
     };
   }, []);
+
+  useEffect(() => {
+    const family = setup?.uiFontFamily.trim();
+    if (family) document.documentElement.style.setProperty("--font-ui", family);
+    else document.documentElement.style.removeProperty("--font-ui");
+  }, [setup?.uiFontFamily]);
 
   // The window minimum is the panes' minimums plus the chrome (window-conventions).
   useEffect(() => {
@@ -88,7 +93,7 @@ export function RecordsApp() {
       locale={formattingLocale(setup.language, setup.systemLocale)}
       timeZone={resolveTimeZone(setup.displayZone)}
     >
-      <RecordsWindow initialListWidth={setup.listWidth} />
+      <RecordsWindow initialListWidth={listWidth} />
     </I18nProvider>
   );
 }

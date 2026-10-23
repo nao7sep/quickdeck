@@ -8,6 +8,7 @@ mod logging;
 mod menu;
 mod nanoid;
 mod paths;
+mod presentation;
 mod quit;
 pub mod records;
 mod records_window;
@@ -18,7 +19,7 @@ pub mod window_placement;
 
 use std::sync::Mutex;
 
-use i18n::LanguageState;
+use presentation::{PresentationSnapshot, PresentationState};
 use menu::{ABOUT_MENU_ID, CLOSE_WINDOW_MENU_ID, SAFE_QUIT_MENU_ID};
 use records::{RecordDetail, RecordSources, RecordsPage, RecordsQuery};
 use serde::Serialize;
@@ -46,34 +47,6 @@ impl WindowTheme {
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner()) = theme;
     }
-}
-
-// The display zone setting ("system" or an IANA zone), which the Records window
-// formats its times in; each webview resolves System itself.
-struct DisplayZone(Mutex<String>);
-
-impl DisplayZone {
-    fn get(&self) -> String {
-        self.0
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .clone()
-    }
-
-    fn set(&self, zone: String) {
-        *self
-            .0
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner()) = zone;
-    }
-}
-
-// The display zone saved in a config.json body; System when there is none.
-fn saved_display_zone(config: Option<&str>) -> String {
-    config
-        .and_then(storage::launch_config)
-        .and_then(|value| value.get("displayZone")?.as_str().map(str::to_owned))
-        .unwrap_or_else(|| "system".to_owned())
 }
 
 // Activating the app — a second launch, or the macOS Dock — brings the main
@@ -128,7 +101,7 @@ async fn off_main_thread<T: Send + 'static, E: From<String> + Send + 'static>(
 #[tauri::command]
 async fn load_app_data(app: AppHandle) -> Result<LoadedAppData, CommandFailure> {
     off_main_thread(move || {
-        let language = app.state::<LanguageState>();
+        let language = app.state::<PresentationState>();
         logging::boundary(
             "load_app_data",
             json!({}),
@@ -169,7 +142,7 @@ struct LaunchLanguage {
 }
 
 #[tauri::command]
-fn launch_language(language: State<LanguageState>) -> LaunchLanguage {
+fn launch_language(language: State<PresentationState>) -> LaunchLanguage {
     LaunchLanguage {
         language: language.current(),
         system_language: language.system_language,
@@ -208,18 +181,15 @@ fn system_theme() -> &'static str {
     }
 }
 
-// Follows a saved change of the display zone in an open Records window.
+// Share the committed display preferences with an open Records window.
 #[tauri::command]
-fn apply_display_zone(
+fn apply_display_preferences(
     app: AppHandle,
-    display_zone: State<DisplayZone>,
+    state: State<PresentationState>,
     zone: String,
+    ui_font_family: String,
 ) -> Result<(), String> {
-    if display_zone.get() == zone {
-        return Ok(());
-    }
-    display_zone.set(zone.clone());
-    records_window::follow_display_zone(&app, &zone)
+    presentation::notify(&app, &state.set_display_preferences(zone, ui_font_family))
 }
 
 // Keeps the main window on top or not, and an open Records window with it, so
@@ -246,7 +216,7 @@ fn apply_topmost(app: AppHandle, topmost: bool) -> Result<(), CommandFailure> {
 #[tauri::command]
 fn apply_language(
     app: AppHandle,
-    state: State<LanguageState>,
+    state: State<PresentationState>,
     language: String,
 ) -> Result<(), CommandFailure> {
     logging::boundary(
@@ -263,7 +233,7 @@ fn apply_language(
                 let menu = menu::build(&app, language).map_err(|error| error.to_string())?;
                 app.set_menu(menu).map_err(|error| error.to_string())?;
             }
-            state.set_current(language);
+            let snapshot = state.set_language(language);
             // The menu has changed, so this call succeeded; a Records window
             // that missed the change is logged rather than reported as the
             // menu's failure.
@@ -272,6 +242,9 @@ fn apply_language(
                     "records window language update failed",
                     json!({ "error": error }),
                 );
+            }
+            if let Err(error) = presentation::notify(&app, &snapshot) {
+                logging::warn("records presentation update failed", json!({ "error": error }));
             }
             Ok(())
         },
@@ -473,7 +446,7 @@ async fn open_records_window(
             json!({}),
             || -> Result<_, String> {
                 let window_theme = app.state::<WindowTheme>().get();
-                let language = app.state::<LanguageState>().current();
+                let language = app.state::<PresentationState>().current();
                 records_window::open(&app, &placements, window_theme, language)
             },
             |_| json!({}),
@@ -482,36 +455,22 @@ async fn open_records_window(
     .await
 }
 
-// What the Records window needs before its first frame: the language it speaks
-// and the list width last chosen.
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct RecordsWindowSetup {
-    language: &'static str,
-    system_locale: Option<String>,
-    display_zone: String,
-    list_width: Option<f64>,
+// No filesystem work is required for the first correctly localized frame.
+#[tauri::command]
+fn records_window_setup(state: State<PresentationState>) -> PresentationSnapshot {
+    state.snapshot()
 }
 
 #[tauri::command]
-async fn records_window_setup(app: AppHandle) -> Result<RecordsWindowSetup, CommandFailure> {
+async fn records_list_width(app: AppHandle) -> Result<Option<f64>, CommandFailure> {
     off_main_thread(move || {
         logging::boundary(
-            "records_window_setup",
+            "records_list_width",
             json!({}),
-            || -> Result<_, String> {
-                let language = app.state::<LanguageState>();
-                Ok(RecordsWindowSetup {
-                    language: language.current(),
-                    system_locale: language.system_locale.clone(),
-                    display_zone: app.state::<DisplayZone>().get(),
-                    list_width: storage::records_list_width(&app)?,
-                })
-            },
-            |setup| json!({ "language": setup.language, "listWidth": setup.list_width }),
+            || storage::records_list_width(&app),
+            |width| json!({ "listWidth": width }),
         ).map_err(CommandFailure::recorded)
-    })
-    .await
+    }).await
 }
 
 // Saved once when a splitter drag ends, not on every move of it, so a drag
@@ -596,14 +555,13 @@ pub fn run() {
     let config_path =
         paths::data_dir_before_launch().map(|dir| dir.join(storage::CONFIG_FILE_NAME));
     let config = startup::saved_config(config_path);
-    let saved_theme = config.as_deref().and_then(theme::saved_window_theme);
-    let display_zone = saved_display_zone(config.as_deref());
-    let language = LanguageState::detect(config.as_deref());
+    let config = config.as_deref().and_then(storage::launch_config);
+    let saved_theme = theme::saved_window_theme(config.as_ref());
+    let language = PresentationState::detect(config.as_ref());
     #[cfg(target_os = "macos")]
     i18n::align_appkit(language.current());
     let app = tauri::Builder::default()
         .manage(language)
-        .manage(DisplayZone(Mutex::new(display_zone)))
         .manage(managed_placement_state)
         .manage(quit::SessionEnd::default())
         .manage(storage::SnapshotConnection::default())
@@ -665,7 +623,7 @@ pub fn run() {
             }
             #[cfg(any(target_os = "macos", target_os = "windows"))]
             {
-                let language = app.state::<LanguageState>().current();
+                let language = app.state::<PresentationState>().current();
                 let menu = menu::build(app.handle(), language)?;
                 app.set_menu(menu)?;
             }
@@ -679,12 +637,13 @@ pub fn run() {
             apply_language,
             apply_theme,
             apply_topmost,
-            apply_display_zone,
+            apply_display_preferences,
             system_theme,
             launch_language,
             load_app_data,
             open_records_window,
             records_window_setup,
+            records_list_width,
             save_records_list_width,
             read_records_page,
             read_record_detail,

@@ -49,34 +49,6 @@ fn preference_normalizes_like_the_frontend() {
 }
 
 #[test]
-fn saved_preference_reads_the_language_field() {
-    assert_eq!(
-        saved_preference(r#"{"formatVersion":1,"language":"de","theme":"dark"}"#),
-        Some("de")
-    );
-    assert_eq!(
-        saved_preference(r#"{"formatVersion":1,"language":"system"}"#),
-        None
-    );
-    assert_eq!(
-        saved_preference(r#"{"formatVersion":1,"language":7}"#),
-        None
-    );
-    assert_eq!(
-        saved_preference(r#"{"formatVersion":1,"theme":"dark"}"#),
-        None
-    );
-    // A config.json without its marker is not read: System.
-    assert_eq!(saved_preference(r#"{"language":"de"}"#), None);
-    assert_eq!(saved_preference("not json"), None);
-    // A config.json from a newer build is not read: System.
-    assert_eq!(
-        saved_preference(r#"{"formatVersion":2,"language":"de"}"#),
-        None
-    );
-}
-
-#[test]
 fn embeds_exactly_the_catalogues_in_the_locales_folder() {
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../src/i18n/locales");
     let mut on_disk: Vec<String> = std::fs::read_dir(dir)

@@ -1563,7 +1563,7 @@ fn panes_save_distinguishes_newer_refusal_from_an_exact_noop() {
 fn launch_reads_of_config_skip_a_newer_unmarked_or_corrupt_file() {
     assert_eq!(
         launch_config(r#"{"formatVersion":1,"theme":"dark"}"#),
-        Some(fields(serde_json::json!({ "theme": "dark" })))
+        Some(serde_json::json!({ "theme": "dark" }))
     );
     assert_eq!(launch_config(r#"{"theme":"dark"}"#), None);
     assert_eq!(launch_config(r#"{"formatVersion":2,"theme":"dark"}"#), None);

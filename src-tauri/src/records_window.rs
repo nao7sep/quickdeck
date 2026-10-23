@@ -17,10 +17,6 @@ pub const LABEL: &str = "records";
 /// Sent to the window after each record the database stored.
 pub const RECORDS_CHANGED_EVENT: &str = "records-changed";
 
-/// Sent to the window, with the language tag, when a saved change moves the
-/// interface language.
-pub const LANGUAGE_EVENT: &str = "records-language";
-
 // The designed initial size; the window's minimum is derived from its panes by
 // the page itself (src/records/recordsLayout.ts).
 const WIDTH: f64 = 1240.0;
@@ -157,27 +153,13 @@ pub fn follow_topmost(app: &AppHandle, topmost: bool) {
     }
 }
 
-/// Sent to the window, with the display zone setting, when a saved change moves it.
-pub const DISPLAY_ZONE_EVENT: &str = "records-display-zone";
-
-/// Follows a saved change of the display zone.
-pub fn follow_display_zone(app: &AppHandle, zone: &str) -> Result<(), String> {
-    if app.get_webview_window(LABEL).is_none() {
-        return Ok(());
-    }
-    app.emit_to(LABEL, DISPLAY_ZONE_EVENT, zone)
-        .map_err(|error| error.to_string())
-}
-
-/// Follows a saved change of the interface language: the title and the page.
+/// Updates the native title after a saved interface language change.
 pub fn follow_language(app: &AppHandle, language: &'static str) -> Result<(), String> {
     let Some(window) = app.get_webview_window(LABEL) else {
         return Ok(());
     };
     window
         .set_title(&title(app, language))
-        .map_err(|error| error.to_string())?;
-    app.emit_to(LABEL, LANGUAGE_EVENT, language)
         .map_err(|error| error.to_string())
 }
 
