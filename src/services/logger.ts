@@ -25,16 +25,6 @@ const ENVELOPE_KEYS: ReadonlySet<string> = new Set(["time", "level", "message"])
 // Cause chains are short in practice; this only bounds pathological input.
 const MAX_CAUSE_DEPTH = 16;
 
-// Debug is developer-only. Default to the dev build; the authoritative gate is
-// Rust (cfg!(debug_assertions) || QUICKDECK_DEBUG=1), pushed in via
-// setDebugEnabled once load_app_data returns. Gating here only spares the IPC
-// hop for debug lines in release — the Rust writer enforces the gate regardless.
-let debugEnabled: boolean = import.meta.env.DEV;
-
-export function setDebugEnabled(value: boolean): void {
-  debugEnabled = value;
-}
-
 // Pure: turns any thrown value into a structured field set capturing the error's
 // type, message, stack, and full cause chain — not just `.message`. The result
 // is meant to live under a single `error` field (never spread at the top level,
@@ -59,6 +49,11 @@ function serializeErrorInner(error: unknown, seen: WeakSet<object>, depth: numbe
       result.cause = serializeErrorInner(error.cause, seen, depth + 1);
     }
     return result;
+  }
+  // Native failures already have JSON-safe structured recovery facts.
+  if (typeof error === "object" && error !== null && "logged" in error
+      && typeof error.logged === "boolean" && "message" in error && typeof error.message === "string") {
+    return { ...error };
   }
   // Non-Error throwables (strings, plain objects) — record without inventing
   // structure that isn't there.
@@ -110,10 +105,10 @@ function consoleFallback(event: LogEvent): void {
 }
 
 function dispatch(event: LogEvent): void {
-  if (event.level === "debug" && !debugEnabled) {
-    return;
-  }
-
+  // A native operation has one diagnostic owner. UI catches still present their
+  // local authored message; bridge failures without this marker are logged here.
+  const failure = event.fields.error;
+  if (typeof failure === "object" && failure !== null && "logged" in failure && failure.logged === true) return;
   if (!isTauri()) {
     // Browser preview (no Rust core): the console is the only sink available.
     consoleFallback(event);
@@ -132,10 +127,6 @@ function dispatch(event: LogEvent): void {
     consoleFallback(event);
     consoleFallback(buildLogEvent("error", "log forward failed", { error: serializeError(forwardError) }));
   });
-}
-
-export function logDebug(message: string, fields?: LogFields): void {
-  dispatch(buildLogEvent("debug", message, fields));
 }
 
 export function logInfo(message: string, fields?: LogFields): void {

@@ -28,45 +28,6 @@ fn latest_snapshot_dedup_does_not_sort_retained_history() {
     );
 }
 
-#[test]
-fn opening_an_existing_snapshot_store_reconciles_its_lookup_index_without_changing_rows() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join(SNAPSHOTS_DB_FILE_NAME);
-    let conn = Connection::open(&path).unwrap();
-    init_schema(&conn).unwrap();
-    conn.execute_batch(
-        "DROP INDEX IF EXISTS snapshots_pane;
-         CREATE INDEX IF NOT EXISTS snapshots_pane_time ON snapshots(pane_id, created_at_utc DESC);"
-    ).unwrap();
-    insert_row(&conn, "kept-id", "pane", "2026-01-01T00:00:00.000Z", "kept");
-    drop(conn);
-
-    let SnapshotStore::Ready(conn) = open_snapshot_store(dir.path()).unwrap() else {
-        panic!("readable store")
-    };
-    let (result, work) = statement_work::measure(&conn, || {
-        create_snapshot_with_connection(&conn, input("pane", "kept")).unwrap()
-    });
-    assert!(!result.inserted);
-    assert_eq!(result.id.as_deref(), Some("kept-id"));
-    assert_eq!(count_rows(&conn), 1);
-    assert_eq!(
-        work.sorts, 0,
-        "existing stores need the same direct lookup: {work:?}"
-    );
-    assert_eq!(
-        snapshot_user_version(&path),
-        i64::from(format_version::SNAPSHOTS)
-    );
-    let obsolete: i64 = conn
-        .query_row(
-            "SELECT count(*) FROM sqlite_master WHERE name = 'snapshots_pane_time'",
-            [],
-            |row| row.get(0),
-        )
-        .unwrap();
-    assert_eq!(obsolete, 0);
-}
 // A JSON object's fields, as a readable store holds them.
 fn fields(value: JsonValue) -> serde_json::Map<String, JsonValue> {
     match value {
@@ -325,7 +286,8 @@ fn concurrent_writes_of_the_same_copy_store_it_once_without_failing() {
                 start.wait();
                 snapshots.with(|conn| {
                     let transaction = begin_snapshot_write(conn)?;
-                    let result = create_snapshot_with_connection(&transaction, input("p1", "same"))?;
+                    let result =
+                        create_snapshot_with_connection(&transaction, input("p1", "same"))?;
                     transaction.commit().map_err(to_string_error)?;
                     Ok(result)
                 })
@@ -333,7 +295,10 @@ fn concurrent_writes_of_the_same_copy_store_it_once_without_failing() {
         })
         .collect();
     let joined: Vec<_> = writers.into_iter().map(|writer| writer.join()).collect();
-    let results: Vec<_> = joined.into_iter().map(|result| result.unwrap().unwrap()).collect();
+    let results: Vec<_> = joined
+        .into_iter()
+        .map(|result| result.unwrap().unwrap())
+        .collect();
     assert_eq!(results.iter().filter(|result| result.inserted).count(), 1);
     assert!(results.iter().all(|result| result.id == results[0].id));
 }
@@ -733,7 +698,10 @@ fn a_write_that_changes_nothing_leaves_the_file_and_the_backups_alone() {
     assert_eq!(backup_rows(dir.path(), &path), 1);
 
     // A change in the same session replaces that session's row.
-    let changed = serde_json::json!({ "panes": [{ "id": "p1" }] });
+    let changed = serde_json::json!({ "panes": [{
+        "id": "p1", "title": "", "content": "changed",
+        "headerColor": "#ABCDEF", "backgroundColor": "#123456"
+    }] });
     assert!(atomic_write_json(dir.path(), &path, &changed, format_version::PANES).unwrap());
     crate::backup_store::close_backup_store();
     assert_ne!(fs::metadata(&path).unwrap().modified().unwrap(), old);
@@ -780,7 +748,10 @@ fn a_panes_save_is_recorded_and_a_state_save_is_not() {
     crate::backup_store::close_backup_store();
     let panes = dir.path().join(PANES_FILE_NAME);
     assert_eq!(latest_backup(dir.path(), &panes), fs::read(&panes).unwrap());
-    assert_eq!(backup_rows(dir.path(), &dir.path().join(STATE_FILE_NAME)), 0);
+    assert_eq!(
+        backup_rows(dir.path(), &dir.path().join(STATE_FILE_NAME)),
+        0
+    );
 }
 
 #[test]
@@ -788,7 +759,10 @@ fn private_staging_refuses_an_existing_path_without_changing_its_bytes() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("existing.tmp");
     fs::write(&path, "another writer").unwrap();
-    assert_eq!(create_private_stage(&path).unwrap_err().kind(), std::io::ErrorKind::AlreadyExists);
+    assert_eq!(
+        create_private_stage(&path).unwrap_err().kind(),
+        std::io::ErrorKind::AlreadyExists
+    );
     assert_eq!(fs::read_to_string(&path).unwrap(), "another writer");
 }
 
@@ -913,7 +887,13 @@ fn a_target_held_open_without_delete_sharing_fails_cleanly() {
     crate::backup_store::close_backup_store();
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join(CONFIG_FILE_NAME);
-    atomic_write_json(dir.path(), &path, &serde_json::json!({ "a": 1 }), format_version::CONFIG).unwrap();
+    atomic_write_json(
+        dir.path(),
+        &path,
+        &serde_json::json!({ "a": 1 }),
+        format_version::CONFIG,
+    )
+    .unwrap();
     let before = fs::read(&path).unwrap();
 
     let held = File::options()
@@ -921,10 +901,18 @@ fn a_target_held_open_without_delete_sharing_fails_cleanly() {
         .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE)
         .open(&path)
         .unwrap();
-    let result = atomic_write_json(dir.path(), &path, &serde_json::json!({ "a": 2 }), format_version::CONFIG);
+    let result = atomic_write_json(
+        dir.path(),
+        &path,
+        &serde_json::json!({ "a": 2 }),
+        format_version::CONFIG,
+    );
     drop(held);
 
-    assert!(result.is_err(), "the replace should fail while the file is held");
+    assert!(
+        result.is_err(),
+        "the replace should fail while the file is held"
+    );
     assert_eq!(fs::read(&path).unwrap(), before);
     let temps: Vec<_> = fs::read_dir(dir.path())
         .unwrap()
@@ -934,7 +922,13 @@ fn a_target_held_open_without_delete_sharing_fails_cleanly() {
     assert!(temps.is_empty(), "temp files left: {temps:?}");
     // Releasing the external handle permits an ordinary retry; a failed
     // publication must not poison ownership or require restarting the app.
-    atomic_write_json(dir.path(), &path, &serde_json::json!({ "a": 2 }), format_version::CONFIG).unwrap();
+    atomic_write_json(
+        dir.path(),
+        &path,
+        &serde_json::json!({ "a": 2 }),
+        format_version::CONFIG,
+    )
+    .unwrap();
     assert_eq!(on_disk(&path)["a"], 2);
     crate::backup_store::close_backup_store();
 }
@@ -1046,9 +1040,14 @@ fn recovery_boundary_reevaluates_repaired_and_newer_targets() {
     let path = dir.path().join(CONFIG_FILE_NAME);
     for replacement in [r#"{"formatVersion":1,"zen":true}"#, NEWER] {
         fs::write(&path, "{broken").unwrap();
-        assert!(matches!(read_json_store(&path, format_version::CONFIG).unwrap(), JsonRead::Corrupt(_)));
+        assert!(matches!(
+            read_json_store(&path, format_version::CONFIG).unwrap(),
+            JsonRead::Corrupt(_)
+        ));
         fs::write(&path, replacement).unwrap();
-        let _guard = JSON_STORE_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let _guard = JSON_STORE_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let recovered = quarantine_rebuildable_store(&path, format_version::CONFIG).unwrap();
         assert!(recovered.quarantined_to.is_none());
         assert_eq!(fs::read_to_string(&path).unwrap(), replacement);
@@ -1073,7 +1072,10 @@ fn pane_reset_reevaluates_repaired_newer_and_missing_targets() {
 
 #[test]
 fn pane_reset_preserves_corrupt_bytes_and_consumed_shape_failures() {
-    for bytes in ["{broken", r#"{"formatVersion":1,"panes":[{"id":"p","content":"authored"}]}"#] {
+    for bytes in [
+        "{broken",
+        r#"{"formatVersion":1,"panes":[{"id":"p","content":"authored"}]}"#,
+    ] {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join(PANES_FILE_NAME);
         fs::write(&path, bytes).unwrap();
@@ -1106,10 +1108,21 @@ fn rebuildable_store_quarantines_corrupt_and_continues() {
     let loaded = read_rebuildable_store(&path, format_version::CONFIG).unwrap();
     assert_eq!(loaded.value, None);
     let quarantined_to = loaded.quarantined_to.expect("quarantine path reported");
-    let name = Path::new(&quarantined_to).file_name().unwrap().to_str().unwrap();
+    let name = Path::new(&quarantined_to)
+        .file_name()
+        .unwrap()
+        .to_str()
+        .unwrap();
     // config-yyyymmdd-hhmmss-utc.invalid
-    assert_eq!(name.len(), "config-20261009-120000-utc.invalid".len(), "{name}");
-    assert!(name.starts_with("config-") && name.ends_with("-utc.invalid"), "{name}");
+    assert_eq!(
+        name.len(),
+        "config-20261009-120000-utc.invalid".len(),
+        "{name}"
+    );
+    assert!(
+        name.starts_with("config-") && name.ends_with("-utc.invalid"),
+        "{name}"
+    );
 
     // The original was renamed aside with its exact bytes, never reset.
     assert!(!path.exists());
@@ -1126,7 +1139,12 @@ fn a_set_aside_never_replaces_one_from_the_same_second() {
     let now = Utc::now();
     let earlier: Vec<_> = [now, now + chrono::TimeDelta::seconds(1)]
         .into_iter()
-        .map(|moment| dir.path().join(format!("config-{}.invalid", crate::logging::session_stamp(moment))))
+        .map(|moment| {
+            dir.path().join(format!(
+                "config-{}.invalid",
+                crate::logging::session_stamp(moment)
+            ))
+        })
         .collect();
     for copy in &earlier {
         fs::write(copy, b"{ first").unwrap();
@@ -1247,6 +1265,85 @@ fn corrupt_panes_store_halts_and_is_left_in_place() {
         JsonRead::Corrupt(_)
     ));
     assert_eq!(fs::read(&path).unwrap(), b"{ corrupt bytes");
+}
+
+fn pane_shape_failures() -> Vec<JsonValue> {
+    let pane = serde_json::json!({
+        "id": "p", "title": "Title", "content": "authored",
+        "headerColor": "#ABCDEF", "backgroundColor": "#123456"
+    });
+    let mut failures = vec![
+        serde_json::json!({}),
+        serde_json::json!({ "panes": {} }),
+        serde_json::json!({ "panes": [pane.clone(), pane.clone()] }),
+    ];
+    for key in ["id", "title", "content", "headerColor", "backgroundColor"] {
+        let mut incomplete = pane.clone();
+        incomplete.as_object_mut().unwrap().remove(key);
+        failures.push(serde_json::json!({ "panes": [incomplete] }));
+    }
+    failures
+}
+
+#[test]
+fn loading_panes_rejects_invalid_current_shapes_without_changing_bytes() {
+    for value in pane_shape_failures() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(PANES_FILE_NAME);
+        let bytes =
+            serde_json::to_vec(&format_version::stamp_json(&value, format_version::PANES).unwrap())
+                .unwrap();
+        fs::write(&path, &bytes).unwrap();
+        let loaded = load_app_data_in(dir.path(), &SnapshotConnection::default()).unwrap();
+        assert!(loaded.panes.is_none(), "{value}");
+        assert!(loaded.panes_error.is_some(), "{value}");
+        assert_eq!(loaded.panes_newer, None);
+        assert_eq!(fs::read(&path).unwrap(), bytes);
+    }
+}
+
+#[test]
+#[serial(backup_store)]
+fn pane_save_refuses_corrupt_or_invalid_destination_before_publication() {
+    crate::backup_store::close_backup_store();
+    let mut corrupt = vec![b"{broken".to_vec()];
+    corrupt.extend(pane_shape_failures().into_iter().map(|value| {
+        serde_json::to_vec(&format_version::stamp_json(&value, format_version::PANES).unwrap())
+            .unwrap()
+    }));
+    for bytes in corrupt {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(PANES_FILE_NAME);
+        fs::write(&path, &bytes).unwrap();
+        let error = save_panes_in(dir.path(), &serde_json::json!({ "panes": [] })).unwrap_err();
+        assert_eq!(error.path.as_deref(), path.to_str());
+        assert_eq!(error.newer, None);
+        assert_eq!(fs::read(&path).unwrap(), bytes);
+        assert_eq!(
+            fs::read_dir(dir.path()).unwrap().count(),
+            1,
+            "refusal creates no backup or temp"
+        );
+    }
+    crate::backup_store::close_backup_store();
+}
+
+#[test]
+#[serial(backup_store)]
+fn pane_save_rejects_invalid_incoming_shapes_without_touching_valid_content() {
+    crate::backup_store::close_backup_store();
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join(PANES_FILE_NAME);
+    let bytes = br##"{"formatVersion":1,"panes":[{"id":"p","title":"","content":"authored","headerColor":"#ABCDEF","backgroundColor":"#123456"}]}"##;
+    fs::write(&path, bytes).unwrap();
+    for value in pane_shape_failures() {
+        let error = save_panes_in(dir.path(), &value).unwrap_err();
+        assert_eq!(error.path.as_deref(), path.to_str());
+        assert_eq!(error.newer, None);
+        assert_eq!(fs::read(&path).unwrap(), bytes);
+    }
+    assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 1);
+    crate::backup_store::close_backup_store();
 }
 
 #[test]
@@ -1454,7 +1551,11 @@ fn panes_save_distinguishes_newer_refusal_from_an_exact_noop() {
     let current = serde_json::json!({ "panes": [] });
     fs::write(&path, "{\n  \"formatVersion\": 1,\n  \"panes\": []\n}\n").unwrap();
     save_panes_in(dir.path(), &current).unwrap();
-    assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 1, "no-op creates no backup or temp");
+    assert_eq!(
+        fs::read_dir(dir.path()).unwrap().count(),
+        1,
+        "no-op creates no backup or temp"
+    );
     crate::backup_store::close_backup_store();
 }
 
@@ -1481,7 +1582,8 @@ fn concurrent_loads_open_a_new_snapshot_store_once() {
     let start = std::sync::Arc::new(std::sync::Barrier::new(4));
     let loads: Vec<_> = (0..4)
         .map(|_| {
-            let (snapshots, start, root) = (snapshots.clone(), start.clone(), dir.path().to_path_buf());
+            let (snapshots, start, root) =
+                (snapshots.clone(), start.clone(), dir.path().to_path_buf());
             std::thread::spawn(move || {
                 start.wait();
                 snapshots.open(&root)
@@ -1491,9 +1593,7 @@ fn concurrent_loads_open_a_new_snapshot_store_once() {
     for load in loads {
         assert_eq!(load.join().unwrap().unwrap(), None);
     }
-    let count = snapshots
-        .with(|conn| Ok(count_rows(conn)))
-        .unwrap();
+    let count = snapshots.with(|conn| Ok(count_rows(conn))).unwrap();
     assert_eq!(count, 0);
 }
 
@@ -1692,4 +1792,58 @@ fn a_width_save_leaves_an_unreadable_state_file_for_the_launch_to_recover() {
     assert!(save_records_list_width_in(dir.path(), 400).is_err());
     assert_eq!(fs::read_to_string(&path).unwrap(), "{ not json");
     assert_eq!(records_list_width_in(dir.path()).unwrap(), None);
+}
+
+
+#[test]
+fn snapshot_normalization_matches_the_editor_contract() {
+    let fixtures: JsonValue = serde_json::from_str(include_str!("../../../tests/fixtures/snapshot-text.json")).unwrap();
+    let conn = mem_db();
+    for (index, fixture) in fixtures.as_array().unwrap().iter().enumerate() {
+        let expected = fixture["expected"].as_str().unwrap();
+        let result = create_snapshot_with_connection(&conn,
+            input(&format!("pane-{index}"), fixture["input"].as_str().unwrap())).unwrap();
+        assert_eq!(result.inserted, !expected.is_empty());
+        if let Some(id) = result.id {
+            assert_eq!(snapshot_content_with_connection(&conn, &id).unwrap().as_deref(), Some(expected));
+        }
+    }
+    let long = "  line \t\r\n".repeat(100_000);
+    assert_eq!(snapshot_text(&long), std::iter::repeat_n("  line", 100_000).collect::<Vec<_>>().join("\n"));
+}
+
+#[test]
+fn list_rows_bound_excerpts_without_splitting_graphemes_and_detail_keeps_full_text() {
+    let conn = mem_db();
+    let body = "👩‍💻".repeat(10_000);
+    let result = create_snapshot_with_connection(&conn, input("pane", &body)).unwrap();
+    let id = result.id.unwrap();
+    let page = list_snapshots_with_connection(&conn, "", 5, 0).unwrap();
+    assert_eq!(page.rows[0].excerpt, "👩‍💻".repeat(120));
+    assert!(page.rows[0].truncated);
+    assert_eq!(snapshot_content_with_connection(&conn, &id).unwrap(), Some(body));
+    conn.execute("DELETE FROM snapshots WHERE id = ?1", [&id]).unwrap();
+    assert_eq!(snapshot_content_with_connection(&conn, &id).unwrap(), None);
+}
+
+#[test]
+fn snapshot_search_uses_the_same_unicode_lowercase_on_both_sides() {
+    let conn = mem_db();
+    insert_row(&conn, "match", "pane", "2026-01-01T00:00:00.000Z", "ÉCOLE ПРИВЕТ 50%_off");
+    for query in ["ÉCOLE", "école", "ПрИвЕт", "50%_off", "école привет"] {
+        assert_eq!(list_snapshots_with_connection(&conn, query, 5, 0).unwrap().rows.len(), 1, "{query}");
+    }
+    assert!(list_snapshots_with_connection(&conn, "50%Xoff", 5, 0).unwrap().rows.is_empty());
+}
+
+#[test]
+fn snapshot_search_deadline_releases_the_connection_for_captures_and_next_reads() {
+    let conn = mem_db();
+    conn.execute_batch("WITH RECURSIVE n(i) AS (VALUES(1) UNION ALL SELECT i+1 FROM n WHERE i<2000)
+        INSERT INTO snapshots(id,pane_id,pane_title,created_at_utc,trigger,content_hash,content)
+        SELECT CAST(i AS TEXT),'p','','2026-01-01T00:00:00Z','copy','hash','ordinary text' FROM n").unwrap();
+    let error = list_snapshots_until(&conn, "absent", 5, 0, std::time::Instant::now()).unwrap_err();
+    assert!(error.contains("interrupt"), "{error}");
+    assert!(create_snapshot_with_connection(&conn, input("next", "after cancellation")).unwrap().inserted);
+    assert_eq!(list_snapshots_with_connection(&conn, "after", 5, 0).unwrap().rows.len(), 1);
 }

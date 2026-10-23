@@ -37,7 +37,7 @@ function loadedAppData(): LoadedAppData {
     panesPath: "/private/tmp/quickdeck-toast-test/panes.json",
     snapshotsPath: "/private/tmp/quickdeck-toast-test/snapshots.sqlite3",
     dataDir: "/private/tmp/quickdeck-toast-test",
-    debugEnabled: false,
+
     systemLanguage: "en",
     systemLocale: null,
   };

@@ -1,4 +1,6 @@
 pub mod backup_store;
+mod command_failure;
+use command_failure::CommandFailure;
 pub mod format_version;
 mod i18n;
 mod instance_owner;
@@ -7,9 +9,9 @@ mod menu;
 mod nanoid;
 mod paths;
 mod quit;
-mod startup;
 pub mod records;
 mod records_window;
+mod startup;
 pub mod storage;
 pub mod theme;
 pub mod window_placement;
@@ -21,7 +23,9 @@ use menu::{ABOUT_MENU_ID, CLOSE_WINDOW_MENU_ID, SAFE_QUIT_MENU_ID};
 use records::{RecordDetail, RecordSources, RecordsPage, RecordsQuery};
 use serde::Serialize;
 use serde_json::{json, Map, Value as JsonValue};
-use storage::{SaveFailure, LoadFailure, LoadedAppData, SnapshotInput, SnapshotListResult, SnapshotWriteResult};
+use storage::{
+    LoadFailure, LoadedAppData, SnapshotInput, SnapshotListResult, SnapshotWriteResult,
+};
 use tauri::{AppHandle, Emitter, Manager, RunEvent, Runtime, State, Theme, WindowEvent};
 use window_placement::PlacementState;
 
@@ -50,11 +54,17 @@ struct DisplayZone(Mutex<String>);
 
 impl DisplayZone {
     fn get(&self) -> String {
-        self.0.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).clone()
+        self.0
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone()
     }
 
     fn set(&self, zone: String) {
-        *self.0.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = zone;
+        *self
+            .0
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = zone;
     }
 }
 
@@ -97,7 +107,10 @@ fn close_key_window<R: Runtime>(app: &AppHandle<R>) {
         .find(|window| window.is_focused().unwrap_or(false));
     if let Some(window) = key {
         if let Err(error) = window.close() {
-            logging::warn("close key window failed", json!({ "error": error.to_string() }));
+            logging::warn(
+                "close key window failed",
+                json!({ "error": error.to_string() }),
+            );
         }
     }
 }
@@ -113,19 +126,17 @@ async fn off_main_thread<T: Send + 'static, E: From<String> + Send + 'static>(
 }
 
 #[tauri::command]
-async fn load_app_data(app: AppHandle) -> Result<LoadedAppData, LoadFailure> {
+async fn load_app_data(app: AppHandle) -> Result<LoadedAppData, CommandFailure> {
     off_main_thread(move || {
         let language = app.state::<LanguageState>();
         logging::boundary(
             "load_app_data",
             json!({}),
-            || {
+            || -> Result<_, LoadFailure> {
                 if let Some(failure) = app.try_state::<paths::ClaimFailure>() {
                     return Err(LoadFailure::from(failure.0.clone()));
                 }
-                // The frontend gates its debug logging on this resolved flag.
                 storage::load_app_data(&app).map(|mut data| {
-                    data.debug_enabled = logging::debug_enabled();
                     data.system_language = language.system_language.to_string();
                     data.system_locale = language.system_locale.clone();
                     data
@@ -138,12 +149,11 @@ async fn load_app_data(app: AppHandle) -> Result<LoadedAppData, LoadFailure> {
                     "hasPanes": data.panes.is_some(),
                     "panesError": data.panes_error,
                     "dataDir": data.data_dir,
-                    "debugEnabled": data.debug_enabled,
                     "systemLanguage": data.system_language,
                     "systemLocale": data.system_locale,
                 })
             },
-        )
+        ).map_err(CommandFailure::recorded)
     })
     .await
 }
@@ -174,11 +184,11 @@ fn apply_theme(
     app: AppHandle,
     window_theme: State<WindowTheme>,
     preference: String,
-) -> Result<(), String> {
+) -> Result<(), CommandFailure> {
     logging::boundary(
         "apply_theme",
         json!({ "preference": preference }),
-        || {
+        || -> Result<_, String> {
             let theme = theme::window_theme_for(&preference);
             window_theme.set(theme);
             app.webview_windows()
@@ -186,7 +196,7 @@ fn apply_theme(
                 .try_for_each(|window| theme::apply(window, theme))
         },
         |_| json!({}),
-    )
+    ).map_err(CommandFailure::recorded)
 }
 
 // The OS appearance, which Settings shows as System's current value.
@@ -200,7 +210,11 @@ fn system_theme() -> &'static str {
 
 // Follows a saved change of the display zone in an open Records window.
 #[tauri::command]
-fn apply_display_zone(app: AppHandle, display_zone: State<DisplayZone>, zone: String) -> Result<(), String> {
+fn apply_display_zone(
+    app: AppHandle,
+    display_zone: State<DisplayZone>,
+    zone: String,
+) -> Result<(), String> {
     if display_zone.get() == zone {
         return Ok(());
     }
@@ -211,18 +225,19 @@ fn apply_display_zone(app: AppHandle, display_zone: State<DisplayZone>, zone: St
 // Keeps the main window on top or not, and an open Records window with it, so
 // the window opened from main can stay above it (window conventions).
 #[tauri::command]
-fn apply_topmost(app: AppHandle, topmost: bool) -> Result<(), String> {
+fn apply_topmost(app: AppHandle, topmost: bool) -> Result<(), CommandFailure> {
     logging::boundary(
         "apply_topmost",
         json!({ "topmost": topmost }),
-        || {
+        || -> Result<_, String> {
             let main = app.get_webview_window("main").ok_or("no main window")?;
-            main.set_always_on_top(topmost).map_err(|error| error.to_string())?;
+            main.set_always_on_top(topmost)
+                .map_err(|error| error.to_string())?;
             records_window::follow_topmost(&app, topmost);
             Ok(())
         },
         |_| json!({}),
-    )
+    ).map_err(CommandFailure::recorded)
 }
 
 // Rebuilds the native menu in the interface language after a change is saved.
@@ -233,11 +248,11 @@ fn apply_language(
     app: AppHandle,
     state: State<LanguageState>,
     language: String,
-) -> Result<(), String> {
+) -> Result<(), CommandFailure> {
     logging::boundary(
         "apply_language",
         json!({ "language": language }),
-        || {
+        || -> Result<_, String> {
             let language = i18n::normalize_preference(Some(&language))
                 .ok_or_else(|| format!("unsupported language {language:?}"))?;
             if state.current() == language {
@@ -261,14 +276,14 @@ fn apply_language(
             Ok(())
         },
         |_| json!({}),
-    )
+    ).map_err(CommandFailure::recorded)
 }
 
 // Sets equal to the file write nothing and log nothing, so every autosave can
 // send them; only an actual write crosses the logged boundary. Returns where an
 // unreadable config.json found on the way was set aside.
 #[tauri::command]
-async fn save_config(app: AppHandle, config: JsonValue) -> Result<Option<String>, String> {
+async fn save_config(app: AppHandle, config: JsonValue) -> Result<Option<String>, CommandFailure> {
     off_main_thread(move || {
         let data_dir = paths::app_data_dir(&app)?;
         let write = storage::config_to_write(&data_dir, config)?;
@@ -278,7 +293,8 @@ async fn save_config(app: AppHandle, config: JsonValue) -> Result<Option<String>
                 json!({}),
                 || storage::write_config(&data_dir, &config),
                 |_| json!({}),
-            )?;
+            ).map_err(|error| CommandFailure::recorded(error)
+                .with_config_set_aside(write.quarantined_to.clone()))?;
         }
         Ok(write.quarantined_to)
     })
@@ -288,30 +304,30 @@ async fn save_config(app: AppHandle, config: JsonValue) -> Result<Option<String>
 // Like save_config, an autosave that changes nothing writes nothing and logs
 // nothing; a write or a failure is logged.
 #[tauri::command]
-async fn save_state(app: AppHandle, state: JsonValue) -> Result<(), String> {
+async fn save_state(app: AppHandle, state: JsonValue) -> Result<(), CommandFailure> {
     off_main_thread(move || {
-        logging::write_boundary("save_state", json!({}), || storage::save_state(&app, state))
+        logging::write_boundary("save_state", json!({}), || storage::save_state(&app, state)).map_err(CommandFailure::recorded)
     })
     .await
 }
 
 #[tauri::command]
-async fn save_panes(app: AppHandle, panes: JsonValue) -> Result<(), SaveFailure> {
+async fn save_panes(app: AppHandle, panes: JsonValue) -> Result<(), CommandFailure> {
     off_main_thread(move || {
-        logging::write_boundary("save_panes", json!({}), || storage::save_panes(&app, panes))
+        logging::write_boundary("save_panes", json!({}), || storage::save_panes(&app, panes)).map_err(CommandFailure::recorded)
     })
     .await
 }
 
 #[tauri::command]
-async fn quarantine_corrupt_panes(app: AppHandle) -> Result<Option<String>, String> {
+async fn quarantine_corrupt_panes(app: AppHandle) -> Result<Option<String>, CommandFailure> {
     off_main_thread(move || {
         logging::boundary(
             "quarantine_corrupt_panes",
             json!({}),
             || storage::quarantine_corrupt_panes(&app),
             |quarantined| json!({ "quarantinedTo": quarantined }),
-        )
+        ).map_err(CommandFailure::recorded)
     })
     .await
 }
@@ -323,7 +339,7 @@ async fn create_snapshot(
     pane_title: String,
     trigger: String,
     content: String,
-) -> Result<SnapshotWriteResult, String> {
+) -> Result<SnapshotWriteResult, CommandFailure> {
     off_main_thread(move || {
         // Summarize, don't dump: log the content's length, never its text.
         let params = json!({ "paneId": pane_id.clone(), "trigger": trigger.clone(), "contentLen": content.len() });
@@ -332,7 +348,7 @@ async fn create_snapshot(
             params,
             move || storage::create_snapshot(&app, pane_id, pane_title, trigger, content),
             |result| json!({ "inserted": result.inserted, "snapshotId": result.id }),
-        )
+        ).map_err(CommandFailure::recorded)
     })
     .await
 }
@@ -341,7 +357,7 @@ async fn create_snapshot(
 async fn create_snapshots(
     app: AppHandle,
     snapshots: Vec<SnapshotInput>,
-) -> Result<Vec<SnapshotWriteResult>, String> {
+) -> Result<Vec<SnapshotWriteResult>, CommandFailure> {
     off_main_thread(move || {
         let count = snapshots.len();
         logging::boundary(
@@ -354,7 +370,7 @@ async fn create_snapshots(
                     "inserted": results.iter().filter(|result| result.inserted).count(),
                 })
             },
-        )
+        ).map_err(CommandFailure::recorded)
     })
     .await
 }
@@ -365,7 +381,7 @@ async fn list_snapshots(
     query: String,
     limit: u32,
     offset: u32,
-) -> Result<SnapshotListResult, String> {
+) -> Result<SnapshotListResult, CommandFailure> {
     off_main_thread(move || {
         // The query is the user's own search text; log its length, not its content.
         let params = json!({ "queryLen": query.len(), "limit": limit, "offset": offset });
@@ -374,64 +390,73 @@ async fn list_snapshots(
             params,
             move || storage::list_snapshots(&app, query, limit, offset),
             |result| json!({ "rows": result.rows.len(), "hasMore": result.has_more }),
-        )
+        ).map_err(CommandFailure::recorded)
     })
     .await
+}
+
+#[tauri::command]
+async fn snapshot_content(app: AppHandle, id: String) -> Result<Option<String>, CommandFailure> {
+    off_main_thread(move || logging::boundary(
+        "snapshot_content", json!({ "snapshotId": id }),
+        || storage::snapshot_content(&app, id),
+        |body| json!({ "found": body.is_some() }),
+    ).map_err(CommandFailure::recorded)).await
 }
 
 // Puts a snapshot's text on the system clipboard. The text is the user's own
 // writing, so only its length is logged.
 #[tauri::command]
-async fn copy_text(text: String) -> Result<(), String> {
+async fn copy_text(text: String) -> Result<(), CommandFailure> {
     off_main_thread(move || {
         logging::boundary(
             "copy_text",
             json!({ "textLen": text.len() }),
-            move || {
+            move || -> Result<_, String> {
                 let mut clipboard = arboard::Clipboard::new().map_err(|error| error.to_string())?;
                 clipboard.set_text(text).map_err(|error| error.to_string())
             },
             |_| json!({}),
-        )
+        ).map_err(CommandFailure::recorded)
     })
     .await
 }
 
 #[tauri::command]
-async fn count_snapshots(app: AppHandle) -> Result<u64, String> {
+async fn count_snapshots(app: AppHandle) -> Result<u64, CommandFailure> {
     off_main_thread(move || {
         logging::boundary(
             "count_snapshots",
             json!({}),
             || storage::count_snapshots(&app),
             |count| json!({ "count": count }),
-        )
+        ).map_err(CommandFailure::recorded)
     })
     .await
 }
 
 #[tauri::command]
-async fn delete_snapshot(app: AppHandle, id: String) -> Result<bool, String> {
+async fn delete_snapshot(app: AppHandle, id: String) -> Result<bool, CommandFailure> {
     off_main_thread(move || {
         logging::boundary(
             "delete_snapshot",
             json!({ "snapshotId": id.clone() }),
             move || storage::delete_snapshot(&app, id),
             |removed| json!({ "removed": removed }),
-        )
+        ).map_err(CommandFailure::recorded)
     })
     .await
 }
 
 #[tauri::command]
-async fn delete_all_snapshots(app: AppHandle) -> Result<u64, String> {
+async fn delete_all_snapshots(app: AppHandle) -> Result<u64, CommandFailure> {
     off_main_thread(move || {
         logging::boundary(
             "delete_all_snapshots",
             json!({}),
             || storage::delete_all_snapshots(&app),
             |count| json!({ "count": count }),
-        )
+        ).map_err(CommandFailure::recorded)
     })
     .await
 }
@@ -440,19 +465,19 @@ async fn delete_all_snapshots(app: AppHandle) -> Result<u64, String> {
 async fn open_records_window(
     app: AppHandle,
     placements: State<'_, PlacementState>,
-) -> Result<(), String> {
+) -> Result<(), CommandFailure> {
     let placements = placements.inner().clone();
     off_main_thread(move || {
         logging::boundary(
             "open_records_window",
             json!({}),
-            || {
+            || -> Result<_, String> {
                 let window_theme = app.state::<WindowTheme>().get();
                 let language = app.state::<LanguageState>().current();
                 records_window::open(&app, &placements, window_theme, language)
             },
             |_| json!({}),
-        )
+        ).map_err(CommandFailure::recorded)
     })
     .await
 }
@@ -469,12 +494,12 @@ struct RecordsWindowSetup {
 }
 
 #[tauri::command]
-async fn records_window_setup(app: AppHandle) -> Result<RecordsWindowSetup, String> {
+async fn records_window_setup(app: AppHandle) -> Result<RecordsWindowSetup, CommandFailure> {
     off_main_thread(move || {
         logging::boundary(
             "records_window_setup",
             json!({}),
-            || {
+            || -> Result<_, String> {
                 let language = app.state::<LanguageState>();
                 Ok(RecordsWindowSetup {
                     language: language.current(),
@@ -484,22 +509,22 @@ async fn records_window_setup(app: AppHandle) -> Result<RecordsWindowSetup, Stri
                 })
             },
             |setup| json!({ "language": setup.language, "listWidth": setup.list_width }),
-        )
+        ).map_err(CommandFailure::recorded)
     })
     .await
 }
 
 // Saved once when a splitter drag ends, not on every move of it, so a drag
-// writes window.json once and a half-finished drag is never kept.
+// writes state.json once and a half-finished drag is never kept.
 #[tauri::command]
-async fn save_records_list_width(app: AppHandle, width: u32) -> Result<(), String> {
+async fn save_records_list_width(app: AppHandle, width: u32) -> Result<(), CommandFailure> {
     off_main_thread(move || {
         logging::boundary(
             "save_records_list_width",
             json!({ "width": width }),
             || storage::save_records_list_width(&app, width),
             |_| json!({}),
-        )
+        ).map_err(CommandFailure::recorded)
     })
     .await
 }
@@ -510,17 +535,18 @@ async fn read_records<T: Send + 'static>(
     app: AppHandle,
     op: &'static str,
     read: impl FnOnce(&rusqlite::Connection) -> rusqlite::Result<T> + Send + 'static,
-) -> Result<T, String> {
+) -> Result<T, CommandFailure> {
     off_main_thread(move || {
         let file = paths::app_data_dir(&app)?.join(storage::RECORDS_DB_FILE_NAME);
         records::read_bounded(file, read)
     })
     .await
     .inspect_err(|error| logging::error("records read failed", json!({ "op": op, "error": error })))
+    .map_err(CommandFailure::recorded)
 }
 
 #[tauri::command]
-async fn read_records_page(app: AppHandle, query: RecordsQuery) -> Result<RecordsPage, String> {
+async fn read_records_page(app: AppHandle, query: RecordsQuery) -> Result<RecordsPage, CommandFailure> {
     read_records(app, "read_records_page", move |conn| {
         records::read_page(conn, &query)
     })
@@ -528,7 +554,7 @@ async fn read_records_page(app: AppHandle, query: RecordsQuery) -> Result<Record
 }
 
 #[tauri::command]
-async fn read_record_detail(app: AppHandle, id: i64) -> Result<Option<RecordDetail>, String> {
+async fn read_record_detail(app: AppHandle, id: i64) -> Result<Option<RecordDetail>, CommandFailure> {
     read_records(app, "read_record_detail", move |conn| {
         records::read_detail(conn, id)
     })
@@ -536,7 +562,7 @@ async fn read_record_detail(app: AppHandle, id: i64) -> Result<Option<RecordDeta
 }
 
 #[tauri::command]
-async fn read_record_sources(app: AppHandle) -> Result<RecordSources, String> {
+async fn read_record_sources(app: AppHandle) -> Result<RecordSources, CommandFailure> {
     let current_session = logging::session().unwrap_or_default();
     read_records(app, "read_record_sources", move |conn| {
         Ok(RecordSources {
@@ -567,7 +593,8 @@ pub fn run() {
     let managed_placement_state = placement_state.clone();
     // The interface language is settled before Tauri builds the app: macOS fixes
     // AppKit's language when the application object is created.
-    let config_path = paths::data_dir_before_launch().map(|dir| dir.join(storage::CONFIG_FILE_NAME));
+    let config_path =
+        paths::data_dir_before_launch().map(|dir| dir.join(storage::CONFIG_FILE_NAME));
     let config = startup::saved_config(config_path);
     let saved_theme = config.as_deref().and_then(theme::saved_window_theme);
     let display_zone = saved_display_zone(config.as_deref());
@@ -589,9 +616,9 @@ pub fn run() {
             if window.label() == "main" && matches!(event, WindowEvent::Destroyed) {
                 records_window::close_with_main(window.app_handle(), &event_placement_state);
             }
-            // Under System the OS appearance can change while the app runs; keep
-            // the backing behind the page in step. (macOS reports only OS
-            // changes here, which is why apply_theme sets the background itself.)
+            // Effective appearance changes keep the backing behind the page in
+            // step. apply_theme also sets the background when applying a theme
+            // so the initial backing does not depend on receiving this event.
             if let tauri::WindowEvent::ThemeChanged(changed) = event {
                 if let Err(error) =
                     window.set_background_color(Some(theme::window_background(*changed)))
@@ -612,7 +639,10 @@ pub fn run() {
                 // The dialog opens inside the main window, so main comes forward.
                 bring_main_forward(app);
                 if let Err(error) = app.emit_to("main", ABOUT_REQUESTED_EVENT, ()) {
-                    logging::warn("about request failed", json!({ "error": error.to_string() }));
+                    logging::warn(
+                        "about request failed",
+                        json!({ "error": error.to_string() }),
+                    );
                 }
             }
         })
@@ -666,6 +696,7 @@ pub fn run() {
             create_snapshot,
             create_snapshots,
             list_snapshots,
+            snapshot_content,
             count_snapshots,
             delete_snapshot,
             delete_all_snapshots,

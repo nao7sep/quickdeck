@@ -271,16 +271,6 @@ pub(crate) fn session_stamp(now: chrono::DateTime<Utc>) -> String {
     now.format("%Y%m%d-%H%M%S-utc").to_string()
 }
 
-// The authoritative debug gate, exposed so the command layer can hand the
-// resolved value to the frontend (which gates its own debug calls to spare the
-// IPC hop). The Rust writer enforces the gate regardless.
-pub fn debug_enabled() -> bool {
-    LOGGER
-        .get()
-        .map(|logger| logger.debug_enabled)
-        .unwrap_or(cfg!(debug_assertions))
-}
-
 // --- Forwarded (webview) logging ----------------------------------------------
 
 // Records an event forwarded from the frontend. The frontend stamps `time` at

@@ -46,7 +46,6 @@ function loadedAppData(overrides: Partial<LoadedAppData> = {}): LoadedAppData {
     panesPath: "/private/tmp/quickdeck-test/panes.json",
     snapshotsPath: "/private/tmp/quickdeck-test/snapshots.sqlite3",
     dataDir: "/private/tmp/quickdeck-test",
-    debugEnabled: false,
     systemLanguage: "en",
     systemLocale: null,
     ...overrides,
@@ -69,7 +68,7 @@ function StartupState() {
       <span data-testid="load-error-path">{state.loadErrorPath}</span>
       <span data-testid="corrupt-panes">{String(state.loadErrorIsCorruptPanes)}</span>
       <span data-testid="blocking-error">
-        {state.blockingError ? text(state.blockingError.message) : null}
+        {state.blockingError ? [state.blockingError.message, ...(state.blockingError.details ?? [])].map(text).join(" ") : null}
       </span>
     </>
   );
@@ -82,6 +81,7 @@ beforeEach(() => {
   persistence.loadAppData.mockResolvedValue(loadedAppData());
   persistence.saveConfig.mockResolvedValue(null);
   persistence.saveState.mockResolvedValue(undefined);
+  persistence.savePanes.mockResolvedValue(undefined);
   persistence.countSnapshots.mockResolvedValue(0);
   persistence.launchLanguage.mockResolvedValue({ language: "en", systemLanguage: "en", systemLocale: null });
 });
@@ -135,9 +135,7 @@ describe("persistence failure presentation", () => {
   it("keeps pane shape diagnostics in the log and out of recovery copy", async () => {
     persistence.loadAppData.mockResolvedValueOnce(
       loadedAppData({
-        panes: {
-          panes: [{ id: "HOSTILE-SENTINEL", content: 42 }],
-        } as unknown as LoadedAppData["panes"],
+        panesError: "invalid pane shape: HOSTILE-SENTINEL non-string content",
       }),
     );
 
@@ -145,7 +143,7 @@ describe("persistence failure presentation", () => {
 
     expect(host.querySelector('[data-testid="load-status"]')?.textContent).toBe("failed");
     const message = host.querySelector('[data-testid="load-error"]')?.textContent ?? "";
-    expect(message).toContain("is damaged");
+    expect(message).toContain("pane text file");
     expect(message).not.toContain("HOSTILE-SENTINEL");
     expect(message).not.toContain("non-string content");
   });
@@ -583,7 +581,7 @@ describe("interface language", () => {
 });
 
 
-it("sends every set that differs from its built-in on each save", async () => {
+it("saves changed settings independently from pane changes", async () => {
   let state: ReturnType<typeof useAppState>;
   function Probe() { state = useAppState(); return null; }
   const host = document.createElement("div");
@@ -596,7 +594,8 @@ it("sends every set that differs from its built-in on each save", async () => {
   expect(persistence.saveConfig).toHaveBeenLastCalledWith({ zen: true });
   await act(async () => { state!.updatePaneContent(state!.activePaneId, "new text"); });
   await act(async () => { await state!.saveNow(); });
-  expect(persistence.saveConfig).toHaveBeenLastCalledWith({ zen: true });
+  expect(persistence.saveConfig).toHaveBeenCalledTimes(2);
+  expect(persistence.savePanes).toHaveBeenCalledTimes(2);
 });
 
 it("reads an invalid set as its built-in and drops it from the file at the next save", async () => {
@@ -612,4 +611,28 @@ it("reads an invalid set as its built-in and drops it from the file at the next 
   expect(persistence.saveConfig).not.toHaveBeenCalled();
   await act(async () => { await state!.saveNow(); });
   expect(persistence.saveConfig).toHaveBeenLastCalledWith({ topmost: true });
+});
+
+
+it("keeps a completed settings set-aside visible when a sibling save fails", async () => {
+  const host = await renderStartupState();
+  persistence.saveConfig.mockResolvedValueOnce("/disposable/config.invalid");
+  persistence.savePanes.mockRejectedValueOnce(new Error("disk failed"));
+  await act(async () => {
+    await expect(latestStartup!.saveNow()).rejects.toThrow("disk failed");
+    latestStartup!.showBlockingError({ key: "saveError.title" }, { key: "saveError.autosave" });
+  });
+  expect(host.querySelector('[data-testid="blocking-error"]')?.textContent).toContain("/disposable/config.invalid");
+});
+
+it("keeps a set-aside reported by a failed publication without presenting its raw diagnostic", async () => {
+  const host = await renderStartupState();
+  const failure = { logged: true, message: "SECRET_SENTINEL", configQuarantinedTo: "/disposable/config.invalid" };
+  persistence.saveConfig.mockRejectedValueOnce(failure);
+  await act(async () => {
+    await expect(latestStartup!.saveNow()).rejects.toEqual(failure);
+    latestStartup!.showBlockingError({ key: "saveError.title" }, { key: "saveError.autosave" });
+  });
+  expect(host.textContent).toContain("/disposable/config.invalid");
+  expect(host.textContent).not.toContain("SECRET_SENTINEL");
 });

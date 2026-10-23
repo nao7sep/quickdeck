@@ -42,7 +42,6 @@ export type LoadedAppData = {
   snapshotsPath: string;
   dataDir: string;
   // Whether developer-only debug logging is on (resolved by the Rust core).
-  debugEnabled: boolean;
   // The computer's language resolved to a supported tag, and its regional
   // locale for dates and numbers, both read by the Rust core at launch.
   systemLanguage: string;
@@ -70,7 +69,8 @@ export type SnapshotRow = {
   paneId: string;
   paneTitle: string;
   createdAtUtc: string;
-  content: string;
+  excerpt: string;
+  truncated: boolean;
 };
 
 export type SnapshotListResult = {
@@ -108,7 +108,6 @@ export async function loadAppData(): Promise<LoadedAppData> {
       panesPath: "",
       snapshotsPath: "",
       dataDir: "Browser preview",
-      debugEnabled: import.meta.env.DEV,
       systemLanguage: "en",
       systemLocale: null,
     };
@@ -179,10 +178,7 @@ export async function systemTheme(): Promise<"light" | "dark"> {
   return (await invoke<string>("system_theme")) === "dark" ? "dark" : "light";
 }
 
-// Each store's writes are serialized through its own queue so a close-triggered
-// save always waits for an in-flight autosave of the same file to finish before
-// its own write starts — the file's final content then always reflects the more
-// recent call, whichever caller issued it (config/state/panes conventions).
+// Snapshot mutations all matter, so each keeps its place until physical settlement.
 function makeWriteQueue() {
   let queue: Promise<unknown> = Promise.resolve();
   return <R>(command: string, payload?: Record<string, unknown>): Promise<R> => {
@@ -194,9 +190,63 @@ function makeWriteQueue() {
   };
 }
 
-const enqueueConfigWrite = makeWriteQueue();
-const enqueueStateWrite = makeWriteQueue();
-const enqueuePanesWrite = makeWriteQueue();
+// File saves replace the whole file. While one write settles, retain only the
+// newest pending payload; its shared promise covers every superseded caller.
+// Caller deadlines never release the active write's ownership of the file.
+function makeReplacementWriteQueue() {
+  type Write = {
+    command: string;
+    payload: Record<string, unknown> | undefined;
+    promise: Promise<unknown>;
+    resolve: (value: unknown) => void;
+    reject: (error: unknown) => void;
+  };
+  let active = false;
+  let pending: Write | null = null;
+
+  async function run(write: Write): Promise<void> {
+    try {
+      write.resolve(await invoke(write.command, write.payload));
+    } catch (error) {
+      write.reject(error);
+    } finally {
+      const next = pending;
+      pending = null;
+      if (next) {
+        void run(next);
+      } else {
+        active = false;
+      }
+    }
+  }
+
+  return <R>(command: string, payload?: Record<string, unknown>): Promise<R> => {
+    if (pending) {
+      pending.command = command;
+      pending.payload = payload;
+      return pending.promise as Promise<R>;
+    }
+
+    let resolve!: (value: unknown) => void;
+    let reject!: (error: unknown) => void;
+    const promise = new Promise<unknown>((resolveWrite, rejectWrite) => {
+      resolve = resolveWrite;
+      reject = rejectWrite;
+    });
+    const write: Write = { command, payload, promise, resolve, reject };
+    if (active) {
+      pending = write;
+    } else {
+      active = true;
+      void run(write);
+    }
+    return promise as Promise<R>;
+  };
+}
+
+const enqueueConfigWrite = makeReplacementWriteQueue();
+const enqueueStateWrite = makeReplacementWriteQueue();
+const enqueuePanesWrite = makeReplacementWriteQueue();
 // Pre/post-edit captures and deletion share submission order through physical
 // settlement. Native workers serialize the connection but can dispatch out of
 // order; letting them overtake changes latest-text dedup or repopulates deletion.
@@ -264,6 +314,11 @@ export async function listSnapshots(
     limit,
     offset,
   });
+}
+
+export async function snapshotContent(id: string): Promise<string | null> {
+  if (!isTauri()) return null;
+  return invoke<string | null>("snapshot_content", { id });
 }
 
 export async function deleteSnapshot(id: string): Promise<boolean> {

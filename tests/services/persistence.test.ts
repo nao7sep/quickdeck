@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const invokeMock = vi.fn();
 
@@ -7,77 +7,112 @@ vi.mock("@tauri-apps/api/core", () => ({
   invoke: (...args: unknown[]) => invokeMock(...args),
 }));
 
-// saveConfig, saveState and savePanes must serialize their writes the
-// same way saveState already did, so a close-triggered save can never race an
-// in-flight autosave of the same store and let a stale write win.
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (error: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
+
+beforeEach(() => {
+  vi.resetModules();
+  invokeMock.mockReset();
+});
+
 describe("persistence write queues", () => {
-  it("serializes savePanes calls: the second invoke waits for the first to settle", async () => {
-    const { savePanes } = await import("../../src/services/persistence");
+  it.each(["config", "state", "panes"] as const)(
+    "retains only the latest pending %s save and settles all covered callers together",
+    async (store) => {
+      const persistence = await import("../../src/services/persistence");
+      const firstBridge = deferred<unknown>();
+      const finalBridge = deferred<unknown>();
+      invokeMock.mockReturnValueOnce(firstBridge.promise).mockReturnValueOnce(finalBridge.promise);
+      const submit = (index: number): Promise<unknown> => {
+        if (store === "config") return persistence.saveConfig({ autosaveDelaySeconds: index + 1 });
+        if (store === "state") return persistence.saveState({ activePaneId: `p${index}`, zoomLevel: 100 });
+        return persistence.savePanes({ panes: [{ id: "p1", title: "", content: `${index}`, headerColor: "", backgroundColor: "" }] });
+      };
+      const first = submit(0);
+      const covered = Array.from({ length: 20 }, (_, index) => submit(index + 1));
+      const settled = vi.fn();
+      const allCovered = Promise.all(covered).then(settled);
+      expect(invokeMock).toHaveBeenCalledTimes(1);
 
-    const order: string[] = [];
-    let resolveFirst: () => void = () => {};
-    invokeMock.mockImplementationOnce(() => {
-      order.push("invoke-start-1");
-      return new Promise<void>((resolve) => {
-        resolveFirst = () => {
-          order.push("invoke-end-1");
-          resolve();
-        };
-      });
-    });
-    invokeMock.mockImplementationOnce(() => {
-      order.push("invoke-start-2");
-      return Promise.resolve();
-    });
+      firstBridge.resolve("first result");
+      await first;
+      expect(invokeMock).toHaveBeenCalledTimes(2);
+      expect(settled).not.toHaveBeenCalled();
+      const finalValue = store === "config" ? { autosaveDelaySeconds: 21 }
+        : store === "state" ? { activePaneId: "p20", zoomLevel: 100 }
+        : { panes: [{ id: "p1", title: "", content: "20", headerColor: "", backgroundColor: "" }] };
+      expect(invokeMock).toHaveBeenLastCalledWith(`save_${store}`, { [store]: finalValue });
 
-    const panesA = { panes: [] };
-    const panesB = {
-      panes: [{ id: "p1", title: "", content: "b", headerColor: "", backgroundColor: "" }],
-    };
+      finalBridge.resolve("covering result");
+      await allCovered;
+      expect(settled).toHaveBeenCalledWith(Array(20).fill(store === "config" ? "covering result" : undefined));
+      expect(invokeMock).toHaveBeenCalledTimes(2);
+    },
+  );
 
-    const first = savePanes(panesA);
-    const second = savePanes(panesB);
-
-    // The second write's invoke must not have started yet: it is queued
-    // behind the first, still in-flight write of the same store.
-    await Promise.resolve();
-    await Promise.resolve();
-    expect(order).toEqual(["invoke-start-1"]);
-
-    resolveFirst();
-    await first;
-    await second;
-
-    expect(order).toEqual(["invoke-start-1", "invoke-end-1", "invoke-start-2"]);
-    expect(invokeMock).toHaveBeenNthCalledWith(1, "save_panes", { panes: panesA });
-    expect(invokeMock).toHaveBeenNthCalledWith(2, "save_panes", { panes: panesB });
-  });
-
-  it("serializes saveConfig calls the same way", async () => {
+  it("propagates the covering write's failure to every pending caller and permits later saves", async () => {
     const { saveConfig } = await import("../../src/services/persistence");
-    invokeMock.mockClear();
-    invokeMock.mockResolvedValue(undefined);
-
-    const configA = { zen: true };
-    const configB = { zen: false };
-
-    await Promise.all([saveConfig(configA), saveConfig(configB)]);
-
-    expect(invokeMock).toHaveBeenNthCalledWith(1, "save_config", { config: configA });
-    expect(invokeMock).toHaveBeenNthCalledWith(2, "save_config", { config: configB });
+    const firstBridge = deferred<string | null>();
+    const finalBridge = deferred<string | null>();
+    invokeMock.mockReturnValueOnce(firstBridge.promise).mockReturnValueOnce(finalBridge.promise).mockResolvedValueOnce(null);
+    const first = saveConfig({ zen: true });
+    const pending = [saveConfig({ zen: false }), saveConfig({ zen: true }), saveConfig({ zen: false })];
+    const results = Promise.allSettled(pending);
+    firstBridge.resolve(null);
+    await first;
+    const error = new Error("disk full");
+    finalBridge.reject(error);
+    expect(await results).toEqual(Array(3).fill({ status: "rejected", reason: error }));
+    await expect(saveConfig({ zen: true })).resolves.toBeNull();
+    expect(invokeMock).toHaveBeenCalledTimes(3);
   });
 
-  it("keeps a rejected write from blocking the queue for later writes", async () => {
+  it("starts the latest pending save after an active failure without hiding the failure", async () => {
     const { saveState } = await import("../../src/services/persistence");
-    invokeMock.mockClear();
-    invokeMock.mockRejectedValueOnce(new Error("disk full"));
-    invokeMock.mockResolvedValueOnce(undefined);
+    const firstBridge = deferred<void>();
+    invokeMock.mockReturnValueOnce(firstBridge.promise).mockResolvedValueOnce(undefined);
+    const first = saveState({ activePaneId: "p1", zoomLevel: 100 });
+    const firstResult = expect(first).rejects.toThrow("disk full");
+    const pending = saveState({ activePaneId: "p2", zoomLevel: 100 });
+    const final = saveState({ activePaneId: "p3", zoomLevel: 100 });
+    firstBridge.reject(new Error("disk full"));
+    await firstResult;
+    await Promise.all([pending, final]);
+    expect(invokeMock).toHaveBeenCalledTimes(2);
+    expect(invokeMock).toHaveBeenLastCalledWith("save_state", { state: { activePaneId: "p3", zoomLevel: 100 } });
+  });
 
-    const stateA = { activePaneId: "p1", zoomLevel: 100 };
-    const stateB = { activePaneId: "p2", zoomLevel: 100 };
+  it("keeps the active file reservation when a caller stops waiting", async () => {
+    const { savePanes } = await import("../../src/services/persistence");
+    const bridge = deferred<void>();
+    invokeMock.mockReturnValueOnce(bridge.promise).mockResolvedValueOnce(undefined);
+    const first = savePanes({ panes: [] });
+    await expect(Promise.race([first, Promise.resolve("deadline")])).resolves.toBe("deadline");
+    const pending = savePanes({ panes: [] });
+    const final = savePanes({ panes: [] });
+    await Promise.resolve();
+    expect(invokeMock).toHaveBeenCalledTimes(1);
+    bridge.resolve();
+    await Promise.all([first, pending, final]);
+    expect(invokeMock).toHaveBeenCalledTimes(2);
+  });
 
-    await expect(saveState(stateA)).rejects.toThrow("disk full");
-    await expect(saveState(stateB)).resolves.toBeUndefined();
+  it("lets separate files save independently while one file is busy", async () => {
+    const { saveConfig, saveState, savePanes } = await import("../../src/services/persistence");
+    const bridge = deferred<string | null>();
+    invokeMock.mockReturnValueOnce(bridge.promise).mockResolvedValue(undefined);
+    const config = saveConfig({ zen: true });
+    await Promise.all([saveState({ activePaneId: "p1", zoomLevel: 100 }), savePanes({ panes: [] })]);
+    expect(invokeMock.mock.calls.map(([command]) => command)).toEqual(["save_config", "save_state", "save_panes"]);
+    bridge.resolve(null);
+    await config;
   });
 });
 

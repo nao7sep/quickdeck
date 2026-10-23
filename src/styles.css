@@ -2219,4 +2219,10 @@ kbd {
   margin-top: 4px;
 }
 
+/* Keep actions reachable and both history surfaces visible in compact windows. */
+.snapshotDetailBar, .snapshotDetailActions { flex-wrap: wrap; }
+.snapshotDetailBar > .snapshotRowHead { min-width: 0; max-width: 100%; }
+@media (max-width: 720px) {
+  .snapshotBrowser { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; }
+}
 .paneCountsFailure { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 4px 8px; }

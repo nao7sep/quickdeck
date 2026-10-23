@@ -40,7 +40,7 @@ function loaded(): LoadedAppData {
     panes: { panes: [{ id: "p1", title: "Test", content: "beta", headerColor: "#112233", backgroundColor: "#ffffff" }] },
     panesError: null, panesNewer: null, snapshotsNewer: null,
     panesPath: "/disposable/panes.json", snapshotsPath: "/disposable/snapshots.sqlite3",
-    dataDir: "/disposable", debugEnabled: false, systemLanguage: "en", systemLocale: null,
+    dataDir: "/disposable", systemLanguage: "en", systemLocale: null,
   };
 }
 

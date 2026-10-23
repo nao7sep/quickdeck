@@ -11,17 +11,15 @@ import {
 import { nanoid } from "nanoid";
 import { createDefaultPane, defaultSettings } from "./defaults";
 import {
-  normalizePanes,
   readSettingsSets,
   normalizeZoomLevel,
-  panesShapeIssues,
   settingsShapeIssues,
   storedSettingsSets,
 } from "./normalize";
 import { ZOOM_DEFAULT } from "../utils/zoom";
 import { toastLifetimeMs } from "../utils/toastPolicy";
 import { appendPane, deletePane as deletePaneOp, reorderPane } from "./paneOps";
-import { multiline, singleLine } from "../utils/textCleanup";
+import { singleLine } from "../utils/textCleanup";
 import { resolveSaveState } from "../utils/saveRace";
 import {
   buildPanesFile,
@@ -40,7 +38,7 @@ import {
   saveState as persistState,
 } from "../services/persistence";
 import { awaitStartup, STARTUP_LOAD_BOUND_MS } from "../services/startup";
-import { logError, logInfo, logWarn, serializeError, setDebugEnabled } from "../services/logger";
+import { logError, logInfo, logWarn, serializeError } from "../services/logger";
 import { resolveTimeZone } from "../utils/timeZone";
 import { I18nProvider } from "../i18n/I18nContext";
 import {
@@ -114,6 +112,53 @@ type AppStateContextValue = {
 
 const AppStateContext = createContext<AppStateContextValue | undefined>(undefined);
 
+type SaveRevision<T> = { input: T; revision: number; acknowledged: number };
+
+function useSaveRevision<T>(input: T) {
+  const owner = useRef<SaveRevision<T>>({ input, revision: 0, acknowledged: -1 });
+  if (owner.current.input !== input) {
+    owner.current.input = input;
+    owner.current.revision += 1;
+  }
+  return owner;
+}
+
+// Settlement retains only a number and the owner of the current input. Pending
+// callers never keep superseded pane arrays alive just to acknowledge a save.
+function acknowledgeSave<R>(write: Promise<R>, owner: { acknowledged: number }, revision: number): Promise<R> {
+  return write.then((result) => {
+    owner.acknowledged = Math.max(owner.acknowledged, revision);
+    return result;
+  });
+}
+
+// This suspended frame owns promises and stable refs, never a submitting render
+// or its pane/settings payloads. Each file queue retains only its latest input.
+async function settleRequiredSave(
+  writes: [Promise<unknown>, Promise<void>],
+  dirtyAtStart: number,
+  dirtyCounterRef: { current: number },
+  viewSaveRef: { current: SaveRevision<ReturnType<typeof buildStateFile>> },
+  setSaveState: (state: SaveState) => void,
+): Promise<boolean> {
+  try {
+    await Promise.all(writes);
+    // Optional view state never participates in required-save acknowledgement.
+    const currentView = viewSaveRef.current;
+    if (currentView.acknowledged < currentView.revision) void acknowledgeSave(
+      persistState(currentView.input), currentView, currentView.revision,
+    ).catch((error: unknown) => {
+      logWarn("view state save failed", { error: serializeError(error) });
+    });
+    const result = resolveSaveState(dirtyAtStart, dirtyCounterRef.current);
+    setSaveState(result);
+    return result === "saved";
+  } catch (error) {
+    setSaveState("error");
+    throw error;
+  }
+}
+
 export function AppStateProvider({ children }: { children: ReactNode }) {
   // Titled once the language is known at load; nothing renders before then.
   const firstPane = useMemo(() => createDefaultPane(nanoid(), ""), []);
@@ -148,6 +193,12 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   // start of a save and only flips back to "saved" when the counter has not
   // moved during the save — keeps an edit from being lost in a save race.
   const dirtyCounterRef = useRef(0);
+  const panesSaveRef = useSaveRevision(panes);
+  const settingsSaveRef = useSaveRevision(settings);
+  const view = useMemo(() => buildStateFile(activePaneId, zoomLevel), [activePaneId, zoomLevel]);
+  const viewSaveRef = useSaveRevision(view);
+  const reportedSetAsideRef = useRef<string | null>(null);
+  const saveRecoveryFactsRef = useRef<Message[]>([]);
 
   useEffect(() => {
     panesRef.current = panes;
@@ -185,10 +236,12 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const showBlockingError = useCallback((title: Message, text: Message, details?: Message[]) => {
-    setBlockingError({ title, message: text, ...(details?.length ? { details } : {}) });
+    const allDetails = [...(details ?? []), ...saveRecoveryFactsRef.current];
+    setBlockingError({ title, message: text, ...(allDetails.length ? { details: allDetails } : {}) });
   }, []);
 
   const dismissBlockingError = useCallback(() => {
+    saveRecoveryFactsRef.current = [];
     setBlockingError(null);
   }, []);
 
@@ -243,9 +296,6 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       const data = await awaitStartup(loading, deadline);
       if (!current()) return null;
 
-      // Adopt the authoritative debug gate before logging anything else.
-      setDebugEnabled(data.debugEnabled);
-
       // The language is settled before anything renders, including a halt
       // screen: the saved choice if config.json could be read, else System.
       const loadedSystemLanguage = isLanguage(data.systemLanguage) ? data.systemLanguage : "en";
@@ -290,23 +340,14 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         return null;
       }
 
-      if (data.panes !== null) {
-        const paneIssues = panesShapeIssues(data.panes);
-        if (paneIssues.length > 0) {
-          logError("panes.json failed its shape check", { issues: paneIssues });
-          setLoadErrorIsCorruptPanes(true);
-          setLoadError(message("load.panesDamaged"));
-          setLoadErrorPath(data.panesPath);
-          setLoadStatus("failed");
-          return null;
-        }
-      }
 
       for (const issue of data.config === null ? [] : settingsShapeIssues(data.config)) {
         logWarn("config set read as its built-in", { issue });
       }
 
       const effectiveSettings = loadedSettings;
+      // The first explicit config save also retires invalid or unknown keys;
+      // native persistence skips publication when its bytes are unchanged.
       // Startup baseline: record the key effective configuration.
       logInfo("config loaded", {
         settings: effectiveSettings,
@@ -343,11 +384,14 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       setZoomLevelState(normalizeZoomLevel(data.state?.zoomLevel));
 
       const defaultTitle = loadTranslator.t("pane.defaultTitle");
-      const loadedPanes = data.panes === null ? [] : normalizePanes(data.panes.panes);
+      const loadedPanes = data.panes?.panes ?? [];
       if (loadedPanes.length === 0) {
         setPanes([{ ...firstPane, title: defaultTitle }]);
       } else {
         setPanes(loadedPanes);
+        panesSaveRef.current.input = loadedPanes;
+        panesSaveRef.current.revision += 1;
+        panesSaveRef.current.acknowledged = panesSaveRef.current.revision;
         const loadedActivePane = loadedPanes.some((pane) => pane.id === data.state?.activePaneId)
           ? data.state?.activePaneId
           : loadedPanes[0].id;
@@ -563,12 +607,11 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      const trimmed = multiline(content);
-      if (trimmed.length === 0) {
+      if (content.length === 0) {
         return;
       }
 
-      void createSnapshot({ paneId, paneTitle, trigger, content: trimmed })
+      void createSnapshot({ paneId, paneTitle, trigger, content })
         .then((result) => {
           if (result.inserted) {
             refreshSnapshotCount();
@@ -595,7 +638,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
           paneId: pane.id,
           paneTitle: pane.title,
           trigger,
-          content: multiline(pane.content),
+          content: pane.content,
         }))
         .filter((snapshot) => snapshot.content.length > 0);
 
@@ -631,45 +674,54 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     [markUnsaved],
   );
 
-  // Throws on failure. Each caller decides whether to surface a modal and/or
+  const reportSetAside = useCallback((path: string | null) => {
+    if (path === null || reportedSetAsideRef.current === path) return;
+    reportedSetAsideRef.current = path;
+    const fact = message("settingsSetAside.body", { path });
+    saveRecoveryFactsRef.current.push(fact);
+    setBlockingError((prior) => prior === null
+      ? { title: message("settingsSetAside.title"), message: fact }
+      : { ...prior, details: [...(prior.details ?? []), fact] });
+  }, []);
+
+  const configSaved = useCallback((path: string | null) => {
+    reportSetAside(path);
+    return path;
+  }, [reportSetAside]);
+
+  const configFailed = useCallback((error: unknown): never => {
+    if (typeof error === "object" && error !== null && "configQuarantinedTo" in error
+        && typeof error.configQuarantinedTo === "string") reportSetAside(error.configQuarantinedTo);
+    throw error;
+  }, [reportSetAside]);
+
+  // Rejects on failure. Each caller decides whether to surface a modal and/or
   // change control flow, since autosave and the close path want different
   // policies. No-ops unless load succeeded — see the LoadStatus comment in
   // types.ts.
   const savedInputRevision = dirtyCounterRef.current;
-  const saveNow = useCallback(async () => {
-    if (loadStatus !== "ready") return true;
+  const settingsRevision = settingsSaveRef.current.revision;
+  const panesRevision = panesSaveRef.current.revision;
+  const saveNow = useCallback((): Promise<boolean> => {
+    if (loadStatus !== "ready") return Promise.resolve(true);
     // The closure's payload and revision come from the same render. An edit
     // admitted before its next render cannot certify an older payload.
-    if (savedInputRevision !== dirtyCounterRef.current) return false;
+    if (savedInputRevision !== dirtyCounterRef.current) return Promise.resolve(false);
 
     const dirtyAtStart = savedInputRevision;
     setSaveState("saving");
     try {
-      // Every save sends every stored set; the write queue applies them in call
-      // order, and the core writes nothing when they equal the file.
-      const [configSetAsideTo] = await Promise.all([
-        saveConfig(storedSettingsSets(settings)),
-        savePanes(buildPanesFile(panes)),
-      ]);
-      // View state is optional: admit it after required writes, and retain its
-      // per-file queue through settlement without making it a quit condition.
-      void persistState(buildStateFile(activePaneId, zoomLevel)).catch((error) => {
-        logWarn("view state save failed", { error: serializeError(error) });
-      });
-      const result = resolveSaveState(dirtyAtStart, dirtyCounterRef.current);
-      setSaveState(result);
-      if (configSetAsideTo !== null) {
-        showBlockingError(
-          message("settingsSetAside.title"),
-          message("settingsSetAside.body", { path: configSetAsideTo }),
-        );
-      }
-      return result === "saved";
+      const configWrite = settingsSaveRef.current.acknowledged >= settingsRevision ? Promise.resolve(null)
+        : acknowledgeSave(saveConfig(storedSettingsSets(settings)), settingsSaveRef.current, settingsRevision)
+          .then(configSaved, configFailed);
+      const panesWrite = panesSaveRef.current.acknowledged >= panesRevision ? Promise.resolve()
+        : acknowledgeSave(savePanes(buildPanesFile(panes)), panesSaveRef.current, panesRevision);
+      return settleRequiredSave([configWrite, panesWrite], dirtyAtStart, dirtyCounterRef, viewSaveRef, setSaveState);
     } catch (error) {
       setSaveState("error");
-      throw error;
+      return Promise.reject(error);
     }
-  }, [activePaneId, loadStatus, panes, savedInputRevision, settings, showBlockingError, zoomLevel]);
+  }, [configFailed, configSaved, loadStatus, panes, panesRevision, savedInputRevision, settings, settingsRevision]);
 
   useEffect(() => {
     if (loadStatus !== "ready" || saveState !== "unsaved") {

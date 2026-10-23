@@ -237,7 +237,7 @@ describe("closing the window", () => {
     await renderApp(state);
 
     const { done } = await requestClose();
-    expect(state.saveNow).not.toHaveBeenCalled();
+    expect(state.saveNow).toHaveBeenCalledOnce();
     await advance(QUIT_SNAPSHOT_BOUND_MS);
     await done;
 
@@ -449,7 +449,7 @@ describe("an OS logout, restart or shutdown", () => {
     await renderApp(state);
 
     await endSession();
-    await advance(QUIT_SNAPSHOT_BOUND_MS + QUIT_SAVE_BOUND_MS - 1);
+    await advance(Math.max(QUIT_SNAPSHOT_BOUND_MS, QUIT_SAVE_BOUND_MS) - 1);
     expect(mocks.invoke).not.toHaveBeenCalled();
     await advance(1);
 

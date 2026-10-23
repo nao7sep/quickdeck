@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   list: vi.fn(),
+  detail: vi.fn(),
   deleteOne: vi.fn(),
   deleteAll: vi.fn(),
   refreshCount: vi.fn(),
@@ -14,6 +15,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("../../src/services/persistence", () => ({
   listSnapshots: mocks.list,
+  snapshotContent: mocks.detail,
   deleteSnapshot: mocks.deleteOne,
   deleteAllSnapshots: mocks.deleteAll,
 }));
@@ -40,6 +42,8 @@ afterEach(async () => {
   root = null;
   document.body.innerHTML = "";
   mocks.list.mockReset();
+  mocks.detail.mockReset();
+  bodies.clear();
   mocks.deleteOne.mockReset();
   mocks.deleteAll.mockReset();
   mocks.refreshCount.mockReset();
@@ -47,11 +51,14 @@ afterEach(async () => {
   mocks.logWarn.mockReset();
 });
 
+const bodies = new Map<string, string>();
 function row(id: string, content: string, paneId = "pane-1", paneTitle = "Scratch") {
-  return { id, paneId, paneTitle, createdAtUtc: "2026-09-08T00:00:00.000Z", content };
+  bodies.set(id, content);
+  return { id, paneId, paneTitle, createdAtUtc: "2026-09-08T00:00:00.000Z", excerpt: content, truncated: false };
 }
 
 async function open() {
+  mocks.detail.mockImplementation(async (id: string) => bodies.get(id) ?? null);
   const container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -570,4 +577,47 @@ describe("SnapshotsModal failure presentation", () => {
     expect(alert.textContent).not.toContain("HOSTILE-SENTINEL");
     expect(mocks.logWarn).toHaveBeenCalledOnce();
   });
+});
+
+it("fetches only selected bodies and ignores a stale detail response", async () => {
+  let settleFirst!: (text: string) => void;
+  mocks.detail.mockImplementationOnce(() => new Promise<string>((resolve) => { settleFirst = resolve; }));
+  mocks.list.mockResolvedValue({ rows: [row("a", "first full body"), row("b", "second full body")], hasMore: false });
+  await open();
+  const copy = () => Array.from(document.querySelectorAll<HTMLButtonElement>("button")).find((button) => button.textContent === "Copy")!;
+  expect(mocks.detail).toHaveBeenCalledExactlyOnceWith("a");
+  expect(copy().disabled).toBe(true);
+  await act(async () => rows()[1].click());
+  expect(mocks.detail).toHaveBeenCalledTimes(1);
+  expect(copy().disabled).toBe(true);
+  await act(async () => settleFirst("stale first body"));
+  expect(document.querySelector(".snapshotDetail pre")?.textContent).toBe("second full body");
+  await act(async () => copy().click());
+  expect(mocks.copyText).toHaveBeenCalledWith("second full body");
+});
+
+it("shows detail failure and disables Copy if the selected snapshot disappeared", async () => {
+  mocks.detail.mockResolvedValueOnce(null);
+  mocks.list.mockResolvedValue({ rows: [row("a", "excerpt")], hasMore: false });
+  await open();
+  const copy = Array.from(document.querySelectorAll<HTMLButtonElement>("button")).find((button) => button.textContent === "Copy")!;
+  expect(copy.disabled).toBe(true);
+  expect(document.querySelector(".snapshotDetail .errorText")).not.toBeNull();
+});
+
+it("fills a viewport that a valid short page leaves without a scrollbar", async () => {
+  const height = vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockImplementation(function (this: HTMLElement) {
+    return this.classList.contains("snapshotList") ? 500 : 0;
+  });
+  const scroll = vi.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockImplementation(function (this: HTMLElement) {
+    return this.classList.contains("snapshotList") ? this.querySelectorAll(".snapshotRow").length * 40 : 0;
+  });
+  mocks.list.mockImplementation(async (_query: string, _limit: number, offset: number) => ({
+    rows: Array.from({ length: 5 }, (_, i) => row(String(offset + i), "text")), hasMore: true,
+  }));
+  try {
+    await open();
+    expect(mocks.list.mock.calls.map((call) => call[2])).toEqual([0, 5, 10]);
+    expect(rows()).toHaveLength(15);
+  } finally { height.mockRestore(); scroll.mockRestore(); }
 });

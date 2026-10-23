@@ -22,19 +22,20 @@ it("keeps snapshot copies ordered through settlement across closing and reopenin
   let releaseFirst!: () => void;
   let listing = 0;
   const admitted: string[] = [];
-  invoke.mockImplementation((command: string, args: { text?: string } = {}) => {
+  invoke.mockImplementation((command: string, args: { text?: string; id?: string } = {}) => {
     if (command === "load_app_data") return Promise.resolve({
       config: null, configQuarantinedTo: null, configNewer: null, state: null,
       panes: { panes: [{ id: "pane", title: "Notes", content: "", headerColor: "#112233", backgroundColor: "#ffffff" }] },
       panesError: null, panesNewer: null, snapshotsNewer: null,
       panesPath: "/disposable/panes.json", snapshotsPath: "/disposable/snapshots.sqlite3",
-      dataDir: "/disposable", debugEnabled: false, systemLanguage: "en", systemLocale: null,
+      dataDir: "/disposable", systemLanguage: "en", systemLocale: null,
     });
     if (command === "count_snapshots") return Promise.resolve(2);
     if (command === "list_snapshots") return Promise.resolve({ rows: [{
       id: String(++listing), paneId: "pane", paneTitle: "Notes",
-      createdAtUtc: "2026-10-10T00:00:00Z", content: listing === 1 ? "first copy" : "second copy",
+      createdAtUtc: "2026-10-10T00:00:00Z", excerpt: "copy", truncated: false,
     }], hasMore: false });
+    if (command === "snapshot_content") return Promise.resolve(args.id === "1" ? "first copy" : "second copy");
     if (command === "copy_text") {
       admitted.push(args.text!);
       if (args.text === "first copy") return new Promise<void>((resolve) => {

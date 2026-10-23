@@ -28,7 +28,7 @@ vi.mock("@tauri-apps/api/core", () => ({
           panesPath: "/private/tmp/quickdeck-test/panes.json",
           snapshotsPath: "/private/tmp/quickdeck-test/snapshots.sqlite3",
           dataDir: "/private/tmp/quickdeck-test",
-          debugEnabled: false,
+
           systemLanguage: "en",
           systemLocale: null,
         };

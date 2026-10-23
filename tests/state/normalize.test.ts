@@ -3,10 +3,8 @@ import {
   SETTINGS_BOUNDS,
   clampNumber,
   isSettingsDraftValid,
-  normalizePanes,
   normalizeSettings,
   normalizeZoomLevel,
-  panesShapeIssues,
   settingsShapeIssues,
   settingsBySet,
   readSettingsSets,
@@ -103,8 +101,13 @@ describe("isSettingsDraftValid", () => {
     expect(isSettingsDraftValid({ ...defaultSettings, snapshotSearchPageSize: 4 })).toBe(false);
   });
 
-  it("rejects zero, the value an emptied number input produces", () => {
-    expect(isSettingsDraftValid({ ...defaultSettings, editorFontSize: 0 })).toBe(false);
+  it("accepts cleared padding as zero but rejects a cleared font size", () => {
+    expect(isSettingsDraftValid({ ...defaultSettings, editorPadding: Number("") })).toBe(true);
+    expect(isSettingsDraftValid({ ...defaultSettings, editorFontSize: Number("") })).toBe(false);
+  });
+
+  it("rejects fractional snapshot page sizes", () => {
+    expect(isSettingsDraftValid({ ...defaultSettings, snapshotSearchPageSize: 5.5 })).toBe(false);
   });
 
   it("rejects non-finite values", () => {
@@ -143,19 +146,25 @@ describe("SETTINGS_BOUNDS agreement between Save and read", () => {
   }
 });
 
-describe("normalizePanes", () => {
-  it("keeps every field of a sound pane", () => {
-    const panes = [
-      { id: "p1", title: "Title", content: "body", headerColor: "#aabbcc", backgroundColor: "#112233" },
-    ];
-    expect(normalizePanes(panes)).toEqual(panes);
+describe("snapshot page-size settings boundary", () => {
+  it("reports a fractional config value and uses its built-in while preserving other settings", () => {
+    const config = { snapshotSearchPageSize: 5.5, zen: !defaultSettings.zen };
+    expect(settingsShapeIssues(config)).toEqual(["snapshotSearchPageSize is invalid"]);
+    expect(readSettingsSets(config)).toEqual({ ...defaultSettings, zen: config.zen });
   });
 
-  it("keeps a title the user cleared empty", () => {
-    const panes = [
-      { id: "p1", title: "", content: "", headerColor: "#aabbcc", backgroundColor: "#112233" },
-    ];
-    expect(normalizePanes(panes)[0].title).toBe("");
+  it("saves and reads every integer from 5 through 200", () => {
+    for (let snapshotSearchPageSize = 5; snapshotSearchPageSize <= 200; snapshotSearchPageSize += 1) {
+      const draft = { ...defaultSettings, snapshotSearchPageSize };
+      expect(isSettingsDraftValid(draft)).toBe(true);
+      expect(settingsShapeIssues({ snapshotSearchPageSize })).toEqual([]);
+      expect(readSettingsSets(storedSettingsSets(draft)).snapshotSearchPageSize).toBe(snapshotSearchPageSize);
+    }
+  });
+
+  it("retains zero editor padding through a settings save and read", () => {
+    const draft = { ...defaultSettings, editorPadding: Number("") };
+    expect(readSettingsSets(storedSettingsSets(draft)).editorPadding).toBe(0);
   });
 });
 
@@ -185,58 +194,6 @@ describe("settingsShapeIssues", () => {
     expect(settingsShapeIssues({ ...defaultSettings, zoomLevel: 1.2, retired: true })).toEqual([]);
   });
 });
-
-describe("panesShapeIssues", () => {
-  const pane = { id: "a", title: "T", content: "body", headerColor: "#112233", backgroundColor: "#445566" };
-
-  it("passes a sound store, an empty title included", () => {
-    expect(panesShapeIssues({ panes: [pane, { ...pane, id: "b", title: "" }] })).toEqual([]);
-  });
-
-  it("flags a store without its panes", () => {
-    expect(panesShapeIssues({})).toEqual(["panes is not an array"]);
-  });
-
-  it("flags a pane missing a field this build always writes, never filling it in", () => {
-    const { title, ...untitled } = pane;
-    const { headerColor, ...uncoloured } = pane;
-    void title;
-    void headerColor;
-    expect(panesShapeIssues({ panes: [untitled] })).toEqual(["pane 0 has no string title"]);
-    expect(panesShapeIssues({ panes: [uncoloured] })).toEqual(["pane 0 has no valid headerColor"]);
-    expect(panesShapeIssues({ panes: [{ ...pane, backgroundColor: "red" }] })).toEqual([
-      "pane 0 has no valid backgroundColor",
-    ]);
-  });
-
-  it("flags a pane with no usable id — normalizePanes would silently DROP it", () => {
-    // The close path saves unconditionally, so without this gate launching and
-    // quitting would write the dropped pane out of existence.
-    expect(panesShapeIssues({ panes: [pane, { ...pane, id: "" }] })).toEqual([
-      "pane 1 has no usable id",
-    ]);
-    expect(panesShapeIssues({ panes: [{ ...pane, id: 42 }] })).toEqual(["pane 0 has no usable id"]);
-  });
-
-  it("flags duplicate pane ids before React state and snapshots can alias them", () => {
-    expect(panesShapeIssues({ panes: [pane, { ...pane, title: "Other" }] })).toEqual([
-      'pane 1 duplicates id "a"',
-    ]);
-  });
-
-  it("flags a non-string body", () => {
-    expect(panesShapeIssues({ panes: [{ ...pane, content: 123 }] })).toEqual([
-      "pane 0 has no string content",
-    ]);
-  });
-
-  it("flags a non-array panes and a non-object root", () => {
-    expect(panesShapeIssues({ panes: "nope" })).toEqual(["panes is not an array"]);
-    expect(panesShapeIssues([])).toEqual(["panes file is not a JSON object"]);
-    expect(panesShapeIssues(null)).toEqual(["panes file is not a JSON object"]);
-  });
-});
-
 
 describe("config sets", () => {
   it("uses built-ins for every absent set and rejects an incomplete cluster whole", () => {

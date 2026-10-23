@@ -35,14 +35,18 @@ export type QuitSaveSteps = {
 
 // Resolves whether the user's own work is known to be saved.
 export async function saveForQuit(steps: QuitSaveSteps): Promise<boolean> {
-  const snapshot = await within(steps.snapshot, QUIT_SNAPSHOT_BOUND_MS);
+  // Both begin immediately: optional snapshot preparation cannot delay saving
+  // authored text. Each retains its own physical owner after a caller deadline.
+  const snapshotWork = within(steps.snapshot, QUIT_SNAPSHOT_BOUND_MS);
+  const saveWork = within(steps.save, QUIT_SAVE_BOUND_MS);
+  const snapshot = await snapshotWork;
   if (snapshot.kind === "failed") {
     logWarn("close snapshot failed", { error: serializeError(snapshot.error) });
   } else if (snapshot.kind === "expired") {
     logWarn("close snapshot wait expired", { ms: QUIT_SNAPSHOT_BOUND_MS });
   }
 
-  const save = await within(steps.save, QUIT_SAVE_BOUND_MS);
+  const save = await saveWork;
   if (save.kind === "failed") {
     logError("save on close failed", { error: serializeError(save.error) });
     steps.onFailure?.(save.error);

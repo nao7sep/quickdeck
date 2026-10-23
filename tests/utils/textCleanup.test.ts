@@ -13,7 +13,7 @@ describe("singleLine (pane title on commit)", () => {
 
   it("flattens a pasted multi-line value into one line (default)", () => {
     // The defect this fixes: a pasted multi-line title must not leak \r/\n into
-    // state.json.
+    // panes.json.
     expect(singleLine("first line\nsecond line")).toBe("first line second line");
     expect(singleLine("a\r\nb")).toBe("a b");
     expect(singleLine("aaa\n \n\nbbb")).toBe("aaa bbb");
@@ -92,5 +92,13 @@ describe("truncate (snapshot row excerpt)", () => {
     expect(truncate("", 5)).toEqual({ text: "", truncated: false });
     expect(truncate("   ", 5)).toEqual({ text: "", truncated: false });
     expect(truncate("hello", 0)).toEqual({ text: "", truncated: false });
+  });
+});
+
+
+describe("shared native snapshot cleanup contract", () => {
+  it("matches the cross-language fixtures", async () => {
+    const { default: fixtures } = await import("../fixtures/snapshot-text.json");
+    for (const fixture of fixtures) expect(multiline(fixture.input)).toBe(fixture.expected);
   });
 });

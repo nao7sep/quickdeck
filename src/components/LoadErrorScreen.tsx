@@ -7,11 +7,11 @@ import { logWarn, serializeError } from "../services/logger";
 
 // Non-dismissible halt shown when persisted state could not be prepared.
 //
-// When config.json or state.json fails to read or parse, the app must not
-// fall through to the editor. Doing so would let the default in-memory state
-// be autosaved over the user's existing files on the first edit. Instead the
-// shell renders this screen until the user quits and repairs the data
-// directory by hand.
+// Corrupt config.json and state.json are quarantined and reset before the
+// editor opens. Unreadable pane text or a failure to prepare the stores halts
+// loading so autosave cannot overwrite work with defaults. A corrupt-panes
+// halt offers an explicit set-aside reset; other failures can be repaired
+// after quitting.
 
 type LoadErrorScreenProps = {
   error: Message;

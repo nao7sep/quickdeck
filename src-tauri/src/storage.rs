@@ -14,6 +14,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use sha2::{Digest, Sha256};
 use tauri::{AppHandle, Manager};
+use unicode_segmentation::UnicodeSegmentation;
 
 use crate::format_version::{self, JsonFormat, SqliteFormat};
 use crate::paths::app_data_dir;
@@ -82,9 +83,6 @@ pub struct LoadedAppData {
     pub panes_path: String,
     pub snapshots_path: String,
     pub data_dir: String,
-    // Whether developer-only debug logging is on. Set by the command layer
-    // (see lib.rs) from logging::debug_enabled(); storage leaves it false.
-    pub debug_enabled: bool,
     // The computer's language and regional locale, read at launch. Set by the
     // command layer from i18n::LanguageState; storage leaves them empty.
     pub system_language: String,
@@ -118,7 +116,8 @@ pub struct SnapshotRow {
     /// Empty when the pane had no title.
     pub pane_title: String,
     pub created_at_utc: String,
-    pub content: String,
+    pub excerpt: String,
+    pub truncated: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -140,7 +139,10 @@ pub struct LoadFailure {
 }
 
 impl LoadFailure {
-    fn at<'a>(path: &'a Path, config_quarantined_to: Option<&'a str>) -> impl FnOnce(String) -> Self + 'a {
+    fn at<'a>(
+        path: &'a Path,
+        config_quarantined_to: Option<&'a str>,
+    ) -> impl FnOnce(String) -> Self + 'a {
         move |message| Self {
             config_quarantined_to: config_quarantined_to.map(str::to_owned),
             path: Some(path.to_string_lossy().into_owned()),
@@ -172,7 +174,10 @@ pub fn load_app_data(app: &AppHandle) -> Result<LoadedAppData, LoadFailure> {
     load_app_data_in(&app_data_dir(app)?, &app.state::<SnapshotConnection>())
 }
 
-fn load_app_data_in(data_dir: &Path, snapshots: &SnapshotConnection) -> Result<LoadedAppData, LoadFailure> {
+fn load_app_data_in(
+    data_dir: &Path,
+    snapshots: &SnapshotConnection,
+) -> Result<LoadedAppData, LoadFailure> {
     // Per-store failure isolation (persisted-store-separation, Independent
     // recovery): each store takes its own branch, so a corrupt settings file
     // can never make the panes' text unreachable. Config and state are
@@ -182,24 +187,33 @@ fn load_app_data_in(data_dir: &Path, snapshots: &SnapshotConnection) -> Result<L
     let config_path = data_dir.join(CONFIG_FILE_NAME);
     let config = read_rebuildable_store(&config_path, format_version::CONFIG)
         .map_err(LoadFailure::at(&config_path, None))?;
-    // state.json contains only the active pane and zoom. Preserve and log corrupt
-    // bytes, or a newer format, but do not surface a dialog for disposable view
-    // state.
+    // state.json holds the active pane, zoom and Records list width. Preserve
+    // and log corrupt bytes, or a newer format, but do not surface a dialog for
+    // disposable view state.
     let state_path = data_dir.join(STATE_FILE_NAME);
-    let state = read_rebuildable_store(&state_path, format_version::STATE)
-        .map_err(LoadFailure::at(&state_path, config.quarantined_to.as_deref()))?;
+    let state = read_rebuildable_store(&state_path, format_version::STATE).map_err(
+        LoadFailure::at(&state_path, config.quarantined_to.as_deref()),
+    )?;
     let panes_path = data_dir.join(PANES_FILE_NAME);
     let (panes, panes_error, panes_newer) =
         match read_json_store(&panes_path, format_version::PANES) {
             Ok(JsonRead::Absent) => (None, None, None),
-            Ok(JsonRead::Readable(fields)) => (Some(JsonValue::Object(fields)), None, None),
+            Ok(JsonRead::Readable(fields)) if valid_panes_shape(&fields) => {
+                (Some(JsonValue::Object(fields)), None, None)
+            }
+            Ok(JsonRead::Readable(_)) => (
+                None,
+                Some("panes.json contains invalid pane data".to_string()),
+                None,
+            ),
             Ok(JsonRead::Newer(recorded)) => (None, None, Some(recorded)),
             Ok(JsonRead::Corrupt(message)) | Err(message) => (None, Some(message), None),
         };
     let snapshots_path = data_dir.join(SNAPSHOTS_DB_FILE_NAME);
-    let snapshots_newer = snapshots
-        .open(data_dir)
-        .map_err(LoadFailure::at(&snapshots_path, config.quarantined_to.as_deref()))?;
+    let snapshots_newer = snapshots.open(data_dir).map_err(LoadFailure::at(
+        &snapshots_path,
+        config.quarantined_to.as_deref(),
+    ))?;
     for (path, newer) in [
         (&config_path, config.newer),
         (&state_path, state.newer),
@@ -223,7 +237,6 @@ fn load_app_data_in(data_dir: &Path, snapshots: &SnapshotConnection) -> Result<L
         panes_path: panes_path.to_string_lossy().into_owned(),
         snapshots_path: snapshots_path.to_string_lossy().into_owned(),
         data_dir: data_dir.to_string_lossy().into_owned(),
-        debug_enabled: false,
         system_language: String::new(),
         system_locale: None,
     })
@@ -332,7 +345,8 @@ fn save_records_list_width_in(data_dir: &Path, width: u32) -> Result<(), String>
         JsonRead::Corrupt(reason) => return Err(reason),
     };
     state.insert(RECORDS_LIST_WIDTH_KEY.to_string(), JsonValue::from(width));
-    atomic_write_json_unrecorded(&path, &JsonValue::Object(state), format_version::STATE).map(|_| ())
+    atomic_write_json_unrecorded(&path, &JsonValue::Object(state), format_version::STATE)
+        .map(|_| ())
 }
 
 // state.json as an object, or None when it is missing, unreadable or newer; its
@@ -374,7 +388,11 @@ pub struct SaveFailure {
 
 impl From<String> for SaveFailure {
     fn from(message: String) -> Self {
-        Self { path: None, newer: None, message }
+        Self {
+            path: None,
+            newer: None,
+            message,
+        }
     }
 }
 
@@ -392,9 +410,12 @@ pub fn save_panes(app: &AppHandle, panes: JsonValue) -> Result<bool, SaveFailure
 fn save_panes_in(data_dir: &Path, panes: &JsonValue) -> Result<bool, SaveFailure> {
     // records: panes.json is the user's text — protected (data-backup conventions).
     let path = data_dir.join(PANES_FILE_NAME);
-    let outcome = write_json_atomically(&path, panes, format_version::PANES, Some(data_dir)).map_err(|message| SaveFailure {
-        path: Some(path.to_string_lossy().into_owned()), newer: None, message,
-    })?;
+    let outcome = write_json_atomically(&path, panes, format_version::PANES, Some(data_dir))
+        .map_err(|message| SaveFailure {
+            path: Some(path.to_string_lossy().into_owned()),
+            newer: None,
+            message,
+        })?;
     match outcome {
         JsonWrite::Newer(recorded) => Err(SaveFailure {
             path: Some(path.to_string_lossy().into_owned()),
@@ -417,7 +438,9 @@ pub fn quarantine_corrupt_panes(app: &AppHandle) -> Result<Option<String>, Strin
 }
 
 fn quarantine_corrupt_panes_in(data_dir: &Path) -> Result<Option<String>, String> {
-    let _guard = JSON_STORE_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let _guard = JSON_STORE_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let path = data_dir.join(PANES_FILE_NAME);
     match read_json_store(&path, format_version::PANES)? {
         JsonRead::Absent | JsonRead::Newer(_) => return Ok(None),
@@ -432,19 +455,32 @@ fn quarantine_corrupt_panes_in(data_dir: &Path) -> Result<Option<String>, String
     Ok(Some(quarantined.to_string_lossy().into_owned()))
 }
 
-// The reset checks the same consumed shape as panesShapeIssues in the editor.
+// Loading, saving and reset share the current pane shape consumed by the editor.
 fn valid_panes_shape(fields: &serde_json::Map<String, JsonValue>) -> bool {
-    let Some(panes) = fields.get("panes").and_then(JsonValue::as_array) else { return false; };
+    let Some(panes) = fields.get("panes").and_then(JsonValue::as_array) else {
+        return false;
+    };
     let mut ids = std::collections::HashSet::new();
     panes.iter().all(|pane| {
-        let Some(pane) = pane.as_object() else { return false; };
-        let Some(id) = pane.get("id").and_then(JsonValue::as_str) else { return false; };
-        !id.is_empty() && ids.insert(id)
-            && ["title", "content"].iter().all(|key| pane.get(*key).is_some_and(JsonValue::is_string))
+        let Some(pane) = pane.as_object() else {
+            return false;
+        };
+        let Some(id) = pane.get("id").and_then(JsonValue::as_str) else {
+            return false;
+        };
+        !id.is_empty()
+            && ids.insert(id)
+            && ["title", "content"]
+                .iter()
+                .all(|key| pane.get(*key).is_some_and(JsonValue::is_string))
             && ["headerColor", "backgroundColor"].iter().all(|key| {
-                pane.get(*key).and_then(JsonValue::as_str).is_some_and(|color| {
-                    color.len() == 7 && color.starts_with('#') && color.as_bytes()[1..].iter().all(u8::is_ascii_hexdigit)
-                })
+                pane.get(*key)
+                    .and_then(JsonValue::as_str)
+                    .is_some_and(|color| {
+                        color.len() == 7
+                            && color.starts_with('#')
+                            && color.as_bytes()[1..].iter().all(u8::is_ascii_hexdigit)
+                    })
             })
     })
 }
@@ -501,6 +537,12 @@ fn list_snapshots_with_connection(
     limit: u32,
     offset: u32,
 ) -> Result<SnapshotListResult, String> {
+    list_snapshots_until(conn, query, limit, offset,
+        std::time::Instant::now() + std::time::Duration::from_secs(2))
+}
+
+fn list_snapshots_until(conn: &Connection, query: &str, limit: u32, offset: u32,
+    deadline: std::time::Instant) -> Result<SnapshotListResult, String> {
     let terms = query
         .split_whitespace()
         .map(|term| term.to_lowercase())
@@ -515,7 +557,7 @@ fn list_snapshots_with_connection(
     let mut values: Vec<Value> = Vec::new();
 
     for term in terms {
-        sql.push_str(" and lower(content) like ? escape '\\'");
+        sql.push_str(" and unicode_lower(content) like ? escape '\\'");
         values.push(Value::Text(format!("%{}%", escape_like(&term))));
     }
 
@@ -527,25 +569,73 @@ fn list_snapshots_with_connection(
     values.push(Value::Integer(fetch_limit as i64));
     values.push(Value::Integer(offset as i64));
 
-    let mut statement = conn.prepare(&sql).map_err(to_string_error)?;
-    let mut rows = statement
-        .query_map(params_from_iter(values.iter()), |row| {
-            Ok(SnapshotRow {
-                id: row.get(0)?,
-                pane_id: row.get(1)?,
-                pane_title: row.get(2)?,
-                created_at_utc: row.get(3)?,
-                content: row.get(4)?,
-            })
-        })
-        .map_err(to_string_error)?
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(to_string_error)?;
+    conn.create_scalar_function("unicode_lower", 1,
+        rusqlite::functions::FunctionFlags::SQLITE_UTF8 | rusqlite::functions::FunctionFlags::SQLITE_DETERMINISTIC,
+        |context| Ok(context.get::<String>(0)?.to_lowercase())).map_err(to_string_error)?;
+    conn.progress_handler(1000, Some(move || std::time::Instant::now() >= deadline)).map_err(to_string_error)?;
+    let result = (|| {
+        let mut statement = conn.prepare(&sql).map_err(to_string_error)?;
+        let mut cursor = statement.query(params_from_iter(values.iter())).map_err(to_string_error)?;
+        let mut rows = Vec::new();
+        let mut has_more = false;
+        while let Some(row) = cursor.next().map_err(to_string_error)? {
+            if rows.len() == bounded_limit as usize { has_more = true; break; }
+            let body = row.get_ref(4).map_err(to_string_error)?.as_str().map_err(to_string_error)?;
+            let (excerpt, truncated) = snapshot_excerpt(body);
+            rows.push(SnapshotRow {
+                id: row.get(0).map_err(to_string_error)?,
+                pane_id: row.get(1).map_err(to_string_error)?,
+                pane_title: row.get(2).map_err(to_string_error)?,
+                created_at_utc: row.get(3).map_err(to_string_error)?,
+                excerpt, truncated,
+            });
+        }
+        Ok(SnapshotListResult { rows, has_more })
+    })();
+    conn.progress_handler(0, None::<fn() -> bool>).map_err(to_string_error)?;
+    result
+}
 
-    let has_more = rows.len() > bounded_limit as usize;
-    rows.truncate(bounded_limit as usize);
+pub fn snapshot_content(app: &AppHandle, id: String) -> Result<Option<String>, String> {
+    app.state::<SnapshotConnection>().with(|conn| snapshot_content_with_connection(conn, &id))
+}
 
-    Ok(SnapshotListResult { rows, has_more })
+fn snapshot_content_with_connection(conn: &Connection, id: &str) -> Result<Option<String>, String> {
+    conn.query_row("select content from snapshots where id = ?1", [id], |row| row.get(0))
+        .optional().map_err(to_string_error)
+}
+
+// ECMAScript whitespace, deliberately including BOM and excluding NEL: snapshots
+// keep the same cleanup semantics as the editor while preparation runs natively.
+fn js_space(c: char) -> bool {
+    matches!(c, '\u{0009}'..='\u{000d}' | '\u{0020}' | '\u{00a0}' | '\u{1680}' |
+        '\u{2000}'..='\u{200a}' | '\u{2028}' | '\u{2029}' | '\u{202f}' | '\u{205f}' | '\u{3000}' | '\u{feff}')
+}
+
+fn snapshot_text(text: &str) -> String {
+    let normalized = text.replace("\r\n", "\n").replace('\r', "\n");
+    let lines: Vec<_> = normalized.split('\n').map(|line| line.trim_end_matches(js_space)).collect();
+    let first = lines.iter().position(|line| !line.is_empty()).unwrap_or(lines.len());
+    let last = lines.iter().rposition(|line| !line.is_empty()).map_or(first, |index| index + 1);
+    lines[first..last].join("\n")
+}
+
+fn snapshot_excerpt(text: &str) -> (String, bool) {
+    let mut output = String::new();
+    let mut count = 0;
+    let mut pending_space = false;
+    for part in text.graphemes(true) {
+        if part.chars().all(js_space) {
+            pending_space = !output.is_empty();
+        } else {
+            if count >= 120 { return (output, true); }
+            if pending_space { output.push(' '); count += 1; }
+            pending_space = false;
+            output.push_str(part);
+            count += 1;
+        }
+    }
+    (output, false)
 }
 
 fn create_snapshot_from_input(
@@ -576,8 +666,9 @@ fn begin_snapshot_write(conn: &mut Connection) -> Result<Transaction<'_>, String
 
 fn create_snapshot_with_connection(
     conn: &Connection,
-    snapshot: SnapshotInput,
+    mut snapshot: SnapshotInput,
 ) -> Result<SnapshotWriteResult, String> {
+    snapshot.content = snapshot_text(&snapshot.content);
     if snapshot.content.is_empty() {
         return Ok(SnapshotWriteResult {
             inserted: false,
@@ -772,7 +863,9 @@ struct Rebuildable {
 // conventions). panes.json never takes this path — it holds the user's text
 // and halts instead.
 fn read_rebuildable_store(path: &Path, version: u32) -> Result<Rebuildable, String> {
-    let _guard = JSON_STORE_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let _guard = JSON_STORE_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     Ok(match read_json_store(path, version)? {
         JsonRead::Absent => Rebuildable::default(),
         JsonRead::Readable(fields) => Rebuildable {
@@ -803,8 +896,18 @@ fn quarantine_rebuildable_store(path: &Path, version: u32) -> Result<Rebuildable
     // write/recovery admission. Repaired and newer targets are never set aside.
     let reason = match read_json_store(path, version)? {
         JsonRead::Absent => return Ok(Rebuildable::default()),
-        JsonRead::Readable(fields) => return Ok(Rebuildable { value: Some(fields), ..Rebuildable::default() }),
-        JsonRead::Newer(recorded) => return Ok(Rebuildable { newer: Some(recorded), ..Rebuildable::default() }),
+        JsonRead::Readable(fields) => {
+            return Ok(Rebuildable {
+                value: Some(fields),
+                ..Rebuildable::default()
+            })
+        }
+        JsonRead::Newer(recorded) => {
+            return Ok(Rebuildable {
+                newer: Some(recorded),
+                ..Rebuildable::default()
+            })
+        }
         JsonRead::Corrupt(reason) => reason,
     };
     let quarantined = set_aside(path).map_err(|rename_err| {
@@ -862,7 +965,8 @@ fn atomic_write_json(
     value: &JsonValue,
     version: u32,
 ) -> Result<bool, String> {
-    write_json_atomically(path, value, version, Some(data_dir)).map(|outcome| matches!(outcome, JsonWrite::Written))
+    write_json_atomically(path, value, version, Some(data_dir))
+        .map(|outcome| matches!(outcome, JsonWrite::Written))
 }
 
 // The same atomic write without the backup record, for volatile state (state.json,
@@ -872,7 +976,8 @@ fn atomic_write_json_unrecorded(
     value: &JsonValue,
     version: u32,
 ) -> Result<bool, String> {
-    write_json_atomically(path, value, version, None).map(|outcome| matches!(outcome, JsonWrite::Written))
+    write_json_atomically(path, value, version, None)
+        .map(|outcome| matches!(outcome, JsonWrite::Written))
 }
 
 enum JsonWrite {
@@ -890,10 +995,20 @@ fn write_json_atomically(
     version: u32,
     backups_in: Option<&Path>,
 ) -> Result<JsonWrite, String> {
-    let _guard = JSON_STORE_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let _guard = JSON_STORE_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let parent = path
         .parent()
         .ok_or_else(|| format!("missing parent directory for {}", path.display()))?;
+
+    // Pane content may have changed on disk since loading. Check it again at
+    // publication, under the save/reset lock, before replacing authored text.
+    // The filename identifies the store; JSON stores share version numbers.
+    let is_panes = path.file_name().is_some_and(|name| name == PANES_FILE_NAME);
+    if is_panes && !value.as_object().is_some_and(valid_panes_shape) {
+        return Err("panes.json contains invalid pane data".to_string());
+    }
 
     // The exact bytes that land on disk: pretty JSON plus the single trailing
     // newline. Building the whole buffer once (rather than two write_all calls)
@@ -901,13 +1016,30 @@ fn write_json_atomically(
     let stamped = format_version::stamp_json(value, version)?;
     let mut bytes = serde_json::to_vec_pretty(&stamped).map_err(to_string_error)?;
     bytes.push(b'\n');
-    // A missing or unreadable file is written.
-    if let Ok(current) = fs::read(path) {
-        if current == bytes { return Ok(JsonWrite::Unchanged); }
-        if let Some(JsonFormat::Newer(recorded)) = serde_json::from_slice(&current).ok()
-            .and_then(|current| format_version::read_json(current, version).ok()) {
-            return Ok(JsonWrite::Newer(recorded));
+    // Rebuildable stores may replace unreadable bytes; panes must preserve them.
+    match fs::read(path) {
+        Ok(current) => {
+            let parsed = serde_json::from_slice(&current)
+                .map_err(to_string_error)
+                .and_then(|current| format_version::read_json(current, version));
+            match parsed {
+                Ok(JsonFormat::Newer(recorded)) => return Ok(JsonWrite::Newer(recorded)),
+                Ok(JsonFormat::Readable(fields)) if is_panes && !valid_panes_shape(&fields) => {
+                    return Err(
+                        "panes.json contains invalid pane data and is left in place".to_string()
+                    )
+                }
+                Err(message) if is_panes => return Err(message),
+                _ => {}
+            }
+            if current == bytes {
+                return Ok(JsonWrite::Unchanged);
+            }
         }
+        Err(error) if is_panes && error.kind() != std::io::ErrorKind::NotFound => {
+            return Err(to_string_error(error))
+        }
+        Err(_) => {}
     }
 
     fs::create_dir_all(parent).map_err(to_string_error)?;
@@ -951,7 +1083,8 @@ fn write_json_atomically(
 fn create_private_stage(path: &Path) -> std::io::Result<File> {
     let mut options = fs::OpenOptions::new();
     options.write(true).create_new(true);
-    #[cfg(unix)] {
+    #[cfg(unix)]
+    {
         use std::os::unix::fs::OpenOptionsExt;
         options.mode(0o600);
     }
@@ -997,7 +1130,10 @@ impl SnapshotConnection {
     // Opens the store unless an earlier load already did. Returns the newer
     // format a store records, which the load reports and halts on.
     fn open(&self, data_dir: &Path) -> Result<Option<u32>, String> {
-        let mut slot = self.0.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let mut slot = self
+            .0
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         if let SnapshotSlot::Ready(_) = *slot {
             return Ok(None);
         }
@@ -1009,8 +1145,14 @@ impl SnapshotConnection {
         Ok(newer)
     }
 
-    fn with<T>(&self, work: impl FnOnce(&mut Connection) -> Result<T, String>) -> Result<T, String> {
-        let mut slot = self.0.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    fn with<T>(
+        &self,
+        work: impl FnOnce(&mut Connection) -> Result<T, String>,
+    ) -> Result<T, String> {
+        let mut slot = self
+            .0
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         match &mut *slot {
             SnapshotSlot::Ready(conn) => work(conn),
             SnapshotSlot::Newer(recorded) => Err(format_version::newer_message(
@@ -1035,7 +1177,7 @@ fn open_snapshot_store(data_dir: &Path) -> Result<SnapshotStore, String> {
     match format_version::check_sqlite(&conn, SNAPSHOTS_DB_FILE_NAME, format_version::SNAPSHOTS)? {
         SqliteFormat::Newer(recorded) => return Ok(SnapshotStore::Newer(recorded)),
         SqliteFormat::New => init_schema(&conn)?,
-        SqliteFormat::Readable => reconcile_snapshot_indexes(&conn)?,
+        SqliteFormat::Readable => {},
     }
     Ok(SnapshotStore::Ready(conn))
 }
@@ -1053,18 +1195,6 @@ fn init_schema(conn: &Connection) -> Result<(), String> {
     conn.pragma_update(None, "journal_mode", "WAL")
         .and_then(|_| format_version::create_sqlite(conn, SCHEMA, format_version::SNAPSHOTS))
         .map_err(to_string_error)
-}
-
-// Indexes do not change stored facts or their format. Older readable stores
-// used time ordering here, which forced each insertion-order dedup lookup to
-// sort the pane's entire history. A pane-only index carries implicit rowid
-// order. Create it before dropping the obsolete index; newer stores stay untouched.
-fn reconcile_snapshot_indexes(conn: &Connection) -> Result<(), String> {
-    conn.execute_batch(
-        "create index if not exists snapshots_pane on snapshots(pane_id);
-         drop index if exists snapshots_pane_time;",
-    )
-    .map_err(to_string_error)
 }
 
 const SCHEMA: &str = "

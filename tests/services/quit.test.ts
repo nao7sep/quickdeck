@@ -53,7 +53,7 @@ describe("saveForQuit", () => {
     const saved = saveForQuit({ snapshot: never, save });
 
     await vi.advanceTimersByTimeAsync(QUIT_SNAPSHOT_BOUND_MS - 1);
-    expect(save).not.toHaveBeenCalled();
+    expect(save).toHaveBeenCalledOnce();
     await vi.advanceTimersByTimeAsync(1);
 
     await expect(saved).resolves.toBe(true);

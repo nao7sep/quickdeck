@@ -1,5 +1,8 @@
-import { describe, expect, it } from "vitest";
-import { buildConsoleObject, buildLogEvent, serializeError } from "../../src/services/logger";
+import { describe, expect, it, vi } from "vitest";
+import { buildConsoleObject, buildLogEvent, serializeError, logWarn } from "../../src/services/logger";
+
+const invoke = vi.hoisted(() => vi.fn(() => Promise.resolve()));
+vi.mock("@tauri-apps/api/core", () => ({ isTauri: () => true, invoke }));
 
 const ISO_MS_Z = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 
@@ -104,4 +107,24 @@ describe("buildConsoleObject", () => {
     expect(out.message_).toBe("spoofed");
     expect(out.ok).toBe(true);
   });
+});
+
+
+describe("native failure ownership", () => {
+  it("preserves native recovery fields without flattening the rejection", () => {
+    const failure = { message: "publication failed", logged: true, path: "/panes.json", newer: 9,
+      configQuarantinedTo: "/config.invalid" };
+    expect(serializeError(failure)).toEqual(failure);
+  });
+});
+
+it("logs bridge failures but does not forward an already recorded native failure", () => {
+  invoke.mockClear();
+  logWarn("save failed", { error: serializeError({ message: "disk failed", logged: true }) });
+  expect(invoke).not.toHaveBeenCalled();
+  logWarn("save failed", { error: serializeError(new Error("bridge disconnected")) });
+  expect(invoke).toHaveBeenCalledOnce();
+  expect(invoke).toHaveBeenLastCalledWith("log_event", expect.objectContaining({
+    fields: { error: expect.objectContaining({ message: "bridge disconnected" }) },
+  }));
 });
