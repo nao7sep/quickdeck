@@ -91,6 +91,29 @@ describe("randomPaneColor", () => {
   it("ignores unparseable existing headers without throwing", () => {
     expect(() => randomPaneColor(["not-a-color", "#zzzzzz"])).not.toThrow();
   });
+
+  it.each([1, 7, 42])("keeps the best distance score on a crowded hue wheel (seed %i)", (seed) => {
+    let state = seed;
+    const samples: number[] = [];
+    vi.spyOn(Math, "random").mockImplementation(() => {
+      state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
+      const sample = state / 2 ** 32;
+      samples.push(sample);
+      return sample;
+    });
+    const headers = Array.from({ length: 9 }, (_, i) => hslToHex(i * 40, 0.7, 0.4));
+    const existingHues = headers.map((header) => hueFromHex(header)!);
+    const chosen = hueFromHex(randomPaneColor(headers).header)!;
+    // The first random sample initializes the search; the rest jitter the
+    // evenly spaced candidates. Compare their objective, allowing RGB rounding.
+    const jitters = samples.slice(1);
+    const scores = jitters.map((sample, i) => {
+      const candidate = (i * 360 / jitters.length + (sample - 0.5) * 360 / jitters.length + 360) % 360;
+      return minHueDistance(candidate, existingHues);
+    });
+    expect(Math.max(...scores)).toBeLessThan(25);
+    expect(minHueDistance(chosen, existingHues)).toBeGreaterThanOrEqual(Math.max(...scores) - 0.3);
+  });
 });
 
 describe("paneHeaderDeep", () => {

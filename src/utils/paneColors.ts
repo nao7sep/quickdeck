@@ -30,7 +30,6 @@ const HUE_LIGHTNESS: Array<{ centerDeg: number; lightness: number }> = [
   { centerDeg: 330, lightness: 0.44 }, // pink
 ];
 const CANDIDATE_COUNT = 24;
-const MIN_HUE_DISTANCE_FOR_DISTINCT = 25; // degrees
 
 // How much darker the bottom of a pane header sits than its stored color. The
 // gradient only ever deepens, so the lightest pixel under the white title text
@@ -110,11 +109,6 @@ function pickHue(usedHues: number[]): number {
       bestScore = minDistance;
       bestHue = candidate;
     }
-  }
-
-  // If even the best is uncomfortably close (very crowded wheel), nudge it.
-  if (bestScore < MIN_HUE_DISTANCE_FOR_DISTINCT && usedHues.length < 12) {
-    bestHue = (bestHue + 180) % 360;
   }
 
   return bestHue;
