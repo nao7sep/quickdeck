@@ -95,10 +95,3 @@ describe("truncate (snapshot row excerpt)", () => {
   });
 });
 
-
-describe("shared native snapshot cleanup contract", () => {
-  it("matches the cross-language fixtures", async () => {
-    const { default: fixtures } = await import("../fixtures/snapshot-text.json");
-    for (const fixture of fixtures) expect(multiline(fixture.input)).toBe(fixture.expected);
-  });
-});

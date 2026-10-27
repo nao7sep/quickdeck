@@ -4,7 +4,6 @@ import {
   deleteAllSnapshots,
   deleteSnapshot,
   listSnapshots,
-  snapshotContent,
   type SnapshotRow,
 } from "../services/persistence";
 import { copyText } from "../services/clipboard";
@@ -14,7 +13,9 @@ import { useComposing, isComposingKeyboardEvent } from "../hooks/useComposing";
 import { ModalBase } from "./ModalBase";
 import { PaneSwatch } from "./PaneSwatch";
 import { formatSnapshotTimestamp } from "../utils/snapshotTimestamp";
+import { truncate } from "../utils/textCleanup";
 import {
+  EXCERPT_GRAPHEMES,
   nextSelectionIndex,
   selectionAfterRowsChange,
 } from "../utils/snapshotSelection";
@@ -51,10 +52,6 @@ export function SnapshotsModal({ onClose }: SnapshotsModalProps) {
   const [query, setQuery] = useState("");
   const appliedQueryRef = useRef("");
   const [rows, setRows] = useState<SnapshotRow[]>([]);
-  const [body, setBody] = useState<{ id: string; text: string } | null>(null);
-  const [bodyFailed, setBodyFailed] = useState(false);
-  const [detailRevision, setDetailRevision] = useState(0);
-  const detailWork = useRef<{ active: boolean; pending: (() => void) | null }>({ active: false, pending: null });
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -116,7 +113,6 @@ export function SnapshotsModal({ onClose }: SnapshotsModalProps) {
           selectionAfterRowsChange(nextIds, nextOffset === 0 ? null : previous),
         );
         setHasMore(result.hasMore);
-        if (nextOffset === 0) setDetailRevision((revision) => revision + 1);
       } catch (err) {
         // Report modal-local failures inline; the modal stays usable, so there is
         // no need to spawn an app-level toast over it.
@@ -142,37 +138,6 @@ export function SnapshotsModal({ onClose }: SnapshotsModalProps) {
   const selected = selectedIndex < 0 ? null : rows[selectedIndex];
   const selectedOrigin =
     selected === null ? undefined : panes.find((pane) => pane.id === selected.paneId);
-
-  useEffect(() => {
-    let retired = false;
-    setBody(null);
-    setBodyFailed(false);
-    const work = detailWork.current;
-    const run = () => {
-      if (retired || selectedId === null) return;
-      work.active = true;
-      void snapshotContent(selectedId).then((text) => {
-        if (retired) return;
-        if (text === null) setBodyFailed(true);
-        else setBody({ id: selectedId, text });
-      }, (error: unknown) => {
-        if (retired) return;
-        logWarn("snapshot detail failed", { error: serializeError(error) });
-        setBodyFailed(true);
-      }).finally(() => {
-        work.active = false;
-        const next = work.pending;
-        work.pending = null;
-        next?.();
-      });
-    };
-    if (work.active) work.pending = run;
-    else run();
-    return () => {
-      retired = true;
-      if (work.pending === run) work.pending = null;
-    };
-  }, [selectedId, detailRevision]);
 
   // Which deletion is being asked about: one copy, the whole store, or nothing.
   const [pendingDelete, setPendingDelete] = useState<{ scope: "one"; id: string } | { scope: "all" } | null>(null);
@@ -218,7 +183,7 @@ export function SnapshotsModal({ onClose }: SnapshotsModalProps) {
   }
 
   async function copySelected() {
-    if (selected === null || body?.id !== selected.id || copyInFlightRef.current) {
+    if (selected === null || copyInFlightRef.current) {
       return;
     }
     copyInFlightRef.current = true;
@@ -228,7 +193,7 @@ export function SnapshotsModal({ onClose }: SnapshotsModalProps) {
     clearCopiedTimer();
     setCopied(false);
     try {
-      await copyText(body.text);
+      await copyText(selected.content);
       setCopyFailed(false);
       if (selectionVersion !== selectionVersionRef.current) return;
       setCopied(true);
@@ -420,6 +385,7 @@ export function SnapshotsModal({ onClose }: SnapshotsModalProps) {
             {message !== null ? <p className="mutedText">{message}</p> : null}
             {rows.map((row, index) => {
               const timestamp = formatSnapshotTimestamp(row.createdAtUtc, i18n.dateTime);
+              const excerpt = truncate(row.content, EXCERPT_GRAPHEMES);
               const origin = panes.find((pane) => pane.id === row.paneId);
               const active = row.id === selectedId;
               return (
@@ -444,8 +410,8 @@ export function SnapshotsModal({ onClose }: SnapshotsModalProps) {
                     ) : null}
                   </span>
                   <span className="snapshotRowExcerpt">
-                    {row.excerpt}
-                    {row.truncated ? "…" : ""}
+                    {excerpt.text}
+                    {excerpt.truncated ? "…" : ""}
                   </span>
                 </div>
               );
@@ -485,7 +451,6 @@ export function SnapshotsModal({ onClose }: SnapshotsModalProps) {
                     className="iconTextButton"
                     type="button"
                     onClick={() => void copySelected()}
-                    disabled={body?.id !== selected.id}
                   >
                     <Copy size={15} />
                     {copied ? t("snapshots.copied") : t("snapshots.copy")}
@@ -501,8 +466,6 @@ export function SnapshotsModal({ onClose }: SnapshotsModalProps) {
                 </span>
               </div>
               <pre
-                className={bodyFailed ? "errorText" : undefined}
-                aria-live={bodyFailed ? "polite" : "off"}
                 ref={detailRef}
                 {...passiveScrollRegionProps(
                   t("snapshots.entryLabel", {
@@ -510,7 +473,7 @@ export function SnapshotsModal({ onClose }: SnapshotsModalProps) {
                   }),
                 )}
               >
-                {body?.id === selected.id ? body.text : bodyFailed ? t("snapshots.failed") : t("snapshots.loading")}
+                {selected.content}
               </pre>
             </>
           )}

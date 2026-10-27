@@ -14,7 +14,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use sha2::{Digest, Sha256};
 use tauri::{AppHandle, Manager};
-use unicode_segmentation::UnicodeSegmentation;
 
 use crate::format_version::{self, JsonFormat, SqliteFormat};
 use crate::paths::app_data_dir;
@@ -116,8 +115,7 @@ pub struct SnapshotRow {
     /// Empty when the pane had no title.
     pub pane_title: String,
     pub created_at_utc: String,
-    pub excerpt: String,
-    pub truncated: bool,
+    pub content: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -537,12 +535,6 @@ fn list_snapshots_with_connection(
     limit: u32,
     offset: u32,
 ) -> Result<SnapshotListResult, String> {
-    list_snapshots_until(conn, query, limit, offset,
-        std::time::Instant::now() + std::time::Duration::from_secs(2))
-}
-
-fn list_snapshots_until(conn: &Connection, query: &str, limit: u32, offset: u32,
-    deadline: std::time::Instant) -> Result<SnapshotListResult, String> {
     let terms = query
         .split_whitespace()
         .map(|term| term.to_lowercase())
@@ -569,73 +561,33 @@ fn list_snapshots_until(conn: &Connection, query: &str, limit: u32, offset: u32,
     values.push(Value::Integer(fetch_limit as i64));
     values.push(Value::Integer(offset as i64));
 
-    conn.create_scalar_function("unicode_lower", 1,
-        rusqlite::functions::FunctionFlags::SQLITE_UTF8 | rusqlite::functions::FunctionFlags::SQLITE_DETERMINISTIC,
-        |context| Ok(context.get::<String>(0)?.to_lowercase())).map_err(to_string_error)?;
-    conn.progress_handler(1000, Some(move || std::time::Instant::now() >= deadline)).map_err(to_string_error)?;
-    let result = (|| {
-        let mut statement = conn.prepare(&sql).map_err(to_string_error)?;
-        let mut cursor = statement.query(params_from_iter(values.iter())).map_err(to_string_error)?;
-        let mut rows = Vec::new();
-        let mut has_more = false;
-        while let Some(row) = cursor.next().map_err(to_string_error)? {
-            if rows.len() == bounded_limit as usize { has_more = true; break; }
-            let body = row.get_ref(4).map_err(to_string_error)?.as_str().map_err(to_string_error)?;
-            let (excerpt, truncated) = snapshot_excerpt(body);
-            rows.push(SnapshotRow {
-                id: row.get(0).map_err(to_string_error)?,
-                pane_id: row.get(1).map_err(to_string_error)?,
-                pane_title: row.get(2).map_err(to_string_error)?,
-                created_at_utc: row.get(3).map_err(to_string_error)?,
-                excerpt, truncated,
-            });
-        }
-        Ok(SnapshotListResult { rows, has_more })
-    })();
-    conn.progress_handler(0, None::<fn() -> bool>).map_err(to_string_error)?;
-    result
-}
+    conn.create_scalar_function(
+        "unicode_lower",
+        1,
+        rusqlite::functions::FunctionFlags::SQLITE_UTF8
+            | rusqlite::functions::FunctionFlags::SQLITE_DETERMINISTIC,
+        |context| Ok(context.get::<String>(0)?.to_lowercase()),
+    )
+    .map_err(to_string_error)?;
+    let mut statement = conn.prepare(&sql).map_err(to_string_error)?;
+    let mut rows = statement
+        .query_map(params_from_iter(values.iter()), |row| {
+            Ok(SnapshotRow {
+                id: row.get(0)?,
+                pane_id: row.get(1)?,
+                pane_title: row.get(2)?,
+                created_at_utc: row.get(3)?,
+                content: row.get(4)?,
+            })
+        })
+        .map_err(to_string_error)?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(to_string_error)?;
 
-pub fn snapshot_content(app: &AppHandle, id: String) -> Result<Option<String>, String> {
-    app.state::<SnapshotConnection>().with(|conn| snapshot_content_with_connection(conn, &id))
-}
+    let has_more = rows.len() > bounded_limit as usize;
+    rows.truncate(bounded_limit as usize);
 
-fn snapshot_content_with_connection(conn: &Connection, id: &str) -> Result<Option<String>, String> {
-    conn.query_row("select content from snapshots where id = ?1", [id], |row| row.get(0))
-        .optional().map_err(to_string_error)
-}
-
-// ECMAScript whitespace, deliberately including BOM and excluding NEL: snapshots
-// keep the same cleanup semantics as the editor while preparation runs natively.
-fn js_space(c: char) -> bool {
-    matches!(c, '\u{0009}'..='\u{000d}' | '\u{0020}' | '\u{00a0}' | '\u{1680}' |
-        '\u{2000}'..='\u{200a}' | '\u{2028}' | '\u{2029}' | '\u{202f}' | '\u{205f}' | '\u{3000}' | '\u{feff}')
-}
-
-fn snapshot_text(text: &str) -> String {
-    let normalized = text.replace("\r\n", "\n").replace('\r', "\n");
-    let lines: Vec<_> = normalized.split('\n').map(|line| line.trim_end_matches(js_space)).collect();
-    let first = lines.iter().position(|line| !line.is_empty()).unwrap_or(lines.len());
-    let last = lines.iter().rposition(|line| !line.is_empty()).map_or(first, |index| index + 1);
-    lines[first..last].join("\n")
-}
-
-fn snapshot_excerpt(text: &str) -> (String, bool) {
-    let mut output = String::new();
-    let mut count = 0;
-    let mut pending_space = false;
-    for part in text.graphemes(true) {
-        if part.chars().all(js_space) {
-            pending_space = !output.is_empty();
-        } else {
-            if count >= 120 { return (output, true); }
-            if pending_space { output.push(' '); count += 1; }
-            pending_space = false;
-            output.push_str(part);
-            count += 1;
-        }
-    }
-    (output, false)
+    Ok(SnapshotListResult { rows, has_more })
 }
 
 fn create_snapshot_from_input(
@@ -666,9 +618,8 @@ fn begin_snapshot_write(conn: &mut Connection) -> Result<Transaction<'_>, String
 
 fn create_snapshot_with_connection(
     conn: &Connection,
-    mut snapshot: SnapshotInput,
+    snapshot: SnapshotInput,
 ) -> Result<SnapshotWriteResult, String> {
-    snapshot.content = snapshot_text(&snapshot.content);
     if snapshot.content.is_empty() {
         return Ok(SnapshotWriteResult {
             inserted: false,

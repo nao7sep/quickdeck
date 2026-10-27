@@ -368,15 +368,6 @@ async fn list_snapshots(
     .await
 }
 
-#[tauri::command]
-async fn snapshot_content(app: AppHandle, id: String) -> Result<Option<String>, CommandFailure> {
-    off_main_thread(move || logging::boundary(
-        "snapshot_content", json!({ "snapshotId": id }),
-        || storage::snapshot_content(&app, id),
-        |body| json!({ "found": body.is_some() }),
-    ).map_err(CommandFailure::recorded)).await
-}
-
 // Puts a snapshot's text on the system clipboard. The text is the user's own
 // writing, so only its length is logged.
 #[tauri::command]
@@ -655,7 +646,6 @@ pub fn run() {
             create_snapshot,
             create_snapshots,
             list_snapshots,
-            snapshot_content,
             count_snapshots,
             delete_snapshot,
             delete_all_snapshots,

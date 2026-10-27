@@ -19,7 +19,7 @@ import {
 import { ZOOM_DEFAULT } from "../utils/zoom";
 import { toastLifetimeMs } from "../utils/toastPolicy";
 import { appendPane, deletePane as deletePaneOp, reorderPane } from "./paneOps";
-import { singleLine } from "../utils/textCleanup";
+import { multiline, singleLine } from "../utils/textCleanup";
 import { resolveSaveState } from "../utils/saveRace";
 import {
   buildPanesFile,
@@ -550,11 +550,12 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      if (content.length === 0) {
+      const trimmed = multiline(content);
+      if (trimmed.length === 0) {
         return;
       }
 
-      void createSnapshot({ paneId, paneTitle, trigger, content })
+      void createSnapshot({ paneId, paneTitle, trigger, content: trimmed })
         .then((result) => {
           if (result.inserted) {
             refreshSnapshotCount();
@@ -581,7 +582,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
           paneId: pane.id,
           paneTitle: pane.title,
           trigger,
-          content: pane.content,
+          content: multiline(pane.content),
         }))
         .filter((snapshot) => snapshot.content.length > 0);
 

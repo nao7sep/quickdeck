@@ -1796,37 +1796,6 @@ fn a_width_save_leaves_an_unreadable_state_file_for_the_launch_to_recover() {
 
 
 #[test]
-fn snapshot_normalization_matches_the_editor_contract() {
-    let fixtures: JsonValue = serde_json::from_str(include_str!("../../../tests/fixtures/snapshot-text.json")).unwrap();
-    let conn = mem_db();
-    for (index, fixture) in fixtures.as_array().unwrap().iter().enumerate() {
-        let expected = fixture["expected"].as_str().unwrap();
-        let result = create_snapshot_with_connection(&conn,
-            input(&format!("pane-{index}"), fixture["input"].as_str().unwrap())).unwrap();
-        assert_eq!(result.inserted, !expected.is_empty());
-        if let Some(id) = result.id {
-            assert_eq!(snapshot_content_with_connection(&conn, &id).unwrap().as_deref(), Some(expected));
-        }
-    }
-    let long = "  line \t\r\n".repeat(100_000);
-    assert_eq!(snapshot_text(&long), std::iter::repeat_n("  line", 100_000).collect::<Vec<_>>().join("\n"));
-}
-
-#[test]
-fn list_rows_bound_excerpts_without_splitting_graphemes_and_detail_keeps_full_text() {
-    let conn = mem_db();
-    let body = "👩‍💻".repeat(10_000);
-    let result = create_snapshot_with_connection(&conn, input("pane", &body)).unwrap();
-    let id = result.id.unwrap();
-    let page = list_snapshots_with_connection(&conn, "", 5, 0).unwrap();
-    assert_eq!(page.rows[0].excerpt, "👩‍💻".repeat(120));
-    assert!(page.rows[0].truncated);
-    assert_eq!(snapshot_content_with_connection(&conn, &id).unwrap(), Some(body));
-    conn.execute("DELETE FROM snapshots WHERE id = ?1", [&id]).unwrap();
-    assert_eq!(snapshot_content_with_connection(&conn, &id).unwrap(), None);
-}
-
-#[test]
 fn snapshot_search_uses_the_same_unicode_lowercase_on_both_sides() {
     let conn = mem_db();
     insert_row(&conn, "match", "pane", "2026-01-01T00:00:00.000Z", "ÉCOLE ПРИВЕТ 50%_off");
@@ -1834,16 +1803,4 @@ fn snapshot_search_uses_the_same_unicode_lowercase_on_both_sides() {
         assert_eq!(list_snapshots_with_connection(&conn, query, 5, 0).unwrap().rows.len(), 1, "{query}");
     }
     assert!(list_snapshots_with_connection(&conn, "50%Xoff", 5, 0).unwrap().rows.is_empty());
-}
-
-#[test]
-fn snapshot_search_deadline_releases_the_connection_for_captures_and_next_reads() {
-    let conn = mem_db();
-    conn.execute_batch("WITH RECURSIVE n(i) AS (VALUES(1) UNION ALL SELECT i+1 FROM n WHERE i<2000)
-        INSERT INTO snapshots(id,pane_id,pane_title,created_at_utc,trigger,content_hash,content)
-        SELECT CAST(i AS TEXT),'p','','2026-01-01T00:00:00Z','copy','hash','ordinary text' FROM n").unwrap();
-    let error = list_snapshots_until(&conn, "absent", 5, 0, std::time::Instant::now()).unwrap_err();
-    assert!(error.contains("interrupt"), "{error}");
-    assert!(create_snapshot_with_connection(&conn, input("next", "after cancellation")).unwrap().inserted);
-    assert_eq!(list_snapshots_with_connection(&conn, "after", 5, 0).unwrap().rows.len(), 1);
 }

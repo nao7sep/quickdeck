@@ -69,8 +69,7 @@ export type SnapshotRow = {
   paneId: string;
   paneTitle: string;
   createdAtUtc: string;
-  excerpt: string;
-  truncated: boolean;
+  content: string;
 };
 
 export type SnapshotListResult = {
@@ -314,11 +313,6 @@ export async function listSnapshots(
     limit,
     offset,
   });
-}
-
-export async function snapshotContent(id: string): Promise<string | null> {
-  if (!isTauri()) return null;
-  return invoke<string | null>("snapshot_content", { id });
 }
 
 export async function deleteSnapshot(id: string): Promise<boolean> {
