@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { HistoryPages, type HistoryPage } from "./HistoryPages";
 import { Copy, Search, Trash2 } from "lucide-react";
 import {
   deleteAllSnapshots,
@@ -15,7 +14,10 @@ import { useComposing, isComposingKeyboardEvent } from "../hooks/useComposing";
 import { ModalBase } from "./ModalBase";
 import { PaneSwatch } from "./PaneSwatch";
 import { formatSnapshotTimestamp } from "../utils/snapshotTimestamp";
-import { nextSelectionIndex } from "../utils/snapshotSelection";
+import {
+  nextSelectionIndex,
+  selectionAfterRowsChange,
+} from "../utils/snapshotSelection";
 import { useI18n } from "../i18n/I18nContext";
 import { passiveScrollRegionProps } from "../utils/passiveScroll";
 
@@ -48,15 +50,7 @@ export function SnapshotsModal({ onClose }: SnapshotsModalProps) {
   const { t } = i18n;
   const [query, setQuery] = useState("");
   const appliedQueryRef = useRef("");
-  const [pages, setPages] = useState<HistoryPage<SnapshotRow, number>[]>([]);
-  const pagesRef = useRef(pages);
-  pagesRef.current = pages;
-  const pageKey = useRef(0);
-  const [selected, setSelected] = useState<SnapshotRow | null>(null);
-  const [selectedIndex, setSelectedIndex] = useState(-1);
-  const [focusIndex, setFocusIndex] = useState<number | null>(null);
-  const rowCount = pages.reduce((count, page) => count + page.count, 0);
-  const [revision, setRevision] = useState(0);
+  const [rows, setRows] = useState<SnapshotRow[]>([]);
   const [body, setBody] = useState<{ id: string; text: string } | null>(null);
   const [bodyFailed, setBodyFailed] = useState(false);
   const [detailRevision, setDetailRevision] = useState(0);
@@ -83,8 +77,14 @@ export function SnapshotsModal({ onClose }: SnapshotsModalProps) {
   }
   const listRef = useRef<HTMLDivElement | null>(null);
   const detailRef = useRef<HTMLPreElement | null>(null);
+  // `load` is memoized on the page size, so it cannot read `rows` from the
+  // render closure. A ref carries what a later page appends to; state updaters
+  // stay pure, since StrictMode double-invokes them.
+  const rowsRef = useRef<SnapshotRow[]>([]);
+  rowsRef.current = rows;
+
   const load = useCallback(
-    async (nextOffset: number, searchQuery: string, afterMutation = false, cachedPage?: HistoryPage<SnapshotRow, number>) => {
+    async (nextOffset: number, searchQuery: string, afterMutation = false) => {
       // The Search button is disabled while loading, but Enter can arrive before
       // React commits that state. Claim the request synchronously so two loads
       // cannot race and let an older response replace newer rows.
@@ -105,26 +105,18 @@ export function SnapshotsModal({ onClose }: SnapshotsModalProps) {
         );
         if (version !== listVersionRef.current) return;
         setListFailed(false);
-        if (cachedPage) {
-          cachedPage.rows = result.rows;
-          setRevision((value) => value + 1);
-        } else {
-          const fresh = nextOffset === 0;
-          const nextPage = { key: ++pageKey.current, cursor: nextOffset, count: result.rows.length,
-            height: result.rows.length * 56, rows: result.rows };
-          const next = fresh ? [nextPage] : [...pagesRef.current, nextPage];
-          pagesRef.current = next;
-          setPages(next);
-          setHasMore(result.hasMore && result.rows.length > 0);
-          if (fresh) {
-            appliedQueryRef.current = searchQuery.trim();
-            setSelected(result.rows[0] ?? null);
-            setSelectedId(result.rows[0]?.id ?? null);
-            setSelectedIndex(result.rows.length ? 0 : -1);
-            setDetailRevision((revision) => revision + 1);
-            if (listRef.current) listRef.current.scrollTop = 0;
-          }
-        }
+        if (nextOffset === 0) appliedQueryRef.current = searchQuery.trim();
+        const next =
+          nextOffset === 0 ? result.rows : [...rowsRef.current, ...result.rows];
+        const nextIds = next.map((row) => row.id);
+        setRows(next);
+        // A fresh list starts at the top; a further page leaves the snapshot the
+        // user is reading exactly where it is.
+        setSelectedId((previous) =>
+          selectionAfterRowsChange(nextIds, nextOffset === 0 ? null : previous),
+        );
+        setHasMore(result.hasMore);
+        if (nextOffset === 0) setDetailRevision((revision) => revision + 1);
       } catch (err) {
         // Report modal-local failures inline; the modal stays usable, so there is
         // no need to spawn an app-level toast over it.
@@ -146,6 +138,8 @@ export function SnapshotsModal({ onClose }: SnapshotsModalProps) {
     void load(0, "");
   }, [load]);
 
+  const selectedIndex = rows.findIndex((row) => row.id === selectedId);
+  const selected = selectedIndex < 0 ? null : rows[selectedIndex];
   const selectedOrigin =
     selected === null ? undefined : panes.find((pane) => pane.id === selected.paneId);
 
@@ -209,29 +203,19 @@ export function SnapshotsModal({ onClose }: SnapshotsModalProps) {
   }, []);
 
   function selectAt(index: number) {
-    let offset = 0;
-    for (const page of pagesRef.current) {
-      if (index < offset + page.count) {
-        const row = page.rows?.[index - offset];
-        if (row) {
-          setSelected(row);
-          setSelectedId(row.id);
-          setSelectedIndex(index);
-        }
-        break;
-      }
-      offset += page.count;
+    const row = rows[index];
+    if (row === undefined) {
+      return;
     }
-    if (listRef.current?.contains(document.activeElement)) setFocusIndex(index);
+    setSelectedId(row.id);
+    // Keyboard navigation moves real focus onto the active row, which scrolls it
+    // into view for free. Only ever while focus already lives in the list: an
+    // arriving page must never pull the caret out of the search box.
+    const list = listRef.current;
+    if (list !== null && list.contains(document.activeElement)) {
+      list.querySelector<HTMLElement>(`[data-snapshot-id="${CSS.escape(row.id)}"]`)?.focus();
+    }
   }
-
-  const retainPages = useCallback((keys: Set<number>) => {
-    let changed = false;
-    for (const page of pagesRef.current) {
-      if (!keys.has(page.key) && page.rows !== null) { page.rows = null; changed = true; }
-    }
-    if (changed) setRevision((value) => value + 1);
-  }, []);
 
   async function copySelected() {
     if (selected === null || body?.id !== selected.id || copyInFlightRef.current) {
@@ -279,8 +263,6 @@ export function SnapshotsModal({ onClose }: SnapshotsModalProps) {
       }
       setDeleteFailed(false);
       setSelectedId(null);
-      setSelected(null);
-      setSelectedIndex(-1);
       // A pre-mutation list cannot repopulate deleted rows. Wait for its actual
       // settlement before the replacement read, retaining one list request.
       listVersionRef.current += 1;
@@ -301,7 +283,7 @@ export function SnapshotsModal({ onClose }: SnapshotsModalProps) {
     }
     const remaining = list.scrollHeight - list.scrollTop - list.clientHeight;
     if (remaining <= LOAD_MORE_THRESHOLD_PX) {
-      void load(rowCount, appliedQueryRef.current);
+      void load(rows.length, appliedQueryRef.current);
     }
   }
 
@@ -312,24 +294,22 @@ export function SnapshotsModal({ onClose }: SnapshotsModalProps) {
     if (!list) return;
     const fill = () => {
       if (list.clientHeight > 0 && !listFailed && !loading && hasMore
-          && list.scrollHeight <= list.clientHeight) void load(rowCount, appliedQueryRef.current);
+          && list.scrollHeight <= list.clientHeight) void load(rows.length, appliedQueryRef.current);
     };
     fill();
     const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(fill);
     observer?.observe(list);
     return () => observer?.disconnect();
-  }, [hasMore, listFailed, load, loading, rowCount]);
+  }, [hasMore, listFailed, load, loading, rows.length]);
 
   function emptyMessage(): string | null {
     if (listFailed) return null;
     if (!loaded || loading) return t("snapshots.loading");
-    if (rowCount > 0) return null;
+    if (rows.length > 0) return null;
     return appliedQueryRef.current.length === 0 ? t("snapshots.emptyStore") : t("snapshots.noMatches");
   }
 
   const message = emptyMessage();
-  const cachedRows = pages.flatMap((page) => page.rows ?? []);
-  const tabStop = cachedRows.some((row) => row.id === selectedId) ? selectedId : cachedRows[0]?.id;
 
   const confirmation = pendingDelete === null ? null : (
     <ModalBase
@@ -388,7 +368,7 @@ export function SnapshotsModal({ onClose }: SnapshotsModalProps) {
       }
       footer={
         <>
-          {rowCount > 0 ? (
+          {rows.length > 0 ? (
             <button
               className="secondaryButton dangerTrigger"
               type="button"
@@ -412,17 +392,17 @@ export function SnapshotsModal({ onClose }: SnapshotsModalProps) {
             aria-label={t("snapshots.listLabel")}
             // The container stays reachable by Tab while the list is empty; once
             // it has rows, the active row carries the control's single tab stop.
-            tabIndex={rowCount === 0 ? 0 : -1}
+            tabIndex={rows.length === 0 ? 0 : -1}
             onScroll={(event) => loadMoreIfNeeded(event.currentTarget)}
             onKeyDown={(event) => {
               if (event.nativeEvent.isComposing) return;
-              const target = nextSelectionIndex(selectedIndex, event.key, rowCount);
+              const target = nextSelectionIndex(selectedIndex, event.key, rows.length);
               if (target === null) {
                 // Arrowing past the last row is how a keyboard reaches the next
                 // page, since scrolling is what loads one for the pointer.
                 if (event.key === "ArrowDown" && hasMore && !loading) {
                   event.preventDefault();
-                  void load(rowCount, appliedQueryRef.current);
+                  void load(rows.length, appliedQueryRef.current);
                 }
                 return;
               }
@@ -438,10 +418,7 @@ export function SnapshotsModal({ onClose }: SnapshotsModalProps) {
             {copyFailed ? <p className="errorText" role="alert">{t("snapshots.copyFailed")}</p> : null}
             {deleteFailed ? <p className="errorText" role="alert">{t("snapshots.deleteFailed")}</p> : null}
             {message !== null ? <p className="mutedText">{message}</p> : null}
-            <HistoryPages pages={pages} scrollRef={listRef} revision={revision + Number(loading)}
-              onNeed={(page) => { if (!listFailed) void load(page.cursor, appliedQueryRef.current, false, page); }}
-              onEvict={retainPages} focusIndex={focusIndex} onFocused={() => setFocusIndex(null)}
-              renderRow={(row, index) => {
+            {rows.map((row, index) => {
               const timestamp = formatSnapshotTimestamp(row.createdAtUtc, i18n.dateTime);
               const origin = panes.find((pane) => pane.id === row.paneId);
               const active = row.id === selectedId;
@@ -449,13 +426,12 @@ export function SnapshotsModal({ onClose }: SnapshotsModalProps) {
                 <div
                   key={row.id}
                   data-snapshot-id={row.id}
-                  data-history-index={index}
                   className={`snapshotRow ${active ? "snapshotRow-selected" : ""}`}
                   role="option"
                   aria-selected={active}
-                  tabIndex={row.id === tabStop ? 0 : -1}
+                  tabIndex={active ? 0 : -1}
                   onClick={() => selectAt(index)}
-                  onFocus={() => { setSelected(row); setSelectedId(row.id); setSelectedIndex(index); }}
+                  onFocus={() => setSelectedId(row.id)}
                 >
                   <span className="snapshotRowHead">
                     {/* A snapshot from a deleted pane carries no colour, because the colour
@@ -473,11 +449,11 @@ export function SnapshotsModal({ onClose }: SnapshotsModalProps) {
                   </span>
                 </div>
               );
-            }} />
+            })}
             {/* Only while a page is actually in flight. Tied to `hasMore` it
                 would sit there reading Loading whenever more existed, whether
                 or not anything was being fetched. */}
-            {loading && rowCount > 0 ? (
+            {loading && rows.length > 0 ? (
               <p className="snapshotListFoot" aria-hidden="true">
                 {t("snapshots.loading")}
               </p>

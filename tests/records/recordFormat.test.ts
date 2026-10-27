@@ -4,6 +4,7 @@ import {
   formatStoredTime,
   isEmptyStoredValue,
   knownLevel,
+  mergeNewestPage,
   pageReachesRecord,
   prettyJson,
 } from "../../src/records/recordFormat";
@@ -43,6 +44,28 @@ describe("record format", () => {
   it("starts the next page after the last row shown", () => {
     expect(cursorAfter([])).toBeNull();
     expect(cursorAfter([record(3, "b"), record(2, "a")])).toEqual({ time: "a", id: 2 });
+  });
+
+  it("joins the newest page with the rows shown, keeping the pages already read", () => {
+    const shown = [record(5, "2026-10-02T08:05"), record(4, "2026-10-02T08:04"), record(1, "2026-10-02T08:01")];
+    const page = { records: [record(6, "2026-10-02T08:06"), record(5, "2026-10-02T08:05")], more: true };
+
+    const merged = mergeNewestPage(shown, false, page);
+
+    expect(merged.records.map((row) => row.id)).toEqual([6, 5, 4, 1]);
+    // Rows shown beyond the page's end keep the more flag the list already had.
+    expect(merged.more).toBe(false);
+  });
+
+  it("takes the page's more flag when it reaches past everything shown", () => {
+    const shown = [record(2, "2026-10-02T08:02")];
+    const page = { records: [record(3, "2026-10-02T08:03"), record(2, "2026-10-02T08:02")], more: true };
+    expect(mergeNewestPage(shown, false, page).more).toBe(true);
+  });
+
+  it("orders lines with the same time by id, newest first", () => {
+    const merged = mergeNewestPage([record(1, "t")], false, { records: [record(2, "t")], more: false });
+    expect(merged.records.map((row) => row.id)).toEqual([2, 1]);
   });
 
   it("requires a refresh to reach the prior newest row, including timestamp ties", () => {

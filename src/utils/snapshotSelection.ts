@@ -1,5 +1,6 @@
 // The snapshot list's pure decisions, kept out of the modal so they are
-// directly testable: where a navigation key moves the cursor.
+// directly testable: where an arrow key moves the cursor, and which snapshot is
+// selected once the rows underneath it change.
 
 // The navigation keys a listbox owns. Returns the index to move to, or null
 // when the key is not one of them or the move would leave the list — the
@@ -38,6 +39,23 @@ export function nextSelectionIndex(
 
   const clamped = Math.min(last, Math.max(0, target));
   return clamped === currentIndex ? null : clamped;
+}
+
+// Which snapshot is selected after the rows change. The user is still reading
+// the snapshot they picked, so it is kept whenever it survives the change;
+// otherwise the list starts at the top, which is where a fresh search or a
+// return to browsing should begin.
+export function selectionAfterRowsChange(
+  rowIds: ReadonlyArray<string>,
+  previousSelectedId: string | null,
+): string | null {
+  if (rowIds.length === 0) {
+    return null;
+  }
+  if (previousSelectedId !== null && rowIds.includes(previousSelectedId)) {
+    return previousSelectedId;
+  }
+  return rowIds[0];
 }
 
 // The budget for a row's one-line excerpt. Well above what a row shows, per the

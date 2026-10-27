@@ -1656,6 +1656,10 @@ kbd {
   transition: background var(--motion);
 }
 
+.snapshotRow + .snapshotRow {
+  margin-top: 2px;
+}
+
 .snapshotRow:hover {
   background: var(--surface-hover);
 }
@@ -1877,7 +1881,8 @@ kbd {
 }
 
 .recordsList {
-  display: block;
+  display: grid;
+  gap: 2px;
 }
 
 /* Flat rows, like the snapshot list's: hover and selection are fills, and the

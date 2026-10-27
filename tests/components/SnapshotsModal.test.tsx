@@ -621,34 +621,3 @@ it("fills a viewport that a valid short page leaves without a scrollbar", async 
     expect(rows()).toHaveLength(15);
   } finally { height.mockRestore(); scroll.mockRestore(); }
 });
-
-it("evicts deep snapshot pages, preserves selected detail, and refetches for Home", async () => {
-  const data = Array.from({ length: 400 }, (_, index) => row(`entry-${index}`, `body ${index}`));
-  mocks.list.mockImplementation(async (_query: string, size: number, offset: number) => ({
-    rows: data.slice(offset, offset + size), hasMore: offset + size < data.length,
-  }));
-  await open();
-  const list = document.querySelector<HTMLElement>(".snapshotList")!;
-  let top = 0;
-  let height = 1120;
-  Object.defineProperties(list, {
-    clientHeight: { configurable: true, value: 200 },
-    scrollHeight: { configurable: true, get: () => height },
-    scrollTop: { configurable: true, get: () => top, set: (value: number) => { top = value; } },
-  });
-  for (let page = 1; page < 20; page++) {
-    height = page * 1120;
-    top = height - 200;
-    await act(async () => list.dispatchEvent(new Event("scroll", { bubbles: true })));
-    expect(rows().length).toBeLessThanOrEqual(60);
-  }
-  expect(document.querySelector(".snapshotDetail pre")?.textContent).toBe("body 0");
-  expect(rows().some((element) => element.dataset.snapshotId === "entry-0")).toBe(false);
-  await act(async () => rows().at(-1)!.focus());
-  const before = mocks.list.mock.calls.length;
-  await act(async () => pressOnList("Home"));
-  expect(mocks.list.mock.calls.slice(before).some((call) => call[2] === 0)).toBe(true);
-  expect((document.activeElement as HTMLElement).dataset.snapshotId).toBe("entry-0");
-  expect(document.querySelector(".snapshotDetail pre")?.textContent).toBe("body 0");
-  expect(rows().length).toBeLessThanOrEqual(60);
-});

@@ -68,10 +68,10 @@ let root: Root | null = null;
 // jsdom lays nothing out, so the list's scroll box and the shell's width are set
 // here. By default the list is scrolled to the top and far from its end.
 const box = { scrollTop: 0, scrollHeight: 1000, clientHeight: 200, shellWidth: 2000 };
-const resizeCallbacks = new Set<(entries: ResizeObserverEntry[]) => void>();
+const resizeCallbacks = new Set<() => void>();
 class TestResizeObserver {
-  private readonly callback: (entries: ResizeObserverEntry[]) => void;
-  constructor(callback: (entries: ResizeObserverEntry[]) => void) {
+  private readonly callback: () => void;
+  constructor(callback: () => void) {
     this.callback = callback;
   }
   observe(): void {
@@ -484,8 +484,8 @@ describe("RecordsWindow", () => {
   it("keeps every intervening record reachable after more than a page arrives", async () => {
     const row = (id: number): RecordSummary => ({ ...newer, id, message: `line ${id}`, time: SESSION });
     let newestId = 150;
-    mocks.readRecordsPage.mockImplementation(async ({ after, through }) => {
-      const firstId = through?.id ?? (after === null ? newestId : after.id - 1);
+    mocks.readRecordsPage.mockImplementation(async ({ after }) => {
+      const firstId = after === null ? newestId : after.id - 1;
       const lastId = Math.max(1, firstId - 99);
       return {
         records: Array.from({ length: firstId - lastId + 1 }, (_, index) => row(firstId - index)),
@@ -502,17 +502,10 @@ describe("RecordsWindow", () => {
     expect(options()).toHaveLength(100);
 
     await scrollTo(0);
-    const reached = new Set(titles());
-    // Visit the measured-page index, including pages evicted during the burst.
-    for (const top of [7000, 14000, 21000, 0]) {
-      await scrollTo(top);
-      for (const title of titles()) reached.add(title);
-      expect(options().length).toBeLessThanOrEqual(200);
-    }
-    expect([...reached].sort()).toEqual(Array.from({ length: 350 }, (_, index) => `line ${index + 1}`).sort());
-    expect(document.querySelector(".recordsDetailTitle")?.textContent).toBe(failureDetail.message);
+    await scrollTo(800);
+    expect(titles()).toEqual(Array.from({ length: 350 }, (_, index) => `line ${350 - index}`));
+    expect(options().find((option) => option.getAttribute("aria-selected") === "true")?.textContent).toContain("line 150");
     expect(mocks.readRecordDetail).toHaveBeenCalledOnce();
-    expect(mocks.readRecordsPage.mock.calls.some(([query]) => query.through !== undefined)).toBe(true);
   });
 
   it("keeps the shown history and selection when a refresh bridge fails", async () => {
@@ -708,7 +701,7 @@ describe("RecordsWindow", () => {
 
     await act(async () => {
       box.shellWidth = RECORDS_PADDING * 2 + RECORDS_GAP + RECORDS_DETAIL_MIN_WIDTH + RECORDS_LIST_WIDTH.min;
-      for (const callback of resizeCallbacks) callback([]);
+      for (const callback of resizeCallbacks) callback();
     });
 
     expect(shell.style.getPropertyValue("--records-list-width")).toBe(`${RECORDS_LIST_WIDTH.min}px`);
