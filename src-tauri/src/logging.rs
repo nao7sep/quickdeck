@@ -10,7 +10,7 @@ use std::{
     fs::{self, OpenOptions},
     io::Write,
     path::{Path, PathBuf},
-    sync::{atomic::{AtomicUsize, Ordering}, mpsc, Arc, OnceLock},
+    sync::{mpsc, OnceLock},
     time::{Duration, Instant},
 };
 
@@ -80,113 +80,41 @@ enum Message {
         message: String,
         time: String,
         fields: Map<String, Value>,
-        reservation: Reservation,
     },
     Flush(mpsc::SyncSender<()>),
-}
-
-// The budget includes queued and in-flight events: a blocked filesystem write
-// must not release its reservation merely because the channel was drained.
-struct Budget {
-    limit: usize,
-    retained: AtomicUsize,
-    dropped: AtomicUsize,
-}
-
-struct Reservation {
-    budget: Arc<Budget>,
-    bytes: usize,
-}
-
-impl Budget {
-    fn reserve(self: &Arc<Self>, bytes: usize) -> Option<Reservation> {
-        self.retained.try_update(Ordering::Relaxed, Ordering::Relaxed, |retained| {
-            retained.checked_add(bytes).filter(|next| *next <= self.limit)
-        }).ok()?;
-        Some(Reservation { budget: self.clone(), bytes })
-    }
-}
-
-impl Drop for Reservation {
-    fn drop(&mut self) {
-        self.budget.retained.fetch_sub(self.bytes, Ordering::Relaxed);
-    }
 }
 
 struct Logger {
     // Sources still identify this launch even if its writer cannot start.
     session: Session,
-    writer: mpsc::SyncSender<Message>,
-    budget: Arc<Budget>,
+    writer: mpsc::Sender<Message>,
     debug_enabled: bool,
 }
 
 impl Logger {
-    fn channel(session: Session, debug_enabled: bool, byte_budget: usize, slots: usize) -> (Self, mpsc::Receiver<Message>) {
-        let (writer, lines) = mpsc::sync_channel(slots);
-        let budget = Arc::new(Budget {
-            limit: byte_budget,
-            retained: AtomicUsize::new(0),
-            dropped: AtomicUsize::new(0),
-        });
-        (Self { session, writer, budget, debug_enabled }, lines)
+    fn channel(session: Session, debug_enabled: bool) -> (Self, mpsc::Receiver<Message>) {
+        let (writer, lines) = mpsc::channel();
+        (Self { session, writer, debug_enabled }, lines)
     }
 
     fn write_event(&self, level: Level, message: &str, time: String, fields: Map<String, Value>) -> bool {
         if level == Level::Debug && !self.debug_enabled {
             return false;
         }
-        let message = message.to_string();
-        let bytes = std::mem::size_of::<Message>()
-            .saturating_add(message.capacity())
-            .saturating_add(time.capacity())
-            .saturating_add(retained_fields(&fields));
-        let Some(reservation) = self.budget.reserve(bytes) else {
-            self.budget.dropped.fetch_add(1, Ordering::Relaxed);
-            return false;
-        };
-        let line = Message::Line { level, message, time, fields, reservation };
-        match self.writer.try_send(line) {
-            Ok(()) => true,
-            Err(rejected) => {
-                self.budget.dropped.fetch_add(1, Ordering::Relaxed);
-                drop(rejected);
-                false
-            }
-        }
+        // A writer that never started was reported once to stderr; its lines
+        // are dropped rather than written on the caller's thread.
+        let line = Message::Line { level, message: message.to_string(), time, fields };
+        self.writer.send(line).is_ok()
     }
 
     fn flush(&self) {
         let (done, written) = mpsc::sync_channel(1);
-        if self.writer.try_send(Message::Flush(done)).is_err() {
+        if self.writer.send(Message::Flush(done)).is_err() {
             return;
         }
         if written.recv_timeout(FLUSH_WAIT).is_err() {
             to_stderr(format_args!("log flush gave up after {} ms", FLUSH_WAIT.as_millis()));
         }
-    }
-}
-
-// serde_json does not expose its object map's allocation capacity. Estimate
-// spare entries and hash/index overhead conservatively; strings and arrays use
-// their retained capacities, including nested diagnostics, without serializing.
-fn retained_fields(fields: &Map<String, Value>) -> usize {
-    fields.iter().fold(std::mem::size_of::<Map<String, Value>>(), |total, (key, value)| {
-        total.saturating_add(2 * (std::mem::size_of::<(String, Value)>() + 4 * std::mem::size_of::<usize>()))
-            .saturating_add(key.capacity())
-            .saturating_add(retained_value(value))
-    })
-}
-
-fn retained_value(value: &Value) -> usize {
-    match value {
-        Value::String(text) => text.capacity(),
-        Value::Array(items) => items.iter().fold(
-            items.capacity().saturating_mul(std::mem::size_of::<Value>()),
-            |total, item| total.saturating_add(retained_value(item)),
-        ),
-        Value::Object(fields) => retained_fields(fields),
-        _ => 0,
     }
 }
 
@@ -231,12 +159,7 @@ pub fn init(app: &AppHandle, version: &str) {
         stamp: session_stamp(started),
         root: root.clone().ok(),
     };
-    // Ordinary diagnostic bursts get 256 KiB per available worker. Slots bound
-    // tiny events as well, while the byte budget bounds large structured ones.
-    let workers = std::thread::available_parallelism().map(usize::from).unwrap_or(1);
-    let byte_budget = workers.saturating_mul(256 * 1024);
-    let (logger, lines) = Logger::channel(session.clone(), debug_enabled, byte_budget, byte_budget / 1024);
-    let budget = logger.budget.clone();
+    let (logger, lines) = Logger::channel(session.clone(), debug_enabled);
 
     if LOGGER.set(logger).is_err() {
         return;
@@ -247,7 +170,7 @@ pub fn init(app: &AppHandle, version: &str) {
     let file = root.map(|root| root.join(RECORDS_DB_FILE_NAME));
     let spawned = std::thread::Builder::new()
         .name("records".to_string())
-        .spawn(move || run_writer(file, session, lines, budget, notify_stored));
+        .spawn(move || run_writer(file, session, lines, notify_stored));
     if let Err(error) = spawned {
         to_stderr(format_args!("records writer unavailable: {error}"));
     }
@@ -271,7 +194,6 @@ fn run_writer(
     file: Result<PathBuf, String>,
     session: Session,
     lines: mpsc::Receiver<Message>,
-    budget: Arc<Budget>,
     stored: impl Fn(),
 ) {
     let records = file.and_then(|file| open_records(&file));
@@ -289,41 +211,23 @@ fn run_writer(
             None
         }
     };
-    run_messages(lines, &budget, |level, message, time, fields| {
-        if write_record(records.as_ref(), &session, level, message, time, fields) {
-            stored();
-        }
-    });
-}
-
-// The reservation stays owned by this frame until the sink returns, including
-// any database, fallback-file or filesystem stall.
-fn run_messages(
-    lines: mpsc::Receiver<Message>,
-    budget: &Budget,
-    mut sink: impl FnMut(Level, &str, &str, &Map<String, Value>),
-) {
-    let report_dropped = |sink: &mut dyn FnMut(Level, &str, &str, &Map<String, Value>)| {
-        let dropped = budget.dropped.swap(0, Ordering::Relaxed);
-        if dropped != 0 {
-            sink(Level::Warn, "log events dropped", &now_iso(), &into_map(json!({ "dropped": dropped })));
-        }
-    };
     for line in lines {
         match line {
-            Message::Line { level, message, time, fields, reservation } => {
-                sink(level, &message, &time, &fields);
-                drop((message, time, fields));
-                drop(reservation);
-                report_dropped(&mut sink);
+            Message::Line {
+                level,
+                message,
+                time,
+                fields,
+            } => {
+                if write_record(records.as_ref(), &session, level, &message, &time, &fields) {
+                    stored();
+                }
             }
             Message::Flush(done) => {
-                report_dropped(&mut sink);
                 let _ = done.send(());
             }
         }
     }
-    report_dropped(&mut sink);
 }
 
 /// Writes one line to stderr under the app's name, for what cannot reach the
