@@ -47,25 +47,15 @@ fn claim(root: &Path) -> Result<Claim, String> {
 
     match lock_file.try_lock() {
         Ok(()) => {
-            // Only the OS-lock owner publishes. Readers see the old complete endpoint
-            // or the new one, never a partial port.
-            let staged_endpoint = root.join("instance.endpoint.tmp");
-            let mut endpoint_file = OpenOptions::new()
-                .create(true)
-                .truncate(true)
-                .write(true)
-                .open(&staged_endpoint)
-                .map_err(|e| e.to_string())?;
+            // Only the OS-lock owner publishes. A second launch that reads a
+            // partial or stale port retries until it connects.
             let listener = TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
                 .map_err(|e| format!("could not open process activation endpoint: {e}"))?;
             let port = listener
                 .local_addr()
                 .map_err(|e| format!("could not inspect process activation endpoint: {e}"))?
                 .port();
-            writeln!(endpoint_file, "{port}").map_err(|e| e.to_string())?;
-            endpoint_file.sync_all().map_err(|e| e.to_string())?;
-            drop(endpoint_file);
-            std::fs::rename(&staged_endpoint, &endpoint_path).map_err(|e| e.to_string())?;
+            std::fs::write(&endpoint_path, format!("{port}\n")).map_err(|e| e.to_string())?;
             Ok(Claim::Primary {
                 lock: lock_file,
                 listener,
@@ -116,8 +106,7 @@ fn listen<R: Runtime>(listener: TcpListener, app: tauri::AppHandle<R>) {
 fn is_activation(stream: &mut TcpStream) -> bool {
     let mut request = [0u8; 8];
     stream
-        .set_nonblocking(false)
-        .and_then(|()| stream.set_read_timeout(Some(ACTIVATION_READ_WAIT)))
+        .set_read_timeout(Some(ACTIVATION_READ_WAIT))
         .and_then(|()| stream.read_exact(&mut request))
         .is_ok_and(|()| &request == b"activate")
 }

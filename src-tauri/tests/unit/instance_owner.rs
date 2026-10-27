@@ -59,7 +59,6 @@ fn secondary_activation_uses_the_published_endpoint() {
     else {
         panic!("first claim must own the root");
     };
-    listener.set_nonblocking(false).unwrap();
     let Claim::Secondary { endpoint_path } = claim(dir.path()).unwrap() else {
         panic!("second claim must be secondary");
     };
@@ -77,20 +76,13 @@ fn secondary_activation_uses_the_published_endpoint() {
 #[test]
 fn an_activation_that_arrives_after_the_connection_is_still_read() {
     let listener = TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0)).unwrap();
-    listener.set_nonblocking(true).unwrap();
     let address = listener.local_addr().unwrap();
     let sender = std::thread::spawn(move || {
         let mut stream = TcpStream::connect(address).unwrap();
         std::thread::sleep(Duration::from_millis(100));
         stream.write_all(b"activate").unwrap();
     });
-    let mut accepted = loop {
-        match listener.accept() {
-            Ok((stream, _)) => break stream,
-            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => std::thread::sleep(RETRY_DELAY),
-            Err(error) => panic!("{error}"),
-        }
-    };
+    let (mut accepted, _) = listener.accept().unwrap();
     assert!(is_activation(&mut accepted));
     sender.join().unwrap();
 }
@@ -124,12 +116,11 @@ fn an_incomplete_client_does_not_occupy_the_listener_indefinitely() {
 }
 
 #[test]
-fn each_claim_publishes_a_complete_endpoint_without_a_staging_file() {
+fn each_claim_publishes_its_endpoint() {
     let dir = tempfile::tempdir().unwrap();
     for _ in 0..3 {
         let Claim::Primary { lock: _lock, listener } = claim(dir.path()).unwrap() else { panic!() };
         let published = std::fs::read_to_string(dir.path().join(ENDPOINT_FILE_NAME)).unwrap();
         assert_eq!(published.trim().parse::<u16>().unwrap(), listener.local_addr().unwrap().port());
-        assert!(!dir.path().join("instance.endpoint.tmp").exists());
     }
 }
