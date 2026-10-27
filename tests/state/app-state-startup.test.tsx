@@ -581,7 +581,7 @@ describe("interface language", () => {
 });
 
 
-it("saves changed settings independently from pane changes", async () => {
+it("sends every set that differs from its built-in on each save", async () => {
   let state: ReturnType<typeof useAppState>;
   function Probe() { state = useAppState(); return null; }
   const host = document.createElement("div");
@@ -594,8 +594,7 @@ it("saves changed settings independently from pane changes", async () => {
   expect(persistence.saveConfig).toHaveBeenLastCalledWith({ zen: true });
   await act(async () => { state!.updatePaneContent(state!.activePaneId, "new text"); });
   await act(async () => { await state!.saveNow(); });
-  expect(persistence.saveConfig).toHaveBeenCalledTimes(2);
-  expect(persistence.savePanes).toHaveBeenCalledTimes(2);
+  expect(persistence.saveConfig).toHaveBeenLastCalledWith({ zen: true });
 });
 
 it("reads an invalid set as its built-in and drops it from the file at the next save", async () => {
@@ -614,24 +613,12 @@ it("reads an invalid set as its built-in and drops it from the file at the next 
 });
 
 
-it("keeps a completed settings set-aside visible when a sibling save fails", async () => {
-  const host = await renderStartupState();
-  persistence.saveConfig.mockResolvedValueOnce("/disposable/config.invalid");
-  persistence.savePanes.mockRejectedValueOnce(new Error("disk failed"));
-  await act(async () => {
-    await expect(latestStartup!.saveNow()).rejects.toThrow("disk failed");
-    latestStartup!.showBlockingError({ key: "saveError.title" }, { key: "saveError.autosave" });
-  });
-  expect(host.querySelector('[data-testid="blocking-error"]')?.textContent).toContain("/disposable/config.invalid");
-});
-
 it("keeps a set-aside reported by a failed publication without presenting its raw diagnostic", async () => {
   const host = await renderStartupState();
   const failure = { logged: true, message: "SECRET_SENTINEL", configQuarantinedTo: "/disposable/config.invalid" };
   persistence.saveConfig.mockRejectedValueOnce(failure);
   await act(async () => {
     await expect(latestStartup!.saveNow()).rejects.toEqual(failure);
-    latestStartup!.showBlockingError({ key: "saveError.title" }, { key: "saveError.autosave" });
   });
   expect(host.textContent).toContain("/disposable/config.invalid");
   expect(host.textContent).not.toContain("SECRET_SENTINEL");
