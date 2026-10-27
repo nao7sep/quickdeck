@@ -102,7 +102,6 @@ export function RecordsWindow({ initialListWidth }: { initialListWidth: number }
   // next read; live reads stop after a failure and resume after its owner retries.
   const liveSuspended = useRef(false);
   const sourceFailed = useRef(false);
-  const observedRecord = useRef(false);
   const pagePaused = useRef(false);
   const newestReadActive = useRef(false);
   const newestReadPending = useRef<number | null>(null);
@@ -143,9 +142,7 @@ export function RecordsWindow({ initialListWidth }: { initialListWidth: number }
     void readRecordSources().then(
       (next) => {
         if (cancelled) return;
-        setSources(observedRecord.current && !next.sessions.includes(next.currentSession)
-          ? { ...next, sessions: [...next.sessions, next.currentSession].sort().reverse() }
-          : next);
+        setSources(next);
         sourceFailed.current = false;
         syncLiveSuspension();
       },
@@ -252,14 +249,11 @@ export function RecordsWindow({ initialListWidth }: { initialListWidth: number }
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout> | null = null;
     const unsubscribe = onRecordsChanged(() => {
-      observedRecord.current = true;
-      setSources((current) => current === null || current.sessions.includes(current.currentSession)
-        ? current
-        : { ...current, sessions: [...current.sessions, current.currentSession].sort().reverse() });
       if (timer !== null || liveSuspended.current) return;
       timer = setTimeout(() => {
         timer = null;
         if (liveSuspended.current) return;
+        setSourceReads((count) => count + 1);
         const scroll = scrollRef.current;
         if (scroll === null || atTop(scroll)) readNewest();
         else newestPending.current = true;

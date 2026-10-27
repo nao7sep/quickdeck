@@ -393,7 +393,7 @@ describe("RecordsWindow", () => {
 
     expect(mocks.readRecordsPage).toHaveBeenCalledTimes(2);
     expect(lastQuery()).toEqual({ session: null, level: null, search: "", after: null });
-    expect(mocks.readRecordSources).toHaveBeenCalledOnce();
+    expect(mocks.readRecordSources).toHaveBeenCalledTimes(2);
     expect(options()).toHaveLength(2);
     expect(document.body.textContent).not.toContain("Loading records…");
 
@@ -422,33 +422,6 @@ describe("RecordsWindow", () => {
     expect(mocks.readRecordsPage).toHaveBeenCalledTimes(4);
     expect(lastQuery().after).toBeNull();
     expect(titles()).toEqual(["boundary ok", "boundary failed", "set zoom failed"]);
-    expect(mocks.readRecordSources).toHaveBeenCalledOnce();
-  });
-
-  it("keeps a first record signal received before historical launches finish loading", async () => {
-    const sources = deferred<RecordSources>();
-    mocks.readRecordSources.mockReturnValueOnce(sources.promise);
-    await mount();
-    await signal();
-    await act(async () => sources.resolve({ currentSession: SESSION, sessions: [] }));
-    const launch = document.querySelector("select")!;
-    expect(Array.from(launch.options).map((option) => option.value)).toEqual(["", SESSION]);
-    expect(mocks.readRecordSources).toHaveBeenCalledOnce();
-  });
-
-  it("adds this launch on its first record signal without rereading historical launches", async () => {
-    const historical = ["2026-10-01T08:00:00.000Z", "2026-09-30T08:00:00.000Z"];
-    mocks.readRecordSources.mockResolvedValueOnce({ currentSession: SESSION, sessions: historical });
-    await mount();
-    const launch = document.querySelector("select")!;
-    expect(Array.from(launch.options).map((option) => option.value)).toEqual(["", ...historical]);
-    vi.useFakeTimers();
-    for (let index = 0; index < 3; index++) {
-      await signal();
-      await act(async () => vi.advanceTimersByTime(1000));
-    }
-    expect(Array.from(launch.options).map((option) => option.value)).toEqual(["", SESSION, ...historical]);
-    expect(mocks.readRecordSources).toHaveBeenCalledOnce();
   });
 
   it("leaves the list alone while scrolled down, and shows new records once back at the top", async () => {
@@ -586,7 +559,7 @@ describe("RecordsWindow", () => {
     mocks.readRecordsPage.mockResolvedValueOnce({ records: [newer, failure, warning], more: false });
     const retry = Array.from(document.querySelectorAll("button")).find((button) => button.textContent === "Retry")!;
     await act(async () => retry.click());
-    expect(mocks.readRecordSources).toHaveBeenCalledTimes(2);
+    expect(mocks.readRecordSources).toHaveBeenCalledTimes(3);
     expect(mocks.readRecordsPage).toHaveBeenCalledTimes(3);
     expect(document.body.textContent).not.toContain("Live updates paused.");
     expect(options()[2]!.getAttribute("aria-selected")).toBe("true");

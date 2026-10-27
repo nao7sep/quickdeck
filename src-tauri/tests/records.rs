@@ -1,6 +1,6 @@
 use quickdeck_lib::format_version::RECORDS;
 use quickdeck_lib::records::{
-    read_bounded, read_detail, read_page, read_sessions, Cursor, LevelFilter, RecordsQuery,
+    read, read_detail, read_page, read_sessions, Cursor, LevelFilter, RecordsQuery,
     PAGE_SIZE, SCHEMA,
 };
 use rusqlite::{params, Connection};
@@ -323,16 +323,16 @@ fn a_bounded_read_opens_the_file_read_only_and_reports_a_missing_database() {
         );
     }
 
-    let page = read_bounded(file.clone(), |conn| {
+    let page = read(&file, |conn| {
         read_page(conn, &RecordsQuery::default())
     })
     .unwrap();
     assert_eq!(page.records[0].message, "kept");
-    let write = read_bounded(file, |conn| {
+    let write = read(&file, |conn| {
         conn.execute("DELETE FROM log_lines", []).map(|_| ())
     });
     assert!(write.is_err(), "a read connection must not write");
-    assert!(read_bounded(dir.path().join("missing.sqlite3"), read_sessions).is_err());
+    assert!(read(&dir.path().join("missing.sqlite3"), read_sessions).is_err());
 }
 
 #[test]
@@ -344,7 +344,7 @@ fn a_records_database_from_a_newer_build_is_not_read() {
     conn.execute_batch("pragma user_version = 2;").unwrap();
     drop(conn);
 
-    let refused = read_bounded(file, read_sessions).err().unwrap();
+    let refused = read(&file, read_sessions).err().unwrap();
     assert!(refused.contains("records.sqlite3"), "{refused}");
     assert!(refused.contains("newer"), "{refused}");
 }
@@ -358,6 +358,6 @@ fn a_records_database_without_its_marker_is_not_read() {
         .execute_batch(SCHEMA)
         .unwrap();
 
-    let refused = read_bounded(file, read_sessions).err().unwrap();
+    let refused = read(&file, read_sessions).err().unwrap();
     assert!(refused.contains("no format version"), "{refused}");
 }

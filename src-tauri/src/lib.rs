@@ -488,7 +488,7 @@ async fn read_records<T: Send + 'static>(
 ) -> Result<T, CommandFailure> {
     off_main_thread(move || {
         let file = paths::app_data_dir(&app)?.join(storage::RECORDS_DB_FILE_NAME);
-        records::read_bounded(file, read)
+        records::read(&file, read)
     })
     .await
     .inspect_err(|error| logging::error("records read failed", json!({ "op": op, "error": error })))
