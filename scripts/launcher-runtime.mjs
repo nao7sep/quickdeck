@@ -1,101 +1,228 @@
-// Launcher protocol: node launcher-runtime.mjs stop [token], wait-ready <token>,
-// or check-endpoint <host> <port>. Replacement requests ordinary app quit and
-// waits for that exact instance to exit. No process discovery or signals.
-import { readFile } from "node:fs/promises";
-import { readFileSync } from "node:fs";
-import { createConnection, createServer } from "node:net";
-import { homedir } from "node:os";
+/**
+ * Shared by the launchers (run-dev, run-built, rebuild) of both platforms: one
+ * QuickDeck runtime per repository. The launcher that starts QuickDeck records
+ * its process ID and executable under .git; the next launcher asks that process
+ * to quit only while it still runs that executable, and stops with a message
+ * rather than force-closing it when it stays open, for example on its
+ * save-failure question. QuickDeck started any other way is left to its
+ * single-instance behavior, which brings its window forward instead of opening
+ * a second one.
+ *
+ * CLI: node launcher-runtime.mjs <command>
+ *   stop                              ask the recorded runtime to quit
+ *   stop-if-recorded <pid>            the same, only while <pid> is the recorded one
+ *   launch-bundle <app bundle>        open a new instance (macOS) and record it
+ *   launch-exe <executable>           start the executable (Windows) and record it
+ *   record-wrapped <pid> <executable> record the app process a wrapper started; prints its pid
+ *   check-endpoint <host> <port>      fail when the port is taken
+ */
+import { execFile, spawn } from "node:child_process";
+import { once } from "node:events";
+import { readFile, writeFile } from "node:fs/promises";
+import { createServer } from "node:net";
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
+import { promisify } from "node:util";
 
-export const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-export const IDENTITY = {
-  label: JSON.parse(readFileSync(join(REPO_ROOT, "src-tauri/tauri.conf.json"), "utf8")).productName,
-  executable: /^\[package\][^[]*?^name = "([^"]+)"/m.exec(readFileSync(join(REPO_ROOT, "src-tauri/Cargo.toml"), "utf8"))[1],
-};
-const root = process.env.QUICKDECK_DATA_DIR || join(homedir(), ".quickdeck");
-const endpointFile = join(root, "instance.endpoint");
-const delay = (ms) => new Promise((resolveDelay) => setTimeout(resolveDelay, ms));
+const execFileAsync = promisify(execFile);
+const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const RECORD_FILE = join(REPO_ROOT, ".git", "launcher-runtime-process");
+/** The product name, read from its one source. */
+const { productName } = JSON.parse(await readFile(join(REPO_ROOT, "src-tauri/tauri.conf.json"), "utf8"));
+const windows = process.platform === "win32";
 
-export async function readEndpoint(path = endpointFile) {
+const delay = (milliseconds) => new Promise((resolveDelay) => setTimeout(resolveDelay, milliseconds));
+
+async function powershell(script) {
+  const { stdout } = await execFileAsync("powershell.exe", ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", script], {
+    encoding: "utf8",
+    maxBuffer: 16 * 1024 * 1024,
+  });
+  return stdout.trim();
+}
+
+async function osascript(script, ...args) {
+  const { stdout } = await execFileAsync("/usr/bin/osascript", ["-l", "JavaScript", "-e", script, ...args], { encoding: "utf8" });
+  return stdout.trim();
+}
+
+function sameExecutable(left, right) {
+  return windows ? left.toLowerCase() === right.toLowerCase() : left === right;
+}
+
+/** The executable a process runs, or "" when no such process exists. */
+async function executableOf(pid) {
+  if (windows) return powershell(`(Get-Process -Id ${pid} -ErrorAction SilentlyContinue).Path`);
   try {
-    const [port, metadata] = (await readFile(path, "utf8")).trim().split("\n");
-    return { port: Number(port), ...(metadata ? JSON.parse(metadata) : {}) };
+    const { stdout } = await execFileAsync("ps", ["-p", String(pid), "-o", "comm="], { encoding: "utf8" });
+    return stdout.trim();
   } catch (error) {
-    if (error.code === "ENOENT") return null;
+    if (error?.code === 1) return ""; // ps lists nothing for an ended process
     throw error;
   }
 }
 
-export function request(port, message, timeout = 1500) {
-  return new Promise((resolveRequest, reject) => {
-    const socket = createConnection({ host: "127.0.0.1", port });
-    let reply = "";
-    socket.setTimeout(timeout, () => socket.destroy(new Error("The running app did not answer.")));
-    socket.on("connect", () => socket.end(message));
-    socket.on("data", (data) => {
-      reply += data.toString();
-      if (reply.length > 4096) socket.destroy(new Error("Invalid launcher response."));
-    });
-    socket.on("error", reject);
-    socket.on("end", () => resolveRequest(reply));
-  });
+async function record(pid, executable) {
+  await writeFile(RECORD_FILE, `${pid}\n${executable}\n`, "utf8");
 }
 
-async function isAlive(endpoint) {
-  try { return await request(endpoint.port, "status__") === endpoint.token; }
-  catch (error) { if (error.code === "ECONNREFUSED") return false; throw error; }
-}
-
-export async function stopRuntime(expectedToken, path = endpointFile, checkout = REPO_ROOT, wait = 30000) {
-  const endpoint = await readEndpoint(path);
-  if (!endpoint) return;
-  // A dead endpoint is harmless, but an old app without this protocol cannot
-  // be safely replaced by a signal. Its normal Quit remains available.
-  if (!endpoint.token) {
-    try { await request(endpoint.port, "status__"); }
-    catch (error) { if (error.code === "ECONNREFUSED") return; throw error; }
-    throw new Error("Quit the running app normally before using this updated launcher.");
+/** The recorded process ID, returned only while that process still runs the recorded executable. */
+async function recordedPid() {
+  let text;
+  try {
+    text = await readFile(RECORD_FILE, "utf8");
+  } catch (error) {
+    if (error?.code === "ENOENT") return undefined;
+    throw error;
   }
-  if (expectedToken && endpoint.token !== expectedToken) return;
-  if (!await isAlive(endpoint)) return;
-  if (endpoint.launcherRoot !== checkout) throw new Error("The running app belongs to another launch location. Quit it normally before replacing it.");
-  const reply = await request(endpoint.port, `quit____${endpoint.token}\n`);
-  if (reply !== "requested") throw new Error("The running instance changed; replacement was cancelled.");
-  const deadline = Date.now() + wait;
-  while (await isAlive(endpoint)) {
-    if (Date.now() >= deadline) throw new Error("Replacement stopped: the app has not quit. Finish or cancel its save-and-quit dialog, then run the launcher again.");
-    await delay(100);
-  }
+  const [pidText, executable] = text.split(/\r?\n/);
+  const pid = Number(pidText);
+  if (!Number.isInteger(pid) || pid <= 0 || !executable) return undefined;
+  return sameExecutable(await executableOf(pid), executable) ? pid : undefined;
 }
 
-export async function waitReady(token, path = endpointFile, wait = 180000) {
-  const deadline = Date.now() + wait;
+/** Ask the process to quit as a user would, so it saves and can still ask about a failed save. */
+async function requestClose(pid) {
+  if (windows) {
+    await powershell(`$p = Get-Process -Id ${pid} -ErrorAction SilentlyContinue; if ($p) { $null = $p.CloseMainWindow() }`);
+    return;
+  }
+  await osascript(`ObjC.import('AppKit');
+function run(args) {
+  var application = $.NSRunningApplication.runningApplicationWithProcessIdentifier(Number(args[0]));
+  if (application) application.terminate;
+}`, String(pid));
+}
+
+async function stopRecorded(onlyPid) {
+  const pid = await recordedPid();
+  if (pid === undefined || (onlyPid !== undefined && pid !== onlyPid)) return;
+  process.stdout.write(`Asking the running ${productName} (pid ${pid}) to quit.\n`);
+  await requestClose(pid);
+  const deadline = Date.now() + 5000;
   while (Date.now() < deadline) {
-    const endpoint = await readEndpoint(path);
-    if (endpoint?.token === token && await isAlive(endpoint)) return;
+    if (await recordedPid() !== pid) return;
     await delay(100);
   }
-  throw new Error("The selected app did not become ready. Another concurrent launcher may have won; no process was stopped.");
+  throw new Error(`${productName} is still open, perhaps asking about a failed save. Close it, then run this launcher again.`);
 }
 
-export async function assertEndpointAvailable(host, port) {
-  await new Promise((resolveProbe, reject) => {
-    const server = createServer();
-    server.once("error", () => reject(new Error(`Cannot bind ${host}:${port}. The existing listener was left running.`)));
-    server.listen({ host, port, exclusive: true }, () => server.close((error) => error ? reject(error) : resolveProbe()));
+const singleInstanceNote = `If ${productName} was already running outside these launchers, its window is brought forward instead.\n`;
+
+/** Open a new instance of the bundle through Launch Services, which gives it its bundle identity. */
+async function launchBundle(bundle) {
+  const pid = Number(await osascript(`ObjC.import('AppKit');
+function run(args) {
+  var application = $.NSWorkspace.sharedWorkspace.launchApplicationAtURLOptionsConfigurationError(
+    $.NSURL.fileURLWithPath(args[0]), $.NSWorkspaceLaunchNewInstance, $({}), null);
+  return application.isNil() ? '' : String(application.processIdentifier);
+}`, resolve(bundle)));
+  if (!Number.isInteger(pid) || pid <= 0) throw new Error(`${productName} could not be opened.`);
+  await record(pid, await executableOf(pid));
+  process.stdout.write(singleInstanceNote);
+}
+
+async function launchExecutable(executable) {
+  const child = spawn(resolve(executable), [], { detached: true, stdio: "ignore" });
+  await once(child, "spawn");
+  child.unref();
+  await record(child.pid, resolve(executable));
+  process.stdout.write(singleInstanceNote);
+}
+
+async function listProcesses() {
+  if (!windows) {
+    const { stdout } = await execFileAsync("ps", ["-axo", "pid=,ppid=,comm="], { encoding: "utf8", maxBuffer: 8 * 1024 * 1024 });
+    return stdout.split("\n").map((line) => /^\s*(\d+)\s+(\d+)\s+(.*)$/.exec(line)).filter(Boolean)
+      .map((match) => ({ pid: Number(match[1]), parentPid: Number(match[2]), executable: match[3].trim() }));
+  }
+  const decoded = JSON.parse(await powershell(
+    "Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,ExecutablePath | ConvertTo-Json -Compress",
+  ) || "[]");
+  return (Array.isArray(decoded) ? decoded : [decoded]).map((row) => ({
+    pid: Number(row.ProcessId),
+    parentPid: Number(row.ParentProcessId),
+    executable: row.ExecutablePath ?? "",
+  }));
+}
+
+/**
+ * Record the app process that the wrapper (npm run tauri dev, then cargo)
+ * starts, once it appears: the topmost descendant running the executable.
+ * Fails when the wrapper ends first, as it does when the build fails.
+ */
+async function recordWrapped(wrapperPid, executable) {
+  const expected = resolve(executable);
+  for (;;) {
+    const processes = await listProcesses();
+    if (!processes.some((item) => item.pid === wrapperPid)) {
+      throw new Error(`The ${productName} development runtime ended before the app started.`);
+    }
+    const descendants = new Set([wrapperPid]);
+    for (let grown = true; grown;) {
+      grown = false;
+      for (const item of processes) {
+        if (descendants.has(item.parentPid) && !descendants.has(item.pid)) {
+          descendants.add(item.pid);
+          grown = true;
+        }
+      }
+    }
+    const matches = processes.filter((item) => item.pid !== wrapperPid && descendants.has(item.pid) && sameExecutable(item.executable, expected));
+    const app = matches.find((item) => !matches.some((other) => other.pid === item.parentPid));
+    if (app) {
+      await record(app.pid, app.executable);
+      process.stdout.write(`${app.pid}\n`);
+      return;
+    }
+    await delay(200);
+  }
+}
+
+async function assertEndpointAvailable(host, port) {
+  await new Promise((resolveProbe, rejectProbe) => {
+    const probe = createServer();
+    probe.unref();
+    probe.once("error", (error) => {
+      rejectProbe(new Error(
+        `Cannot bind ${host}:${port}: ${error.code ?? error.message}. The listener was left running because its app identity is unknown.`,
+      ));
+    });
+    probe.listen({ host, port, exclusive: true }, () => {
+      probe.close((error) => error ? rejectProbe(error) : resolveProbe());
+    });
   });
 }
 
 async function main([command, ...args]) {
-  if (command === "stop") return stopRuntime(args[0]);
-  if (command === "wait-ready" && args[0]) return waitReady(args[0]);
-  if (command === "check-endpoint" && args[0] && Number.isInteger(Number(args[1]))) return assertEndpointAvailable(args[0], Number(args[1]));
-  throw new Error("Expected stop [token], wait-ready <token>, or check-endpoint <host> <port>.");
+  if (command === "stop") return stopRecorded();
+  if (command === "stop-if-recorded") {
+    const pid = Number(args[0]);
+    if (!Number.isInteger(pid)) throw new Error("Expected stop-if-recorded <pid>.");
+    return stopRecorded(pid);
+  }
+  if (command === "launch-bundle") {
+    if (!args[0]) throw new Error("Expected launch-bundle <app bundle>.");
+    return launchBundle(args[0]);
+  }
+  if (command === "launch-exe") {
+    if (!args[0]) throw new Error("Expected launch-exe <executable>.");
+    return launchExecutable(args[0]);
+  }
+  if (command === "record-wrapped") {
+    const pid = Number(args[0]);
+    if (!Number.isInteger(pid) || !args[1]) throw new Error("Expected record-wrapped <pid> <executable>.");
+    return recordWrapped(pid, args[1]);
+  }
+  if (command === "check-endpoint") {
+    const port = Number(args[1]);
+    if (!args[0] || !Number.isInteger(port)) throw new Error("Expected check-endpoint <host> <port>.");
+    return assertEndpointAvailable(args[0], port);
+  }
+  throw new Error("Expected one of: stop, stop-if-recorded, launch-bundle, launch-exe, record-wrapped, check-endpoint.");
 }
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  main(process.argv.slice(2)).catch((error) => {
-    process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
-    process.exitCode = 1;
-  });
-}
+
+main(process.argv.slice(2)).catch((error) => {
+  process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+  process.exitCode = 1;
+});

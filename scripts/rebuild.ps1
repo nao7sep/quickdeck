@@ -50,7 +50,6 @@ function Invoke-Native {
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repoDir = Split-Path -Parent $scriptDir
 $runtimeHelper = Join-Path $scriptDir "launcher-runtime.mjs"
-$runtimeToken = [guid]::NewGuid().ToString("N")
 $crate = "quickdeck"
 $exePath = Join-Path $repoDir "src-tauri/target/release/$crate.exe"
 
@@ -88,12 +87,8 @@ try {
         throw "Build did not produce $crate.exe under src-tauri/target/release/."
     }
 
-    # GUI app: launch non-blocking via Start-Process.
     Write-Step "Launching the built app"
-    $env:QUICKDECK_LAUNCHER_ROOT = $repoDir
-    $env:QUICKDECK_LAUNCHER_TOKEN = $runtimeToken
-    Start-Process -FilePath $exePath | Out-Null
-    Invoke-Native -FilePath "node" -ArgumentList @($runtimeHelper, "wait-ready", $runtimeToken)
+    Invoke-Native -FilePath "node" -ArgumentList @($runtimeHelper, "launch-exe", $exePath)
 }
 catch {
     Write-Host ""

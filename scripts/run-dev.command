@@ -9,7 +9,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 RUNTIME_HELPER="$SCRIPT_DIR/launcher-runtime.mjs"
-RUNTIME_TOKEN="run-dev-$$-$(date +%s)-$RANDOM"
+APP_PID=""
 DEV_HOST="${TAURI_DEV_HOST:-127.0.0.1}"
 
 log_step() {
@@ -35,7 +35,10 @@ pause_on_failure() {
 cleanup() {
   local status="$?"
   trap - EXIT
-  node "$RUNTIME_HELPER" stop "$RUNTIME_TOKEN" || true
+  # Closing this launcher closes the app it started, unless a later launcher has replaced it.
+  if [[ -n "$APP_PID" ]]; then
+    node "$RUNTIME_HELPER" stop-if-recorded "$APP_PID" >/dev/null 2>&1 || true
+  fi
   pause_on_failure "$status"
   exit "$status"
 }
@@ -57,6 +60,8 @@ log_step "Installing dependencies required for launch"
 npm install --no-audit --no-fund
 
 log_step "Starting QuickDeck in development mode"
-# Keep the CLI in the foreground: it owns the build and dev server through
-# settlement, and reports startup failures immediately.
-QUICKDECK_LAUNCHER_ROOT="$REPO_DIR" QUICKDECK_LAUNCHER_TOKEN="$RUNTIME_TOKEN" npm run tauri dev
+npm run tauri dev &
+DEV_PID=$!
+APP_PID="$(node "$RUNTIME_HELPER" record-wrapped "$DEV_PID" "$REPO_DIR/src-tauri/target/debug/quickdeck")"
+log_step "QuickDeck is running"
+wait "$DEV_PID"

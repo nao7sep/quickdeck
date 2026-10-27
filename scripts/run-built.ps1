@@ -27,7 +27,6 @@ function Write-Step {
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repoDir = Split-Path -Parent $scriptDir
 $runtimeHelper = Join-Path $scriptDir "launcher-runtime.mjs"
-$runtimeToken = [guid]::NewGuid().ToString("N")
 $crate = "quickdeck"
 $exePath = Join-Path $repoDir "src-tauri/target/release/$crate.exe"
 
@@ -52,11 +51,7 @@ try {
     Write-Step "Launching the existing built app (built: $builtAt)"
     Write-Host "If you changed source since then, run rebuild instead."
 
-    # GUI app: launch non-blocking via Start-Process.
-    $env:QUICKDECK_LAUNCHER_ROOT = $repoDir
-    $env:QUICKDECK_LAUNCHER_TOKEN = $runtimeToken
-    Start-Process -FilePath $exePath | Out-Null
-    & node $runtimeHelper wait-ready $runtimeToken
+    & node $runtimeHelper launch-exe $exePath
     if ($LASTEXITCODE -ne 0) { throw "QuickDeck did not start." }
 }
 catch {

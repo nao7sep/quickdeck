@@ -107,40 +107,18 @@ fn a_connection_that_sends_something_else_is_not_an_activation() {
     assert!(!is_activation(&mut accepted));
 }
 
-fn parse_request(bytes: &'static [u8], token: &'static str) -> Request {
-    let listener = TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0)).unwrap();
-    let address = listener.local_addr().unwrap();
-    let sender = std::thread::spawn(move || {
-        TcpStream::connect(address).unwrap().write_all(bytes).unwrap();
-    });
-    let (mut stream, _) = listener.accept().unwrap();
-    let request = read_request(&mut stream, token);
-    sender.join().unwrap();
-    request
-}
-
-#[test]
-fn quit_requires_the_complete_current_launch_token() {
-    assert_eq!(parse_request(b"quit____current\n", "current"), Request::Quit);
-    assert_eq!(parse_request(b"quit____old\n", "current"), Request::Unknown);
-    assert_eq!(parse_request(b"quit____current", "current"), Request::Unknown);
-    assert_eq!(parse_request(b"quit____\n", ""), Request::Unknown);
-    assert_eq!(parse_request(b"status__", "current"), Request::Status);
-    assert_eq!(parse_request(b"activate", "current"), Request::Activate);
-}
-
 #[test]
 fn an_incomplete_client_does_not_occupy_the_listener_indefinitely() {
     let listener = TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0)).unwrap();
     let address = listener.local_addr().unwrap();
     let mut client = TcpStream::connect(address).unwrap();
-    client.write_all(b"quit____cur").unwrap();
+    client.write_all(b"activ").unwrap();
     let (done, completed) = std::sync::mpsc::channel();
     let reader = std::thread::spawn(move || {
         let (mut stream, _) = listener.accept().unwrap();
-        done.send(read_request(&mut stream, "current")).unwrap();
+        done.send(is_activation(&mut stream)).unwrap();
     });
-    assert_eq!(completed.recv_timeout(Duration::from_secs(10)).unwrap(), Request::Unknown);
+    assert!(!completed.recv_timeout(Duration::from_secs(10)).unwrap());
     drop(client);
     reader.join().unwrap();
 }
@@ -151,11 +129,7 @@ fn each_claim_publishes_a_complete_endpoint_without_a_staging_file() {
     for _ in 0..3 {
         let Claim::Primary { lock: _lock, listener } = claim(dir.path()).unwrap() else { panic!() };
         let published = std::fs::read_to_string(dir.path().join(ENDPOINT_FILE_NAME)).unwrap();
-        let mut lines = published.lines();
-        assert_eq!(lines.next().unwrap().parse::<u16>().unwrap(), listener.local_addr().unwrap().port());
-        let metadata: serde_json::Value = serde_json::from_str(lines.next().unwrap()).unwrap();
-        assert!(metadata["token"].is_string());
-        assert!(metadata["launcherRoot"].is_string());
+        assert_eq!(published.trim().parse::<u16>().unwrap(), listener.local_addr().unwrap().port());
         assert!(!dir.path().join("instance.endpoint.tmp").exists());
     }
 }

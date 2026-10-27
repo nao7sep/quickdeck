@@ -3,7 +3,7 @@
 //! QuickDeck persists whole-file pane snapshots, including authored text, so
 //! two GUI processes must never open the same storage root concurrently. The
 //! OS file lock is authoritative; the loopback endpoint only asks the owner to
-//! activate it or request its ordinary quit with a matching launch token. Files live under `QUICKDECK_DATA_DIR`, which keeps
+//! show and focus its window. Files live under `QUICKDECK_DATA_DIR`, which keeps
 //! disposable test homes independent from the normal profile.
 
 use std::fs::{File, OpenOptions, TryLockError};
@@ -48,7 +48,7 @@ fn claim(root: &Path) -> Result<Claim, String> {
     match lock_file.try_lock() {
         Ok(()) => {
             // Only the OS-lock owner publishes. Readers see the old complete endpoint
-            // or the new one, never a partial port/identity pair.
+            // or the new one, never a partial port.
             let staged_endpoint = root.join("instance.endpoint.tmp");
             let mut endpoint_file = OpenOptions::new()
                 .create(true)
@@ -63,15 +63,6 @@ fn claim(root: &Path) -> Result<Claim, String> {
                 .map_err(|e| format!("could not inspect process activation endpoint: {e}"))?
                 .port();
             writeln!(endpoint_file, "{port}").map_err(|e| e.to_string())?;
-            writeln!(
-                endpoint_file,
-                "{}",
-                serde_json::json!({
-                    "launcherRoot": std::env::var("QUICKDECK_LAUNCHER_ROOT").unwrap_or_default(),
-                    "token": std::env::var("QUICKDECK_LAUNCHER_TOKEN").unwrap_or_default(),
-                })
-            )
-            .map_err(|e| e.to_string())?;
             endpoint_file.sync_all().map_err(|e| e.to_string())?;
             drop(endpoint_file);
             std::fs::rename(&staged_endpoint, &endpoint_path).map_err(|e| e.to_string())?;
@@ -92,7 +83,7 @@ fn notify_primary(endpoint_path: &Path) -> Result<(), String> {
     let started = Instant::now();
     loop {
         if let Ok(text) = std::fs::read_to_string(endpoint_path) {
-            if let Ok(port) = text.lines().next().unwrap_or_default().parse::<u16>() {
+            if let Ok(port) = text.trim().parse::<u16>() {
                 if let Ok(mut stream) = TcpStream::connect((std::net::Ipv4Addr::LOCALHOST, port)) {
                     stream.write_all(b"activate").map_err(|e| e.to_string())?;
                     return Ok(());
@@ -107,76 +98,28 @@ fn notify_primary(endpoint_path: &Path) -> Result<(), String> {
 }
 
 fn listen<R: Runtime>(listener: TcpListener, app: tauri::AppHandle<R>) {
-    let token = std::env::var("QUICKDECK_LAUNCHER_TOKEN").unwrap_or_default();
     std::thread::spawn(move || loop {
         match listener.accept() {
-            Ok((mut stream, _)) => match read_request(&mut stream, &token) {
-                Request::Activate => crate::bring_main_forward(&app),
-                Request::Quit => {
-                    crate::quit::request_quit(&app);
-                    let _ = stream.write_all(b"requested");
+            Ok((mut stream, _)) => {
+                if is_activation(&mut stream) {
+                    crate::bring_main_forward(&app);
                 }
-                Request::Status => {
-                    let _ = stream.write_all(token.as_bytes());
-                }
-                Request::Unknown => {}
-            },
+            }
             Err(_) => break,
         }
     });
 }
 
-// The dedicated listener sleeps in accept, and each client has a bounded read.
-// A launcher can quit only the instance carrying its exact launch token.
-#[derive(Debug, PartialEq)]
-enum Request {
-    Activate,
-    Quit,
-    Status,
-    Unknown,
-}
-
-fn read_request(stream: &mut TcpStream, token: &str) -> Request {
-    let started = Instant::now();
-    let mut command = [0u8; 8];
-    if stream
+// Whether an accepted connection asks for activation. The dedicated listener
+// sleeps in accept; each client's read is bounded, so an incomplete one cannot
+// hold the listener.
+fn is_activation(stream: &mut TcpStream) -> bool {
+    let mut request = [0u8; 8];
+    stream
         .set_nonblocking(false)
         .and_then(|()| stream.set_read_timeout(Some(ACTIVATION_READ_WAIT)))
-        .and_then(|()| stream.read_exact(&mut command))
-        .is_err()
-    {
-        return Request::Unknown;
-    }
-    match &command {
-        b"activate" => Request::Activate,
-        b"status__" => Request::Status,
-        b"quit____" if !token.is_empty() => {
-            let expected = format!("{token}\n");
-            let mut provided = Vec::new();
-            // Bound the whole request, including a client trickling bytes.
-            while provided.len() <= 256 {
-                let Some(remaining) = ACTIVATION_READ_WAIT.checked_sub(started.elapsed()) else {
-                    return Request::Unknown;
-                };
-                if remaining.is_zero() || stream.set_read_timeout(Some(remaining)).is_err() {
-                    return Request::Unknown;
-                }
-                let mut byte = [0];
-                match stream.read(&mut byte) {
-                    Ok(0) => return if provided == expected.as_bytes() { Request::Quit } else { Request::Unknown },
-                    Ok(_) => provided.push(byte[0]),
-                    Err(_) => return Request::Unknown,
-                }
-            }
-            Request::Unknown
-        }
-        _ => Request::Unknown,
-    }
-}
-
-#[cfg(test)]
-fn is_activation(stream: &mut TcpStream) -> bool {
-    read_request(stream, "") == Request::Activate
+        .and_then(|()| stream.read_exact(&mut request))
+        .is_ok_and(|()| &request == b"activate")
 }
 
 pub fn init() -> tauri::plugin::TauriPlugin<tauri::Wry> {

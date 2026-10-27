@@ -48,7 +48,7 @@ function Invoke-Native {
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repoDir = Split-Path -Parent $scriptDir
 $runtimeHelper = Join-Path $scriptDir "launcher-runtime.mjs"
-$runtimeToken = [guid]::NewGuid().ToString("N")
+$appPid = $null
 $devHost = if ($env:TAURI_DEV_HOST) { $env:TAURI_DEV_HOST } else { "127.0.0.1" }
 
 try {
@@ -68,10 +68,14 @@ try {
     Invoke-Native -FilePath "npm" -ArgumentList @("install", "--no-audit", "--no-fund")
 
     Write-Step "Starting QuickDeck in development mode"
-    $env:QUICKDECK_LAUNCHER_ROOT = $repoDir
-    $env:QUICKDECK_LAUNCHER_TOKEN = $runtimeToken
-    # The foreground CLI owns its build and dev server through settlement.
-    Invoke-Native -FilePath "npm" -ArgumentList @("run", "tauri", "dev") -AllowedExitCodes @(0, 130, -1073741510)
+    $devProcess = Start-Process -FilePath (Get-Command "npm.cmd").Source -ArgumentList @("run", "tauri", "dev") -NoNewWindow -PassThru
+    $appPid = & node $runtimeHelper record-wrapped $devProcess.Id (Join-Path $repoDir "src-tauri/target/debug/quickdeck.exe")
+    if ($LASTEXITCODE -ne 0) { throw "QuickDeck did not start." }
+    Write-Step "QuickDeck is running"
+    $devProcess.WaitForExit()
+    if ($devProcess.ExitCode -notin @(0, 130, -1073741510)) {
+        throw "The development runtime exited with code $($devProcess.ExitCode)."
+    }
 }
 catch {
     Write-Host ""
@@ -79,7 +83,8 @@ catch {
     $scriptExitCode = 1
 }
 finally {
-    & node $runtimeHelper stop $runtimeToken
+    # Closing this launcher closes the app it started, unless a later launcher has replaced it.
+    if ($appPid) { & node $runtimeHelper stop-if-recorded $appPid *> $null }
     Read-Host "Press Enter to close" | Out-Null
 }
 
