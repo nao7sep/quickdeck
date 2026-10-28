@@ -36,8 +36,6 @@
   "pane.region": "Riquadro: {title}",
   "pane.words": "Parole {count}",
   "pane.chars": "Caratteri {count}",
-  "pane.countsUnavailable": "Conteggi non disponibili",
-  "pane.retryCounts": "Riprova",
   "pane.switch": "Cambia riquadro",
 
   "settings.title": "Impostazioni",

@@ -2225,4 +2225,3 @@ kbd {
 @media (max-width: 720px) {
   .snapshotBrowser { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; }
 }
-.paneCountsFailure { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 4px 8px; }

@@ -36,8 +36,6 @@
   "pane.region": "패널: {title}",
   "pane.words": "단어 수 {count}",
   "pane.chars": "문자 수 {count}",
-  "pane.countsUnavailable": "개수를 집계할 수 없습니다",
-  "pane.retryCounts": "다시 시도",
   "pane.switch": "패널 전환",
 
   "settings.title": "설정",

@@ -36,8 +36,6 @@
   "pane.region": "Bereich: {title}",
   "pane.words": "Wörter {count}",
   "pane.chars": "Zeichen {count}",
-  "pane.countsUnavailable": "Zählwerte nicht verfügbar",
-  "pane.retryCounts": "Erneut versuchen",
   "pane.switch": "Bereich wechseln",
 
   "settings.title": "Einstellungen",

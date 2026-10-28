@@ -36,8 +36,6 @@
   "pane.region": "Pane: {title}",
   "pane.words": "Words {count}",
   "pane.chars": "Chars {count}",
-  "pane.countsUnavailable": "Counts unavailable",
-  "pane.retryCounts": "Retry",
   "pane.switch": "Switch pane",
 
   "settings.title": "Settings",

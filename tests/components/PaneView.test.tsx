@@ -5,17 +5,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Pane } from "../../src/types";
 
 const mocks = vi.hoisted(() => ({
-  countText: vi.fn((text: string) =>
-    Promise.resolve({ words: text.split(" ").length, chars: text.length, xWeightedChars: text.length, xLimit: 280, xValid: true })),
-  retryCountWorker: vi.fn(),
+  getTextCounts: vi.fn((text: string) =>
+    ({ words: text.split(" ").length, chars: text.length, xWeightedChars: text.length, xLimit: 280, xValid: true })),
   recordSnapshot: vi.fn(),
   logWarn: vi.fn(),
 }));
 
-vi.mock("../../src/services/textCounts", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../../src/services/textCounts")>()),
-  countText: mocks.countText,
-  retryCountWorker: mocks.retryCountWorker,
+vi.mock("../../src/utils/counts", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../src/utils/counts")>()),
+  getTextCounts: mocks.getTextCounts,
 }));
 vi.mock("../../src/services/logger", () => ({
   logWarn: mocks.logWarn,
@@ -59,9 +57,8 @@ afterEach(async () => {
   root = null;
   if (container) document.body.removeChild(container);
   container = null;
-  mocks.countText.mockClear();
+  mocks.getTextCounts.mockClear();
   mocks.logWarn.mockClear();
-  mocks.retryCountWorker.mockClear();
   mocks.recordSnapshot.mockClear();
 });
 
@@ -75,7 +72,7 @@ function pane(content: string): Pane {
   };
 }
 
-// Counts are made once typing in this pane pauses, off the UI thread, and not on
+// Counts are made once typing in this pane pauses, and not on
 // re-renders caused by unrelated state elsewhere in the app (the AppStateContext
 // value's identity changes on every keystroke in any pane).
 describe("PaneView counts", () => {
@@ -111,13 +108,13 @@ describe("PaneView counts", () => {
     const paneA = pane("hello world");
     await act(async () => root?.render(<PaneView pane={paneA} />));
     await pause();
-    expect(mocks.countText).toHaveBeenCalledTimes(1);
+    expect(mocks.getTextCounts).toHaveBeenCalledTimes(1);
 
     // Re-render with the SAME pane reference and content, as happens when a
     // sibling pane's edit changes context identity but not this pane's data.
     await act(async () => root?.render(<PaneView pane={paneA} />));
     await pause();
-    expect(mocks.countText).toHaveBeenCalledTimes(1);
+    expect(mocks.getTextCounts).toHaveBeenCalledTimes(1);
   });
 
   it("counts a burst of typing once, a short pause after the last input", async () => {
@@ -132,53 +129,12 @@ describe("PaneView counts", () => {
       await vi.advanceTimersByTimeAsync(COUNT_DELAY_MS - 1);
     });
     await show("hello there");
-    expect(mocks.countText).not.toHaveBeenCalled();
+    expect(mocks.getTextCounts).not.toHaveBeenCalled();
 
     await pause();
-    expect(mocks.countText).toHaveBeenCalledTimes(1);
-    expect(mocks.countText).toHaveBeenCalledWith("hello there");
+    expect(mocks.getTextCounts).toHaveBeenCalledTimes(1);
+    expect(mocks.getTextCounts).toHaveBeenCalledWith("hello there");
     expect(footer()).toContain("Words 2");
-  });
-
-  it("keeps the editor live while a count is still running, showing a dash", async () => {
-    mocks.countText.mockImplementationOnce(() => new Promise(() => undefined));
-    mount();
-    await show("hello");
-    await pause();
-    expect(footer()).toContain("Words –");
-    expect((container!.querySelector("textarea.paneEditor") as HTMLTextAreaElement).value).toBe("hello");
-  });
-
-  it("shows a dash and logs when a count fails, never throwing", async () => {
-    mocks.countText.mockImplementationOnce(() => Promise.reject(new Error("Error EACCES /internal/counts SECRET_SENTINEL")));
-    mount();
-    await show("hello");
-    await pause();
-    expect(footer()).toContain("Words –");
-    expect(footer()).toContain("Chars –");
-    expect(footer()).toContain("X –/280");
-    expect(container!.querySelector('[role="status"]')?.textContent).toBe("Counts unavailable");
-    expect(container!.textContent).not.toContain("SECRET_SENTINEL");
-    expect(container!.querySelector(".paneCountsRetry")?.textContent).toBe("Retry");
-    expect(mocks.logWarn).toHaveBeenCalledWith("pane count failed", expect.anything());
-  });
-
-  it("retries unchanged text and clears the failure only after counting succeeds", async () => {
-    mocks.countText.mockImplementationOnce(() => Promise.reject(new Error("worker unavailable")));
-    mount();
-    await show("hello world");
-    await pause();
-    const retry = container!.querySelector<HTMLButtonElement>(".paneCountsRetry")!;
-    await act(async () => retry.click());
-    expect(mocks.retryCountWorker).toHaveBeenCalledTimes(1);
-    expect(container!.textContent).toContain("Counts unavailable");
-    expect(footer()).toContain("Words –");
-    await pause();
-    expect(mocks.countText).toHaveBeenCalledTimes(2);
-    expect(mocks.countText).toHaveBeenLastCalledWith("hello world");
-    expect(footer()).toContain("Words 2");
-    expect(container!.textContent).not.toContain("Counts unavailable");
-    expect(container!.querySelector(".paneCountsRetry")).toBeNull();
   });
 });
 

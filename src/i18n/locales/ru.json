@@ -36,8 +36,6 @@
   "pane.region": "Панель: {title}",
   "pane.words": "Слов: {count}",
   "pane.chars": "Символов: {count}",
-  "pane.countsUnavailable": "Подсчёт недоступен",
-  "pane.retryCounts": "Повторить",
   "pane.switch": "Переключить панель",
 
   "settings.title": "Настройки",

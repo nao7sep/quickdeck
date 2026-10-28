@@ -1,9 +1,8 @@
-import { useEffect, useId, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useId, useRef, type CSSProperties } from "react";
 import { Trash2 } from "lucide-react";
 import type { Pane } from "../types";
 import { useAppState } from "../state/AppStateContext";
 import { X_LIMIT } from "../utils/counts";
-import { retryCountWorker } from "../services/textCounts";
 import { useTextCounts } from "../hooks/useTextCounts";
 import { darkPaneBackground, paneHeaderDeep } from "../utils/paneColors";
 import { shouldPullEditorFocus } from "../utils/paneFocus";
@@ -29,16 +28,12 @@ export function PaneView({ pane }: PaneViewProps) {
   const i18n = useI18n();
   const { t } = i18n;
   const titleId = useId();
-  const [countRetryRevision, setCountRetryRevision] = useState(0);
   const editorRef = useRef<HTMLTextAreaElement | null>(null);
   const titleRef = useRef<HTMLInputElement | null>(null);
   const pendingPasteSnapshotRef = useRef(false);
   const active = pane.id === activePaneId;
-  // Word, character and X counts are O(this pane's content length), so they are
-  // made off the UI thread once typing in this pane pauses; the footer shows the
-  // latest finished ones.
-  const counts = useTextCounts(pane.content, countRetryRevision);
-  const shown = counts === null || counts === "failed" ? null : counts;
+  // Word, character and X counts are made once typing in this pane pauses.
+  const shown = useTextCounts(pane.content);
 
   // When this pane becomes active, pull focus into the textarea so pane shortcuts
   // and click-to-edit land ready to type — but never steal focus from a control
@@ -149,23 +144,8 @@ export function PaneView({ pane }: PaneViewProps) {
           textDecoration: settings.editorUnderline ? "underline" : "none",
         }}
       />
-      {counts === "failed" && (
-        <div className="paneCountsFailure">
-          <span role="status">{t("pane.countsUnavailable")}</span>
-          <button
-            className="secondaryButton paneCountsRetry"
-            type="button"
-            onClick={() => {
-              retryCountWorker();
-              setCountRetryRevision((revision) => revision + 1);
-            }}
-          >
-            {t("pane.retryCounts")}
-          </button>
-        </div>
-      )}
       <footer className="paneFooter">
-        {/* A dash stands in until the first count arrives or when one fails. */}
+        {/* A dash stands in until the first count is made. */}
         <span>{t("pane.words", { count: shown === null ? "–" : shown.words })}</span>
         <span>{t("pane.chars", { count: shown === null ? "–" : shown.chars })}</span>
         {/* "X" is the service's name, so it stays as it is in every language. */}

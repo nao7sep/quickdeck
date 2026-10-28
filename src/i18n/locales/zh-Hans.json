@@ -36,8 +36,6 @@
   "pane.region": "窗格：{title}",
   "pane.words": "词数 {count}",
   "pane.chars": "字符数 {count}",
-  "pane.countsUnavailable": "无法统计字数",
-  "pane.retryCounts": "重试",
   "pane.switch": "切换窗格",
 
   "settings.title": "设置",

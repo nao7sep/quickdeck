@@ -36,8 +36,6 @@
   "pane.region": "Volet\u00a0: {title}",
   "pane.words": "Mots {count}",
   "pane.chars": "Caractères {count}",
-  "pane.countsUnavailable": "Comptages indisponibles",
-  "pane.retryCounts": "Réessayer",
   "pane.switch": "Changer de volet",
 
   "settings.title": "Réglages",

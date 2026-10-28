@@ -36,8 +36,6 @@
   "pane.region": "ペイン: {title}",
   "pane.words": "単語数 {count}",
   "pane.chars": "文字数 {count}",
-  "pane.countsUnavailable": "文字数などを集計できません",
-  "pane.retryCounts": "再試行",
   "pane.switch": "ペインを切り替え",
 
   "settings.title": "設定",
