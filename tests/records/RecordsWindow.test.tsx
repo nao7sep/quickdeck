@@ -14,7 +14,7 @@ const mocks = vi.hoisted(() => ({
   readRecordsPage: vi.fn<(query: RecordsQuery) => Promise<RecordsPage>>(),
   readRecordDetail: vi.fn<(id: number) => Promise<RecordDetail | null>>(),
   readRecordSources: vi.fn<() => Promise<RecordSources>>(),
-  saveRecordsListWidth: vi.fn<(width: number) => Promise<void>>(),
+  sendRecordsListWidth: vi.fn<(width: number) => Promise<void>>(),
   logWarn: vi.fn(),
   recordsChanged: null as (() => void) | null,
 }));
@@ -24,7 +24,7 @@ vi.mock("../../src/services/records", async (importOriginal) => ({
   readRecordsPage: mocks.readRecordsPage,
   readRecordDetail: mocks.readRecordDetail,
   readRecordSources: mocks.readRecordSources,
-  saveRecordsListWidth: mocks.saveRecordsListWidth,
+  sendRecordsListWidth: mocks.sendRecordsListWidth,
   onRecordsChanged: (listener: () => void) => {
     mocks.recordsChanged = listener;
     return () => {
@@ -90,8 +90,8 @@ beforeEach(() => {
   mocks.readRecordDetail.mockResolvedValue(failureDetail);
   mocks.readRecordSources.mockReset();
   mocks.readRecordSources.mockResolvedValue({ currentSession: SESSION, sessions: [SESSION, "2026-10-01T08:00:00.000Z"] });
-  mocks.saveRecordsListWidth.mockReset();
-  mocks.saveRecordsListWidth.mockResolvedValue();
+  mocks.sendRecordsListWidth.mockReset();
+  mocks.sendRecordsListWidth.mockResolvedValue();
   mocks.logWarn.mockReset();
   mocks.recordsChanged = null;
   Object.assign(box, { scrollTop: 0, scrollHeight: 1000, clientHeight: 200, shellWidth: 2000 });
@@ -657,12 +657,12 @@ describe("RecordsWindow", () => {
       window.dispatchEvent(new MouseEvent("pointermove", { clientX: 100 }));
       window.dispatchEvent(new MouseEvent("pointermove", { clientX: 2000 }));
     });
-    expect(mocks.saveRecordsListWidth).not.toHaveBeenCalled();
+    expect(mocks.sendRecordsListWidth).not.toHaveBeenCalled();
     await act(async () => {
       window.dispatchEvent(new MouseEvent("pointerup"));
     });
 
-    expect(mocks.saveRecordsListWidth).toHaveBeenCalledExactlyOnceWith(RECORDS_LIST_WIDTH.max);
+    expect(mocks.sendRecordsListWidth).toHaveBeenCalledExactlyOnceWith(RECORDS_LIST_WIDTH.max);
     const shell = document.querySelector<HTMLElement>(".recordsShell")!;
     expect(shell.style.getPropertyValue("--records-list-width")).toBe(`${RECORDS_LIST_WIDTH.max}px`);
   });
@@ -678,7 +678,7 @@ describe("RecordsWindow", () => {
     });
 
     expect(shell.style.getPropertyValue("--records-list-width")).toBe(`${RECORDS_LIST_WIDTH.min}px`);
-    expect(mocks.saveRecordsListWidth).not.toHaveBeenCalled();
+    expect(mocks.sendRecordsListWidth).not.toHaveBeenCalled();
   });
 
   it("says when the records cannot be read, without the raw error", async () => {

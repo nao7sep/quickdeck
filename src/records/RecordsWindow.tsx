@@ -19,7 +19,7 @@ import {
   readRecordSources,
   readRecordsPage,
   RECORD_LEVEL_FILTERS,
-  saveRecordsListWidth,
+  sendRecordsListWidth,
   type RecordDetail,
   type RecordLevelFilter,
   type RecordSources,
@@ -374,7 +374,7 @@ export function RecordsWindow({ initialListWidth }: { initialListWidth: number }
     widthTouched.current = true;
     setListWidth(width);
     setDragWidth(null);
-    void saveRecordsListWidth(width).catch((error: unknown) =>
+    void sendRecordsListWidth(width).catch((error: unknown) =>
       logWarn("records list width save failed", { width, error: serializeError(error) }),
     );
   };

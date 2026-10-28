@@ -37,6 +37,8 @@ import {
   saveFailureMessage,
   saveState as persistState,
 } from "../services/persistence";
+import { onRecordsListWidth } from "../services/records";
+import { isTauri } from "@tauri-apps/api/core";
 import { logError, logInfo, logWarn, serializeError } from "../services/logger";
 import { resolveTimeZone } from "../utils/timeZone";
 import { I18nProvider } from "../i18n/I18nContext";
@@ -118,6 +120,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const [activePaneId, setActivePaneId] = useState(firstPane.id);
   const [settings, setSettings] = useState(defaultSettings);
   const [zoomLevel, setZoomLevelState] = useState(ZOOM_DEFAULT);
+  // The Records window's list width, which this window's state save writes.
+  const [recordsListWidth, setRecordsListWidth] = useState<number | null>(null);
   const [saveState, setSaveState] = useState<SaveState>("saved");
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [blockingError, setBlockingError] = useState<BlockingError | null>(null);
@@ -326,6 +330,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
 
       if (!current()) return null;
       setZoomLevelState(normalizeZoomLevel(data.state?.zoomLevel));
+      setRecordsListWidth(typeof data.state?.recordsListWidth === "number" ? data.state.recordsListWidth : null);
 
       const defaultTitle = loadTranslator.t("pane.defaultTitle");
       const loadedPanes = data.panes?.panes ?? [];
@@ -616,6 +621,16 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     [markUnsaved],
   );
 
+  // A view adjustment like zoom: the width the Records window sends goes into
+  // the next state save.
+  useEffect(() => {
+    if (!isTauri()) return undefined;
+    return onRecordsListWidth((width) => {
+      setRecordsListWidth(width);
+      markUnsaved();
+    });
+  }, [markUnsaved]);
+
   const reportSetAside = useCallback((path: string | null) => {
     if (path === null || reportedSetAsideRef.current === path) return;
     reportedSetAsideRef.current = path;
@@ -658,7 +673,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       ]);
       // View state is optional: admit it after required writes, and retain its
       // per-file queue through settlement without making it a quit condition.
-      void persistState(buildStateFile(activePaneId, zoomLevel)).catch((error) => {
+      void persistState(buildStateFile(activePaneId, zoomLevel, recordsListWidth)).catch((error) => {
         logWarn("view state save failed", { error: serializeError(error) });
       });
       const result = resolveSaveState(dirtyAtStart, dirtyCounterRef.current);
@@ -668,7 +683,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       setSaveState("error");
       throw error;
     }
-  }, [activePaneId, configFailed, configSaved, loadStatus, panes, savedInputRevision, settings, zoomLevel]);
+  }, [activePaneId, configFailed, configSaved, loadStatus, panes, recordsListWidth, savedInputRevision, settings, zoomLevel]);
 
   useEffect(() => {
     if (loadStatus !== "ready" || saveState !== "unsaved") {

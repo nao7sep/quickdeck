@@ -463,21 +463,6 @@ async fn records_list_width(app: AppHandle) -> Result<Option<f64>, CommandFailur
     }).await
 }
 
-// Saved once when a splitter drag ends, not on every move of it, so a drag
-// writes state.json once and a half-finished drag is never kept.
-#[tauri::command]
-async fn save_records_list_width(app: AppHandle, width: u32) -> Result<(), CommandFailure> {
-    off_main_thread(move || {
-        logging::boundary(
-            "save_records_list_width",
-            json!({ "width": width }),
-            || storage::save_records_list_width(&app, width),
-            |_| json!({}),
-        ).map_err(CommandFailure::recorded)
-    })
-    .await
-}
-
 // The Records window's reads. Unlike every other command they log nothing when
 // they succeed (records.rs says why); a failure is logged once.
 async fn read_records<T: Send + 'static>(
@@ -635,7 +620,6 @@ pub fn run() {
             open_records_window,
             records_window_setup,
             records_list_width,
-            save_records_list_width,
             read_records_page,
             read_record_detail,
             read_record_sources,

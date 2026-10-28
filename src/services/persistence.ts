@@ -11,6 +11,9 @@ export type StateFile = {
   // The webview zoom — a view adjustment, so it is state, never config
   // (persisted-store-separation conventions).
   zoomLevel: number;
+  // The Records window's list width, which that window sends here when a drag
+  // ends; absent until one does.
+  recordsListWidth?: number;
 };
 
 // The panes' text and identity — the user's work product, its own store
@@ -80,10 +83,12 @@ export type SnapshotListResult = {
 export function buildStateFile(
   activePaneId: string,
   zoomLevel: number,
+  recordsListWidth: number | null = null,
 ): StateFile {
   return {
     activePaneId,
     zoomLevel,
+    ...(recordsListWidth === null ? {} : { recordsListWidth }),
   };
 }
 
@@ -277,9 +282,10 @@ export async function savePanes(panes: PanesFile): Promise<void> {
 }
 
 // The user-commanded reset behind the corrupt-panes halt: the Rust core sets
-// panes.json aside to its `.invalid` name and returns where it went.
+// panes.json aside to its `.invalid` name and returns where it went. It takes
+// its turn in the panes file's queue, so the file has one ordered writer.
 export async function quarantineCorruptPanes(): Promise<string | null> {
-  return invoke<string | null>("quarantine_corrupt_panes");
+  return enqueuePanesWrite<string | null>("quarantine_corrupt_panes");
 }
 
 export async function createSnapshot(input: SnapshotWriteInput): Promise<SnapshotWriteResult> {

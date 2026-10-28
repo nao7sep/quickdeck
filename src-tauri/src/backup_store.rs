@@ -7,8 +7,8 @@
 //! pass and no restore path.
 //!
 //! A save hands its exact bytes to `record` strictly after its atomic rename
-//! lands and while it still holds the managed-write lock (see
-//! `storage::write_json_atomically`), so history follows save order. `record`
+//! lands (see `storage::write_json_atomically`); each file's saves arrive one at
+//! a time from its one writer, so history follows save order. `record`
 //! only queues them; one writer thread applies them. A newer save of a path
 //! replaces that path's pending version, so pending work never holds more than
 //! one version per file. Ordinary quit drains the queue with what remains of

@@ -1,5 +1,5 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
+import { emitTo, listen } from "@tauri-apps/api/event";
 import { logWarn, serializeError } from "./logger";
 
 // What the Records window reads from records.sqlite3 through the Rust core
@@ -76,8 +76,18 @@ export function recordsListWidth(): Promise<number | null> {
   return invoke<number | null>("records_list_width");
 }
 
-export function saveRecordsListWidth(width: number): Promise<void> {
-  return invoke("save_records_list_width", { width });
+// The main window owns state.json, so the Records window sends it the width a
+// drag ended at, and the main window's next state save writes it. A message
+// between the two pages; the core neither sends nor hears it.
+const RECORDS_LIST_WIDTH_MESSAGE = "records-list-width";
+
+export function sendRecordsListWidth(width: number): Promise<void> {
+  return emitTo("main", RECORDS_LIST_WIDTH_MESSAGE, width);
+}
+
+// Calls `listener` with each width the Records window sends. Returns the unsubscribe.
+export function onRecordsListWidth(listener: (width: number) => void): () => void {
+  return subscribe(RECORDS_LIST_WIDTH_MESSAGE, listen<number>(RECORDS_LIST_WIDTH_MESSAGE, (event) => listener(event.payload)));
 }
 
 export function readRecordsPage(query: RecordsQuery): Promise<RecordsPage> {

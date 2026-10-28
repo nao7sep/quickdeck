@@ -32,7 +32,7 @@ vi.mock("../../src/services/records", async (importOriginal) => ({
     return mocks.registration();
   },
   recordsListWidth: mocks.width,
-  saveRecordsListWidth: mocks.saveWidth,
+  sendRecordsListWidth: mocks.saveWidth,
   onRecordsChanged: () => () => undefined,
   readRecordsPage: mocks.page,
   readRecordSources: () => Promise.resolve({ currentSession: "s", sessions: [] }),

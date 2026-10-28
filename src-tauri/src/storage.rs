@@ -48,13 +48,13 @@ pub const SNAPSHOTS_DB_FILE_NAME: &str = "snapshots.sqlite3";
 pub const RECORDS_DB_FILE_NAME: &str = "records.sqlite3";
 
 // The Records window's list width, which state.json holds beside the main
-// window's view state. The main window writes the file whole without knowing it,
-// so every state.json write is a read-modify-write under STATE_LOCK that carries
-// it over (window conventions: the width is saved only when a drag ends).
+// window's view state. The main window is the file's one writer: the Records
+// window sends it the width when a drag ends, and the next state save carries it
+// (window conventions); the Records window reads it back when it opens.
 pub const RECORDS_LIST_WIDTH_KEY: &str = "recordsListWidth";
-static STATE_LOCK: Mutex<()> = Mutex::new(());
-// Recovery and managed JSON writes share admission (store-recovery conventions).
-static JSON_STORE_LOCK: Mutex<()> = Mutex::new(());
+// Each JSON file has one writer that sends its commands one at a time: the
+// main window's per-file save queue, whose panes queue also carries the
+// corrupt-panes reset, and the launch load, which finishes before any save.
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -293,20 +293,11 @@ pub fn save_state(app: &AppHandle, state: JsonValue) -> Result<bool, String> {
     save_state_in(&app_data_dir(app)?, state)
 }
 
-fn save_state_in(data_dir: &Path, mut state: JsonValue) -> Result<bool, String> {
+fn save_state_in(data_dir: &Path, state: JsonValue) -> Result<bool, String> {
     // not recorded: state.json is pure view/session state (active pane, zoom, the
     // Records list width) — volatile state, kept out of the backup history
     // (data-backup conventions).
-    let path = data_dir.join(STATE_FILE_NAME);
-    let _guard = STATE_LOCK
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
-    let carried =
-        read_state_object(&path).and_then(|stored| stored.get(RECORDS_LIST_WIDTH_KEY).cloned());
-    if let (Some(width), Some(object)) = (carried, state.as_object_mut()) {
-        object.entry(RECORDS_LIST_WIDTH_KEY).or_insert(width);
-    }
-    atomic_write_json_unrecorded(&path, &state, format_version::STATE)
+    atomic_write_json_unrecorded(&data_dir.join(STATE_FILE_NAME), &state, format_version::STATE)
 }
 
 pub fn records_list_width(app: &AppHandle) -> Result<Option<f64>, String> {
@@ -314,9 +305,6 @@ pub fn records_list_width(app: &AppHandle) -> Result<Option<f64>, String> {
 }
 
 fn records_list_width_in(data_dir: &Path) -> Result<Option<f64>, String> {
-    let _guard = STATE_LOCK
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
     Ok(
         read_state_object(&data_dir.join(STATE_FILE_NAME)).and_then(|stored| {
             stored
@@ -324,27 +312,6 @@ fn records_list_width_in(data_dir: &Path) -> Result<Option<f64>, String> {
                 .and_then(JsonValue::as_f64)
         }),
     )
-}
-
-pub fn save_records_list_width(app: &AppHandle, width: u32) -> Result<(), String> {
-    save_records_list_width_in(&app_data_dir(app)?, width)
-}
-
-fn save_records_list_width_in(data_dir: &Path, width: u32) -> Result<(), String> {
-    let path = data_dir.join(STATE_FILE_NAME);
-    let _guard = STATE_LOCK
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
-    // An unreadable file is left for the launch's recovery to set aside rather
-    // than overwritten here; a newer one is never overwritten by the write below.
-    let mut state = match read_json_store(&path, format_version::STATE)? {
-        JsonRead::Absent | JsonRead::Newer(_) => serde_json::Map::new(),
-        JsonRead::Readable(fields) => fields,
-        JsonRead::Corrupt(reason) => return Err(reason),
-    };
-    state.insert(RECORDS_LIST_WIDTH_KEY.to_string(), JsonValue::from(width));
-    atomic_write_json_unrecorded(&path, &JsonValue::Object(state), format_version::STATE)
-        .map(|_| ())
 }
 
 // state.json as an object, or None when it is missing, unreadable or newer; its
@@ -436,9 +403,6 @@ pub fn quarantine_corrupt_panes(app: &AppHandle) -> Result<Option<String>, Strin
 }
 
 fn quarantine_corrupt_panes_in(data_dir: &Path) -> Result<Option<String>, String> {
-    let _guard = JSON_STORE_LOCK
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let path = data_dir.join(PANES_FILE_NAME);
     match read_json_store(&path, format_version::PANES)? {
         JsonRead::Absent | JsonRead::Newer(_) => return Ok(None),
@@ -781,9 +745,9 @@ fn quarantine_name(path: &Path) -> PathBuf {
 
 // Moves `path` to its `.invalid` name and returns where it went. A copy set aside
 // earlier in the same second is never replaced (on Unix a rename would replace it
-// silently): the set-aside fails instead and takes its caller's error path. Runs
-// under JSON_STORE_LOCK in the root's one process, so nothing appears between the
-// check and the rename.
+// silently): the set-aside fails instead and takes its caller's error path. The
+// file's one writer runs it, so nothing of the app's appears between the check
+// and the rename.
 fn set_aside(path: &Path) -> Result<PathBuf, String> {
     let quarantined = quarantine_name(path);
     if quarantined.try_exists().map_err(to_string_error)? {
@@ -814,9 +778,6 @@ struct Rebuildable {
 // conventions). panes.json never takes this path — it holds the user's text
 // and halts instead.
 fn read_rebuildable_store(path: &Path, version: u32) -> Result<Rebuildable, String> {
-    let _guard = JSON_STORE_LOCK
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
     Ok(match read_json_store(path, version)? {
         JsonRead::Absent => Rebuildable::default(),
         JsonRead::Readable(fields) => Rebuildable {
@@ -843,8 +804,8 @@ pub fn launch_config(text: &str) -> Option<JsonValue> {
 }
 
 fn quarantine_rebuildable_store(path: &Path, version: u32) -> Result<Rebuildable, String> {
-    // Classification is fresh at the destructive boundary, under the caller's
-    // write/recovery admission. Repaired and newer targets are never set aside.
+    // Classification is fresh at the destructive boundary. Repaired and newer
+    // targets are never set aside.
     let reason = match read_json_store(path, version)? {
         JsonRead::Absent => return Ok(Rebuildable::default()),
         JsonRead::Readable(fields) => {
@@ -905,8 +866,7 @@ fn temp_path_for(path: &Path) -> Result<PathBuf, String> {
 // grammar), then atomically renames it over `path`, so a crash mid-write cannot
 // corrupt the target; bytes equal to the file's are not written at all, so neither
 // the file nor the backup history sees a save that changed nothing. STRICTLY AFTER
-// the rename lands, and still under the lock so history follows save order, a
-// protected write hands the exact bytes it wrote — never a re-read of the file —
+// the rename lands, a protected write hands the exact bytes it wrote — never a re-read of the file —
 // to `backup_store::record`, which only queues them. Recording before the rename
 // would risk a backup of a save that never reached disk. The history never throws
 // back into this write, never delays it and never affects its success.
@@ -946,15 +906,12 @@ fn write_json_atomically(
     version: u32,
     backups_in: Option<&Path>,
 ) -> Result<JsonWrite, String> {
-    let _guard = JSON_STORE_LOCK
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let parent = path
         .parent()
         .ok_or_else(|| format!("missing parent directory for {}", path.display()))?;
 
     // Pane content may have changed on disk since loading. Check it again at
-    // publication, under the save/reset lock, before replacing authored text.
+    // publication before replacing authored text.
     // The filename identifies the store; JSON stores share version numbers.
     let is_panes = path.file_name().is_some_and(|name| name == PANES_FILE_NAME);
     if is_panes && !value.as_object().is_some_and(valid_panes_shape) {

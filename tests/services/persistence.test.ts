@@ -126,5 +126,6 @@ describe("persisted file shapes", () => {
 
     expect(buildPanesFile(panes)).toEqual({ panes });
     expect(buildStateFile("p1", 110)).toEqual({ activePaneId: "p1", zoomLevel: 110 });
+    expect(buildStateFile("p1", 110, 420)).toEqual({ activePaneId: "p1", zoomLevel: 110, recordsListWidth: 420 });
   });
 });

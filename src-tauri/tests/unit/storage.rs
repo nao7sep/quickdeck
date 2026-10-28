@@ -810,12 +810,10 @@ fn a_state_save_that_changes_nothing_leaves_the_file_alone() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join(STATE_FILE_NAME);
     let state = serde_json::json!({ "activePaneId": "p1", "zoomLevel": 1.1 });
-    save_records_list_width_in(dir.path(), 420).unwrap();
     save_state_in(dir.path(), state.clone()).unwrap();
     let old = backdate(&path);
 
     save_state_in(dir.path(), state).unwrap();
-    save_records_list_width_in(dir.path(), 420).unwrap();
     assert_eq!(fs::metadata(&path).unwrap().modified().unwrap(), old);
 }
 
@@ -1045,9 +1043,6 @@ fn recovery_boundary_reevaluates_repaired_and_newer_targets() {
             JsonRead::Corrupt(_)
         ));
         fs::write(&path, replacement).unwrap();
-        let _guard = JSON_STORE_LOCK
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let recovered = quarantine_rebuildable_store(&path, format_version::CONFIG).unwrap();
         assert!(recovered.quarantined_to.is_none());
         assert_eq!(fs::read_to_string(&path).unwrap(), replacement);
@@ -1504,7 +1499,6 @@ fn no_write_replaces_a_json_store_in_a_newer_format() {
 
     save_config(dir.path(), serde_json::json!({ "zen": true })).unwrap();
     save_state_in(dir.path(), serde_json::json!({ "activePaneId": "p1" })).unwrap();
-    save_records_list_width_in(dir.path(), 400).unwrap();
     save_window_state(dir.path(), serde_json::json!({ "main": {} })).unwrap();
     atomic_write_json(
         dir.path(),
@@ -1753,27 +1747,14 @@ fn a_config_whose_sets_are_all_back_at_their_built_ins_keeps_only_its_format_mar
 }
 
 #[test]
-fn a_state_write_carries_the_records_list_width_the_main_window_does_not_know() {
+fn the_records_list_width_reads_what_the_main_windows_state_save_wrote() {
     let dir = tempfile::tempdir().unwrap();
-    save_records_list_width_in(dir.path(), 420).unwrap();
-    assert_eq!(records_list_width_in(dir.path()).unwrap(), Some(420.0));
-
     save_state_in(
         dir.path(),
-        serde_json::json!({ "activePaneId": "p1", "zoomLevel": 1.1 }),
+        serde_json::json!({ "activePaneId": "p1", "zoomLevel": 1.1, "recordsListWidth": 420 }),
     )
     .unwrap();
-    assert_eq!(
-        on_disk(&dir.path().join(STATE_FILE_NAME)),
-        serde_json::json!({ "formatVersion": 1, "activePaneId": "p1", "zoomLevel": 1.1, "recordsListWidth": 420 })
-    );
-
-    save_records_list_width_in(dir.path(), 380).unwrap();
-    let stored: JsonValue =
-        serde_json::from_str(&fs::read_to_string(dir.path().join(STATE_FILE_NAME)).unwrap())
-            .unwrap();
-    assert_eq!(stored["activePaneId"], serde_json::json!("p1"));
-    assert_eq!(records_list_width_in(dir.path()).unwrap(), Some(380.0));
+    assert_eq!(records_list_width_in(dir.path()).unwrap(), Some(420.0));
 }
 
 #[test]
@@ -1783,17 +1764,6 @@ fn the_records_list_width_is_absent_until_a_drag_saves_one() {
     save_state_in(dir.path(), serde_json::json!({ "activePaneId": "p1" })).unwrap();
     assert_eq!(records_list_width_in(dir.path()).unwrap(), None);
 }
-
-#[test]
-fn a_width_save_leaves_an_unreadable_state_file_for_the_launch_to_recover() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join(STATE_FILE_NAME);
-    fs::write(&path, "{ not json").unwrap();
-    assert!(save_records_list_width_in(dir.path(), 400).is_err());
-    assert_eq!(fs::read_to_string(&path).unwrap(), "{ not json");
-    assert_eq!(records_list_width_in(dir.path()).unwrap(), None);
-}
-
 
 #[test]
 fn snapshot_search_uses_the_same_unicode_lowercase_on_both_sides() {
