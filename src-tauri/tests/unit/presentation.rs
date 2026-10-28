@@ -1,19 +1,14 @@
 use super::*;
 
 #[test]
-fn revisions_preserve_sibling_fields_and_do_not_advance_on_noop() {
+fn each_change_keeps_its_sibling_fields() {
     let state = PresentationState::from_locales(None, &["ja-JP".into()]);
-    assert_eq!(state.snapshot().revision, 0);
     let display = state.set_display_preferences("Europe/Berlin".into(), "Example Font".into());
-    assert_eq!(display.revision, 1);
     assert_eq!(display.language, "ja");
     let language = state.set_language("de");
-    assert_eq!(language.revision, 2);
     assert_eq!(language.display_zone, "Europe/Berlin");
     assert_eq!(language.ui_font_family, "Example Font");
     assert_eq!(language.system_locale.as_deref(), Some("ja-JP"));
-    assert_eq!(state.set_language("de").revision, 2);
-    assert_eq!(state.set_display_preferences("Europe/Berlin".into(), "Example Font".into()).revision, 2);
 }
 
 #[test]

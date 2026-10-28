@@ -5,14 +5,19 @@ import { loadCatalogue } from "../i18n/catalogues";
 import { I18nProvider } from "../i18n/I18nContext";
 import { formattingLocale, isLanguage, type Language } from "../i18n/languages";
 import { logWarn, serializeError } from "../services/logger";
-import { onPresentationChanged, recordsListWidth, recordsWindowSetup, type RecordsWindowSetup } from "../services/records";
+import { onPresentationChanged, recordsListWidth, requestPresentation, type RecordsWindowSetup } from "../services/records";
 import { isDisplayZone, resolveTimeZone, SYSTEM_ZONE } from "../utils/timeZone";
 import { RecordsWindow } from "./RecordsWindow";
 import { initialListWidth, RECORDS_LIST_WIDTH, RECORDS_WINDOW_MIN_HEIGHT, RECORDS_WINDOW_MIN_WIDTH } from "./recordsLayout";
 
 type Setup = Omit<RecordsWindowSetup, "language"> & { language: Language };
 
+const FALLBACK_SETUP: Setup = { language: "en", systemLocale: null, displayZone: SYSTEM_ZONE, uiFontFamily: "" };
+
 // Required presentation settles before text appears; optional layout can arrive later.
+// The presentation has one source, the core's events: once the listener is
+// registered the window asks for the current presentation, which arrives as
+// the first event, and every later change follows it in order.
 export function RecordsApp() {
   const [setup, setSetup] = useState<Setup | null>(null);
   const [listWidth, setListWidth] = useState<number>(RECORDS_LIST_WIDTH.default);
@@ -20,11 +25,10 @@ export function RecordsApp() {
   useEffect(() => {
     let cancelled = false;
     let stopListening: (() => void) | undefined;
-    let highestRevision = -1;
+    // The latest catalogue load; an older one finishing later applies nothing.
     let generation = 0;
     const accept = async (next: RecordsWindowSetup) => {
-      if (cancelled || next.revision <= highestRevision) return;
-      highestRevision = next.revision;
+      if (cancelled) return;
       const requested = ++generation;
       const language = isLanguage(next.language) ? next.language : "en";
       const displayZone = isDisplayZone(next.displayZone) ? next.displayZone : SYSTEM_ZONE;
@@ -45,18 +49,10 @@ export function RecordsApp() {
         const stop = await onPresentationChanged((next) => { void accept(next); });
         if (cancelled) { stop(); return; }
         stopListening = stop;
-      } catch (error: unknown) {
-        logWarn("records listener failed", { error: serializeError(error) });
-        if (cancelled) return;
-      }
-      try {
-        await accept(await recordsWindowSetup());
+        await requestPresentation();
       } catch (error: unknown) {
         logWarn("records window setup failed", { error: serializeError(error) });
-        // A newer event already owns presentation if the initial request fails.
-        if (!cancelled && highestRevision < 0) {
-          setSetup({ revision: -1, language: "en", systemLocale: null, displayZone: SYSTEM_ZONE, uiFontFamily: "" });
-        }
+        if (!cancelled) setSetup((current) => current ?? FALLBACK_SETUP);
       }
     })();
     void recordsListWidth().then(

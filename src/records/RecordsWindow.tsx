@@ -79,7 +79,14 @@ export function RecordsWindow({ initialListWidth }: { initialListWidth: number }
   const [filters, setFilters] = useState<Filters>(NO_FILTERS);
   const [searchText, setSearchText] = useState("");
   const [composingSearch, setComposingSearch] = useState(false);
-  const [list, setList] = useState<ListState>({ status: "loading" });
+  const [list, setListState] = useState<ListState>({ status: "loading" });
+  // What the list shows, for the reader below: a read that runs before the
+  // window renders the one before it still starts from that one's rows.
+  const shownList = useRef(list);
+  const setList = useCallback((next: ListState | ((current: ListState) => ListState)) => {
+    shownList.current = typeof next === "function" ? next(shownList.current) : next;
+    setListState(shownList.current);
+  }, []);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [detail, setDetail] = useState<DetailState>({ status: "none" });
   const [listWidth, setListWidth] = useState(initialListWidth);
@@ -88,23 +95,24 @@ export function RecordsWindow({ initialListWidth }: { initialListWidth: number }
     if (!widthTouched.current) setListWidth(initialListWidth);
   }, [initialListWidth]);
   const [dragWidth, setDragWidth] = useState<number | null>(null);
+  // The window's one list reader: the filtered list, the next page and the
+  // newest records are read one at a time, each after the one before settles.
+  const reader = useRef<Promise<void>>(Promise.resolve());
+  const read = useCallback((work: () => Promise<void>) => {
+    reader.current = reader.current.then(work).catch(() => {});
+  }, []);
+  // The latest filters asked for; a read for older ones applies nothing.
   const listGeneration = useRef(0);
-  // Set while the next page is being read, so reaching the end again cannot
-  // start a second read of the same page.
-  const fetchingMore = useRef(false);
   // The filters the current list was read for, for the live reads below.
   const filtersRef = useRef(filters);
-  // Anchor for the contiguous history already shown, read by the live callback.
-  const priorNewestRef = useRef<RecordSummary | null>(null);
-  // New records arrived while the list was scrolled away from the top.
+  // The newest records are wanted: they arrived while the list was scrolled
+  // away from the top, or since the newest read now queued started.
   const newestPending = useRef(false);
   // A failed read is itself logged as a record, whose signal would start the
   // next read; live reads stop after a failure and resume after its owner retries.
   const liveSuspended = useRef(false);
   const sourceFailed = useRef(false);
   const pagePaused = useRef(false);
-  const newestReadActive = useRef(false);
-  const newestReadPending = useRef<number | null>(null);
   const syncLiveSuspension = useCallback(() => {
     liveSuspended.current = sourceFailed.current || pagePaused.current;
     setLivePaused(liveSuspended.current);
@@ -122,10 +130,6 @@ export function RecordsWindow({ initialListWidth }: { initialListWidth: number }
     () => new Intl.DateTimeFormat(locale, { dateStyle: "short", timeStyle: "medium", timeZone }),
     [locale, timeZone],
   );
-
-  useEffect(() => {
-    priorNewestRef.current = list.status === "ready" ? list.records[0] ?? null : null;
-  }, [list]);
 
   // The search applies once typing pauses, and never on an unfinished IME
   // composition.
@@ -163,77 +167,68 @@ export function RecordsWindow({ initialListWidth }: { initialListWidth: number }
   useEffect(() => {
     filtersRef.current = filters;
     const generation = ++listGeneration.current;
-    fetchingMore.current = false;
-    newestPending.current = false;
     setList({ status: "loading" });
-    void readRecordsPage({ ...filters, after: null }).then(
-      (page) => {
+    read(async () => {
+      if (generation !== listGeneration.current) return;
+      try {
+        const page = await readRecordsPage({ ...filters, after: null });
         if (generation !== listGeneration.current) return;
         pagePaused.current = false;
         syncLiveSuspension();
         setList({ status: "ready", records: page.records, more: page.more, loadingMore: false, moreFailed: false });
-      },
-      (error: unknown) => {
+      } catch (error: unknown) {
         if (generation !== listGeneration.current) return;
         pagePaused.current = true;
         syncLiveSuspension();
         logWarn("records read failed", { error: serializeError(error) });
         setList({ status: "failed" });
-      },
-    );
-    return () => {
-      if (generation === listGeneration.current) {
-        listGeneration.current += 1;
-        newestReadPending.current = null;
       }
+    });
+    // Newer filters, or the window closing, retire this list's reads still
+    // waiting their turn: none applies, and no newest read is wanted any more.
+    return () => {
+      if (generation === listGeneration.current) listGeneration.current += 1;
+      newestPending.current = false;
     };
-  }, [filters, syncLiveSuspension]);
+  }, [filters, read, setList, syncLiveSuspension]);
 
   // The newest page read again for new records. It joins the rows already shown
   // rather than replacing them, so the list never falls back to the loading note
   // and the pages already read stay. A burst can exceed one page: bridge back
   // to the prior newest row before joining, so ordinary paging skips no interval.
-  const readNewest = useCallback(function readLatest() {
-    const generation = listGeneration.current;
-    if (newestReadActive.current) {
-      newestReadPending.current = generation;
-      return;
-    }
-    newestReadActive.current = true;
-    const query = filtersRef.current;
-    const priorNewest = priorNewestRef.current;
-    void (async () => {
-      let page = await readRecordsPage({ ...query, after: null });
-      const records = [...page.records];
-      while (generation === listGeneration.current && !pageReachesRecord(page, priorNewest)) {
-        page = await readRecordsPage({ ...query, after: cursorAfter(page.records) });
-        records.push(...page.records);
-      }
-      return { records, more: page.more };
-    })().then(
-      (page) => {
+  // Wanting it again while it waits its turn asks for nothing more.
+  const readNewest = useCallback(() => {
+    newestPending.current = true;
+    read(async () => {
+      if (!newestPending.current) return;
+      newestPending.current = false;
+      const generation = listGeneration.current;
+      const query = filtersRef.current;
+      const shown = shownList.current;
+      const priorNewest = shown.status === "ready" ? shown.records[0] ?? null : null;
+      try {
+        let page = await readRecordsPage({ ...query, after: null });
+        const records = [...page.records];
+        while (generation === listGeneration.current && !pageReachesRecord(page, priorNewest)) {
+          page = await readRecordsPage({ ...query, after: cursorAfter(page.records) });
+          records.push(...page.records);
+        }
         if (generation !== listGeneration.current) return;
         pagePaused.current = false;
         syncLiveSuspension();
         setList((current) =>
           current.status === "ready"
-            ? { ...current, ...mergeNewestPage(current.records, current.more, page) }
-            : { status: "ready", records: page.records, more: page.more, loadingMore: false, moreFailed: false },
+            ? { ...current, ...mergeNewestPage(current.records, current.more, { records, more: page.more }) }
+            : { status: "ready", records, more: page.more, loadingMore: false, moreFailed: false },
         );
-      },
-      (error: unknown) => {
+      } catch (error: unknown) {
         if (generation !== listGeneration.current) return;
         pagePaused.current = true;
         syncLiveSuspension();
         logWarn("records read failed", { error: serializeError(error) });
-      },
-    ).finally(() => {
-      newestReadActive.current = false;
-      const pendingGeneration = newestReadPending.current;
-      newestReadPending.current = null;
-      if (pendingGeneration === listGeneration.current && !liveSuspended.current) readLatest();
+      }
     });
-  }, [syncLiveSuspension]);
+  }, [read, setList, syncLiveSuspension]);
 
   const retryLive = () => {
     sourceFailed.current = false;
@@ -288,33 +283,35 @@ export function RecordsWindow({ initialListWidth }: { initialListWidth: number }
   }, [selectedId]);
 
   // The next page loads when the list reaches its end; a page that failed is
-  // read again when the end is reached again.
+  // read again when the end is reached again. One page is asked for at a time:
+  // the list says so while it is read.
   const loadMore = () => {
-    if (list.status !== "ready" || !list.more || fetchingMore.current) return;
-    fetchingMore.current = true;
+    const shown = shownList.current;
+    if (shown.status !== "ready" || !shown.more || shown.loadingMore) return;
     const generation = listGeneration.current;
-    setList((current) => (current.status === "ready" ? { ...current, loadingMore: true, moreFailed: false } : current));
-    void readRecordsPage({ ...filters, after: cursorAfter(list.records) }).then(
-      (page) => {
+    setList({ ...shown, loadingMore: true, moreFailed: false });
+    read(async () => {
+      if (generation !== listGeneration.current) return;
+      const current = shownList.current;
+      if (current.status !== "ready") return;
+      try {
+        const page = await readRecordsPage({ ...filtersRef.current, after: cursorAfter(current.records) });
         if (generation !== listGeneration.current) return;
-        fetchingMore.current = false;
         pagePaused.current = false;
         syncLiveSuspension();
-        setList((current) =>
-          current.status === "ready"
-            ? { ...current, records: [...current.records, ...page.records], more: page.more, loadingMore: false }
-            : current,
+        setList((latest) =>
+          latest.status === "ready"
+            ? { ...latest, records: [...latest.records, ...page.records], more: page.more, loadingMore: false }
+            : latest,
         );
-      },
-      (error: unknown) => {
+      } catch (error: unknown) {
         if (generation !== listGeneration.current) return;
-        fetchingMore.current = false;
         pagePaused.current = true;
         syncLiveSuspension();
         logWarn("records read failed", { error: serializeError(error) });
-        setList((current) => (current.status === "ready" ? { ...current, loadingMore: false, moreFailed: true } : current));
-      },
-    );
+        setList((latest) => (latest.status === "ready" ? { ...latest, loadingMore: false, moreFailed: true } : latest));
+      }
+    });
   };
 
   // A page that leaves the list short of the end reads the next one; a failed

@@ -12,7 +12,6 @@ pub const PRESENTATION_EVENT: &str = "records-presentation";
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PresentationSnapshot {
-    pub revision: u64,
     pub language: &'static str,
     pub system_locale: Option<String>,
     pub display_zone: String,
@@ -40,7 +39,6 @@ impl PresentationState {
             system_language,
             system_locale: system_locale.clone(),
             current: Mutex::new(PresentationSnapshot {
-                revision: 0,
                 language: i18n::normalize_preference(field("language")).unwrap_or(system_language),
                 system_locale,
                 display_zone: field("displayZone").unwrap_or("system").to_owned(),
@@ -59,24 +57,20 @@ impl PresentationState {
 
     pub fn set_language(&self, language: &'static str) -> PresentationSnapshot {
         let mut current = self.current.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-        if current.language != language {
-            current.language = language;
-            current.revision += 1;
-        }
+        current.language = language;
         current.clone()
     }
 
     pub fn set_display_preferences(&self, zone: String, font: String) -> PresentationSnapshot {
         let mut current = self.current.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-        if current.display_zone != zone || current.ui_font_family != font {
-            current.display_zone = zone;
-            current.ui_font_family = font;
-            current.revision += 1;
-        }
+        current.display_zone = zone;
+        current.ui_font_family = font;
         current.clone()
     }
 }
 
+/// Sends the Records window the presentation. Every send runs on the main
+/// thread (sync commands), so the window hears them in the order they were set.
 pub fn notify(app: &AppHandle, snapshot: &PresentationSnapshot) -> Result<(), String> {
     if app.get_webview_window(records_window::LABEL).is_none() {
         return Ok(());

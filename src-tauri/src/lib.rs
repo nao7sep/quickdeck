@@ -18,7 +18,7 @@ pub mod window_placement;
 
 use std::sync::Mutex;
 
-use presentation::{PresentationSnapshot, PresentationState};
+use presentation::PresentationState;
 use menu::{ABOUT_MENU_ID, CLOSE_WINDOW_MENU_ID, SAFE_QUIT_MENU_ID};
 use records::{RecordDetail, RecordSources, RecordsPage, RecordsQuery};
 use serde::Serialize;
@@ -445,10 +445,12 @@ async fn open_records_window(
     .await
 }
 
-// No filesystem work is required for the first correctly localized frame.
+// The Records window asks once its listener is registered: the current
+// presentation becomes its first event, ahead of every later change. No
+// filesystem work is required for the first correctly localized frame.
 #[tauri::command]
-fn records_window_setup(state: State<PresentationState>) -> PresentationSnapshot {
-    state.snapshot()
+fn records_window_setup(app: AppHandle, state: State<PresentationState>) -> Result<(), String> {
+    presentation::notify(&app, &state.snapshot())
 }
 
 #[tauri::command]

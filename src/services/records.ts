@@ -60,7 +60,6 @@ export type RecordsWindowSetup = {
   systemLocale: string | null;
   displayZone: string;
   uiFontFamily: string;
-  revision: number;
 };
 
 export async function openRecordsWindow(): Promise<void> {
@@ -68,8 +67,9 @@ export async function openRecordsWindow(): Promise<void> {
   await invoke("open_records_window");
 }
 
-export function recordsWindowSetup(): Promise<RecordsWindowSetup> {
-  return invoke<RecordsWindowSetup>("records_window_setup");
+// Asks the core for the current presentation, which it sends as an event.
+export function requestPresentation(): Promise<void> {
+  return invoke("records_window_setup");
 }
 
 export function recordsListWidth(): Promise<number | null> {
@@ -111,7 +111,7 @@ export function onRecordsChanged(listener: () => void): () => void {
   return subscribe(RECORDS_CHANGED_EVENT, listen(RECORDS_CHANGED_EVENT, () => listener()));
 }
 
-// Resolves only once registration is active, so the snapshot read can follow it.
+// Resolves only once registration is active, so the presentation request can follow it.
 export function onPresentationChanged(listener: (presentation: RecordsWindowSetup) => void): Promise<() => void> {
   return listen<RecordsWindowSetup>(PRESENTATION_EVENT, (event) => listener(event.payload));
 }
