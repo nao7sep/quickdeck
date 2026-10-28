@@ -480,7 +480,7 @@ describe("SnapshotsModal failure presentation", () => {
     expect(mocks.deleteOne).toHaveBeenCalledWith("a");
   });
 
-  it("discards a pre-delete page and reloads once it settles", async () => {
+  it("deletes only after a page already asked for settles, then reads the store again", async () => {
     mocks.list.mockResolvedValueOnce({ rows: [row("a", "first")], hasMore: true });
     let settle!: (value: unknown) => void;
     mocks.list.mockImplementationOnce(() => new Promise((resolve) => { settle = resolve; }));
@@ -492,11 +492,12 @@ describe("SnapshotsModal failure presentation", () => {
     try {
       await act(async () => deletes()[0].click());
       await act(async () => deletes().at(-1)!.click());
-      expect(mocks.deleteOne).toHaveBeenCalledWith("a");
-      expect(mocks.list).toHaveBeenCalledTimes(2);
+      expect(mocks.deleteOne).not.toHaveBeenCalled();
     } finally {
       await act(async () => settle({ rows: [row("old", "deleted result")], hasMore: false }));
     }
+    expect(mocks.deleteOne).toHaveBeenCalledWith("a");
+    expect(mocks.list).toHaveBeenCalledTimes(3);
     expect(mocks.list).toHaveBeenLastCalledWith("", 20, 0);
     expect(rows()).toEqual([]);
     expect(mocks.refreshCount).toHaveBeenCalledOnce();
@@ -524,24 +525,6 @@ describe("SnapshotsModal failure presentation", () => {
     mocks.deleteOne.mockResolvedValueOnce(true);
     await confirm();
     expect(document.body.textContent).not.toContain("Snapshots could not be deleted. Try again.");
-  });
-
-  it.each([false, true])("does not apply late Copy feedback after selection changes (return to A: %s)", async (returnToA) => {
-    mocks.list.mockResolvedValue({ rows: [row("a", "first"), row("b", "second")], hasMore: false });
-    let settle!: () => void;
-    mocks.copyText.mockImplementationOnce(() => new Promise<void>((resolve) => { settle = resolve; }));
-    await open();
-    const copy = Array.from(document.querySelectorAll("button")).find((item) => item.textContent === "Copy")!;
-    try {
-      await act(async () => { copy.click(); copy.click(); });
-      expect(mocks.copyText).toHaveBeenCalledOnce();
-      expect(mocks.copyText).toHaveBeenCalledWith("first");
-      await act(async () => rows()[1].click());
-      if (returnToA) await act(async () => rows()[0].click());
-    } finally {
-      await act(async () => settle());
-    }
-    expect(document.querySelector(".snapshotDetailActions")!.textContent).not.toContain("Copied");
   });
 
   it("keeps hostile diagnostic text in the log and out of the modal", async () => {

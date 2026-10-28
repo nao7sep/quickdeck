@@ -61,39 +61,31 @@ export function SnapshotsModal({ onClose }: SnapshotsModalProps) {
   const [deleteFailed, setDeleteFailed] = useState(false);
   const [copied, setCopied] = useState(false);
   const composing = useComposing();
-  const listInFlightRef = useRef(false);
-  const listSettledRef = useRef<Promise<void>>(Promise.resolve());
-  const listVersionRef = useRef(0);
-  const copyInFlightRef = useRef(false);
-  const deleteInFlightRef = useRef(false);
-  const selectionVersionRef = useRef(0);
-  const selectedIdRef = useRef(selectedId);
-  if (selectedIdRef.current !== selectedId) {
-    selectedIdRef.current = selectedId;
-    selectionVersionRef.current += 1;
+  // The modal's commands (list pages, copy and delete) run one at a time, each
+  // after the one before it settles, so a list read before a delete can never
+  // repopulate what the delete removed.
+  const commandsRef = useRef<Promise<void>>(Promise.resolve());
+  function run(command: () => Promise<void>): Promise<void> {
+    const next = commandsRef.current.then(command);
+    commandsRef.current = next.catch(() => {});
+    return next;
   }
+  // The latest search: a newer one supersedes a list still waiting its turn.
+  const listVersionRef = useRef(0);
   const listRef = useRef<HTMLDivElement | null>(null);
   const detailRef = useRef<HTMLPreElement | null>(null);
-  // `load` is memoized on the page size, so it cannot read `rows` from the
-  // render closure. A ref carries what a later page appends to; state updaters
-  // stay pure, since StrictMode double-invokes them.
+  // A page appends to the rows the list holds when it runs, which a page before
+  // it in the queue may have changed since the request; state updaters stay
+  // pure, since StrictMode double-invokes them.
   const rowsRef = useRef<SnapshotRow[]>([]);
   rowsRef.current = rows;
 
-  const load = useCallback(
-    async (nextOffset: number, searchQuery: string, afterMutation = false) => {
-      // The Search button is disabled while loading, but Enter can arrive before
-      // React commits that state. Claim the request synchronously so two loads
-      // cannot race and let an older response replace newer rows.
-      if (listInFlightRef.current || (deleteInFlightRef.current && !afterMutation)) {
-        return;
-      }
-
-      listInFlightRef.current = true;
-      const version = listVersionRef.current;
-      let settle!: () => void;
-      listSettledRef.current = new Promise<void>((resolve) => { settle = resolve; });
-      setLoading(true);
+  // One list read: a fresh list (`fresh`) or the page after the rows shown.
+  // Its caller shows the list as loading when it asks.
+  const listPage = useCallback(
+    async (fresh: boolean, searchQuery: string, version: number) => {
+      if (version !== listVersionRef.current) return;
+      const nextOffset = fresh ? 0 : rowsRef.current.length;
       try {
         const result = await listSnapshots(
           searchQuery.trim(),
@@ -102,15 +94,15 @@ export function SnapshotsModal({ onClose }: SnapshotsModalProps) {
         );
         if (version !== listVersionRef.current) return;
         setListFailed(false);
-        if (nextOffset === 0) appliedQueryRef.current = searchQuery.trim();
-        const next =
-          nextOffset === 0 ? result.rows : [...rowsRef.current, ...result.rows];
+        if (fresh) appliedQueryRef.current = searchQuery.trim();
+        const next = fresh ? result.rows : [...rowsRef.current, ...result.rows];
+        rowsRef.current = next;
         const nextIds = next.map((row) => row.id);
         setRows(next);
         // A fresh list starts at the top; a further page leaves the snapshot the
         // user is reading exactly where it is.
         setSelectedId((previous) =>
-          selectionAfterRowsChange(nextIds, nextOffset === 0 ? null : previous),
+          selectionAfterRowsChange(nextIds, fresh ? null : previous),
         );
         setHasMore(result.hasMore);
       } catch (err) {
@@ -120,19 +112,30 @@ export function SnapshotsModal({ onClose }: SnapshotsModalProps) {
         if (version !== listVersionRef.current) return;
         setListFailed(true);
       } finally {
-        listInFlightRef.current = false;
         setLoading(false);
         setLoaded(true);
-        settle();
       }
     },
     [settings.snapshotSearchPageSize],
   );
 
+  // A search starts a fresh list and supersedes earlier ones; a further page
+  // belongs to the search it was asked under.
+  const search = useCallback((searchQuery: string) => {
+    const version = ++listVersionRef.current;
+    setLoading(true);
+    return run(() => listPage(true, searchQuery, version));
+  }, [listPage]);
+  const loadMore = () => {
+    const version = listVersionRef.current;
+    setLoading(true);
+    void run(() => listPage(false, appliedQueryRef.current, version));
+  };
+
   // Open on the whole store rather than on an empty box.
   useEffect(() => {
-    void load(0, "");
-  }, [load]);
+    void search("");
+  }, [search]);
 
   const selectedIndex = rows.findIndex((row) => row.id === selectedId);
   const selected = selectedIndex < 0 ? null : rows[selectedIndex];
@@ -162,10 +165,7 @@ export function SnapshotsModal({ onClose }: SnapshotsModalProps) {
     }
   }, [selectedId]);
 
-  useEffect(() => () => {
-    selectionVersionRef.current += 1;
-    clearCopiedTimer();
-  }, []);
+  useEffect(() => () => clearCopiedTimer(), []);
 
   function selectAt(index: number) {
     const row = rows[index];
@@ -182,42 +182,39 @@ export function SnapshotsModal({ onClose }: SnapshotsModalProps) {
     }
   }
 
-  async function copySelected() {
-    if (selected === null || copyInFlightRef.current) {
+  function copySelected() {
+    if (selected === null) {
       return;
     }
-    copyInFlightRef.current = true;
-    const selectionVersion = selectionVersionRef.current;
+    const content = selected.content;
     // Drop the previous result first, so pressing Copy again while the label
     // still reads Copied shows the change rather than nothing at all.
     clearCopiedTimer();
     setCopied(false);
-    try {
-      await copyText(selected.content);
-      setCopyFailed(false);
-      if (selectionVersion !== selectionVersionRef.current) return;
-      setCopied(true);
-      copiedTimerRef.current = window.setTimeout(() => {
-        copiedTimerRef.current = null;
-        setCopied(false);
-      }, COPIED_FEEDBACK_MS);
-    } catch (err) {
-      logWarn("snapshot copy failed", { error: serializeError(err) });
-      setCopyFailed(true);
-    } finally {
-      copyInFlightRef.current = false;
-    }
+    void run(async () => {
+      try {
+        await copyText(content);
+        setCopyFailed(false);
+        setCopied(true);
+        copiedTimerRef.current = window.setTimeout(() => {
+          copiedTimerRef.current = null;
+          setCopied(false);
+        }, COPIED_FEEDBACK_MS);
+      } catch (err) {
+        logWarn("snapshot copy failed", { error: serializeError(err) });
+        setCopyFailed(true);
+      }
+    });
   }
 
   // A deletion is permanent, so both paths run only after the question is answered. The
   // list is read again afterwards rather than patched, so what the window shows is what
   // the store holds.
-  async function confirmDelete() {
+  function confirmDelete() {
     const request = pendingDelete;
-    if (request === null || deleteInFlightRef.current) return;
-    deleteInFlightRef.current = true;
+    if (request === null) return;
     setPendingDelete(null);
-    try {
+    void run(async () => {
       try {
         if (request.scope === "all") await deleteAllSnapshots();
         else await deleteSnapshot(request.id);
@@ -228,44 +225,39 @@ export function SnapshotsModal({ onClose }: SnapshotsModalProps) {
       }
       setDeleteFailed(false);
       setSelectedId(null);
-      // A pre-mutation list cannot repopulate deleted rows. Wait for its actual
-      // settlement before the replacement read, retaining one list request.
-      listVersionRef.current += 1;
-      await listSettledRef.current;
-      await load(0, appliedQueryRef.current, true);
+      setLoading(true);
+      await listPage(true, appliedQueryRef.current, ++listVersionRef.current);
       refreshSnapshotCount();
-    } finally {
-      deleteInFlightRef.current = false;
-    }
+    });
   }
 
   // The next page arrives by scrolling rather than by a control, which also
-  // keeps the list a single tab stop. `load` ignores a call while one is in
-  // flight, so a fast scroll cannot start the same page twice.
+  // keeps the list a single tab stop. A page waits its turn behind the one
+  // before it and appends after the rows that one brought.
   function loadMoreIfNeeded(list: HTMLElement) {
     if (!hasMore || loading || listFailed) {
       return;
     }
     const remaining = list.scrollHeight - list.scrollTop - list.clientHeight;
     if (remaining <= LOAD_MORE_THRESHOLD_PX) {
-      void load(rows.length, appliedQueryRef.current);
+      loadMore();
     }
   }
 
   // A valid short page may not produce a scrollbar. Fill the viewport after
-  // each settled page and resize, retaining the same single request owner.
+  // each settled page and resize.
   useEffect(() => {
     const list = listRef.current;
     if (!list) return;
     const fill = () => {
       if (list.clientHeight > 0 && !listFailed && !loading && hasMore
-          && list.scrollHeight <= list.clientHeight) void load(rows.length, appliedQueryRef.current);
+          && list.scrollHeight <= list.clientHeight) loadMore();
     };
     fill();
     const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(fill);
     observer?.observe(list);
     return () => observer?.disconnect();
-  }, [hasMore, listFailed, load, loading, rows.length]);
+  }, [hasMore, listFailed, loading, rows.length]);
 
   function emptyMessage(): string | null {
     if (listFailed) return null;
@@ -285,7 +277,7 @@ export function SnapshotsModal({ onClose }: SnapshotsModalProps) {
           <button className="secondaryButton" type="button" onClick={() => setPendingDelete(null)}>
             {t("common.cancel")}
           </button>
-          <button className="dangerButton" type="button" onClick={() => void confirmDelete()}>
+          <button className="dangerButton" type="button" onClick={confirmDelete}>
             {t("snapshots.delete")}
           </button>
         </>
@@ -316,7 +308,7 @@ export function SnapshotsModal({ onClose }: SnapshotsModalProps) {
               onKeyDown={(event) => {
                 if (isComposingKeyboardEvent(composing.composingRef, event)) return;
                 if (event.key === "Enter") {
-                  void load(0, query);
+                  void search(query);
                 }
               }}
             />
@@ -325,7 +317,7 @@ export function SnapshotsModal({ onClose }: SnapshotsModalProps) {
             className="primaryButton"
             type="button"
             disabled={loading}
-            onClick={() => void load(0, query)}
+            onClick={() => void search(query)}
           >
             {t("snapshots.search")}
           </button>
@@ -367,7 +359,7 @@ export function SnapshotsModal({ onClose }: SnapshotsModalProps) {
                 // page, since scrolling is what loads one for the pointer.
                 if (event.key === "ArrowDown" && hasMore && !loading) {
                   event.preventDefault();
-                  void load(rows.length, appliedQueryRef.current);
+                  loadMore();
                 }
                 return;
               }
@@ -450,7 +442,7 @@ export function SnapshotsModal({ onClose }: SnapshotsModalProps) {
                   <button
                     className="iconTextButton"
                     type="button"
-                    onClick={() => void copySelected()}
+                    onClick={copySelected}
                   >
                     <Copy size={15} />
                     {copied ? t("snapshots.copied") : t("snapshots.copy")}
