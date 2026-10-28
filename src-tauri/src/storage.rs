@@ -974,9 +974,6 @@ fn write_json_atomically(
         let _ = fs::remove_file(&tmp_path);
         return Err(to_string_error(error));
     }
-    if let Ok(directory) = File::open(parent) {
-        let _ = directory.sync_all();
-    }
 
     if let Some(data_dir) = backups_in {
         crate::backup_store::record(
