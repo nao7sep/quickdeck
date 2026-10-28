@@ -195,23 +195,13 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const canceledRef = useRef(false);
+  // A newer load supersedes an older one: its result, and any file it set
+  // aside, are the ones reported.
   const loadGenerationRef = useRef(0);
-  const resetInFlightRef = useRef(false);
-  const loadReadyRef = useRef(false);
-  const recoveryFactsRef = useRef<Message[]>([]);
 
-  // Disk moves are completed facts even when their load response is stale.
-  // Only those facts survive; obsolete settings and pane data never apply.
+  // The files this launch's loads set aside, which a halt screen lists.
   const retainRecovery = useCallback((fact: Message) => {
-    if (canceledRef.current || recoveryFactsRef.current.some((prior) =>
-      prior.key === fact.key && prior.values?.path === fact.values?.path)) return;
-    recoveryFactsRef.current = [...recoveryFactsRef.current, fact];
-    setLoadRecovery(recoveryFactsRef.current);
-    if (loadReadyRef.current) {
-      setBlockingError((prior) => prior === null
-        ? { title: message("settingsReset.title"), message: fact }
-        : { ...prior, details: [...(prior.details ?? []), fact] });
-    }
+    setLoadRecovery((prior) => [...prior, fact]);
   }, []);
 
   // Mutations refresh the authoritative count; older reads cannot replace a
@@ -227,22 +217,14 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       .catch((error) => logWarn("snapshot count not read", { error: serializeError(error) }));
   }, []);
 
-  const loadPersistedState = useCallback(async (panesSetAsideTo: string | null = null): Promise<{ recoveries: Message[]; emptyPanes: boolean } | null> => {
+  const loadPersistedState = useCallback(async (panesSetAsideTo: string | null = null): Promise<{ emptyPanes: boolean } | null> => {
     const generation = ++loadGenerationRef.current;
     const current = () => !canceledRef.current && generation === loadGenerationRef.current;
-    loadReadyRef.current = false;
     if (panesSetAsideTo !== null) retainRecovery(message("load.panesSetAside", { path: panesSetAsideTo }));
     try {
-      const loading = loadAppData().then((data) => {
-        // A timed-out native operation can still complete a material move.
-        if (data.configQuarantinedTo !== null) retainRecovery(message("load.settingsSetAside", { path: data.configQuarantinedTo }));
-        return data;
-      }, (error: unknown) => {
-        for (const fact of loadFailureRecovery(error)) retainRecovery(fact);
-        throw error;
-      });
-      const data = await loading;
+      const data = await loadAppData();
       if (!current()) return null;
+      if (data.configQuarantinedTo !== null) retainRecovery(message("load.settingsSetAside", { path: data.configQuarantinedTo }));
 
       // The language is settled before anything renders, including a halt
       // screen: the saved choice if config.json could be read, else System.
@@ -346,18 +328,10 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
 
       setSaveState("saved");
       setLoadStatus("ready");
-      loadReadyRef.current = true;
       if (countLate) refreshSnapshotCount();
-      {
-        const settingsMoves = recoveryFactsRef.current.filter((fact) =>
-          fact.key === "load.settingsSetAside" && fact.values?.path !== data.configQuarantinedTo);
-        if (settingsMoves.length > 0) setBlockingError((prior) => prior === null
-          ? { title: message("settingsReset.title"), message: settingsMoves[0], details: settingsMoves.slice(1) }
-          : { ...prior, details: [...(prior.details ?? []), ...settingsMoves] });
-      }
-      return { recoveries: [...recoveryFactsRef.current], emptyPanes: loadedPanes.length === 0 };
+      return { emptyPanes: loadedPanes.length === 0 };
     } catch (error) {
-      for (const fact of loadFailureRecovery(error)) retainRecovery(fact);
+      if (current()) for (const fact of loadFailureRecovery(error)) retainRecovery(fact);
       // The halt screen speaks the language the native menu does, as on every
       // other halt; English stays when even that cannot be had.
       if (current()) {
@@ -416,23 +390,23 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
 
   // Reset rechecks the named target; a repaired or newer file is reloaded in
   // place. Completed set-aside facts survive a later required-load failure.
+  // The halt screen and its reset button give way to loading at once, so the
+  // reset runs once; the set-aside itself takes its turn in the panes queue.
   const resetCorruptPanes = useCallback(async () => {
-    if (resetInFlightRef.current) return;
-    resetInFlightRef.current = true;
+    const earlier = loadRecovery;
+    setLoadErrorIsCorruptPanes(false);
+    setLoadError(null);
+    setLoadErrorPath(null);
+    setLoadStatus("loading");
     try {
       const quarantinedTo = await quarantineCorruptPanes();
       if (canceledRef.current) return;
       if (quarantinedTo !== null) logInfo("corrupt panes.json set aside on user command", { quarantinedTo });
-      setLoadErrorIsCorruptPanes(false);
-      setLoadError(null);
-      setLoadErrorPath(null);
-      setLoadStatus("loading");
       const recovery = await loadPersistedState(quarantinedTo);
       if (quarantinedTo !== null && recovery !== null) {
         const paneMove = message(recovery.emptyPanes ? "panesSetAside.body" : "load.panesSetAside", { path: quarantinedTo });
         setBlockingError((prior) => prior === null
-          ? { title: message("panesSetAside.title"), message: paneMove,
-              details: recovery.recoveries.filter((fact) => fact.key !== "load.panesSetAside") }
+          ? { title: message("panesSetAside.title"), message: paneMove, ...(earlier.length > 0 ? { details: earlier } : {}) }
           : { ...prior, details: [...(prior.details ?? []), paneMove] });
       }
     } catch (error) {
@@ -440,10 +414,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       logError("panes reset failed", { error: serializeError(error) });
       setLoadError(message("load.setAsideFailed"));
       setLoadStatus("failed");
-    } finally {
-      resetInFlightRef.current = false;
     }
-  }, [loadPersistedState, showBlockingError]);
+  }, [loadPersistedState, loadRecovery]);
 
   const updatePaneTitle = useCallback(
     (paneId: string, title: string) => {

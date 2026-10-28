@@ -270,43 +270,6 @@ describe("startup invocation and recovery truth", () => {
     expect(latestStartup!.saveState).toBe("unsaved");
   });
 
-  it("retains a stale completed settings move without replacing live edits or the newer-settings notice", async () => {
-    let settle!: () => void;
-    persistence.loadAppData.mockImplementationOnce(() => new Promise<LoadedAppData>((resolve) => {
-      settle = () => resolve(loadedAppData({ configQuarantinedTo: "/actual/config.invalid" }));
-    }));
-    persistence.loadAppData.mockResolvedValueOnce(loadedAppData({ configNewer: 2 }));
-    const host = document.createElement("div"); document.body.append(host); root = createRoot(host);
-    await act(async () => root?.render(<React.StrictMode><AppStateProvider><StartupState /></AppStateProvider></React.StrictMode>));
-    try {
-      expect(latestStartup!.loadStatus).toBe("ready");
-      await act(async () => latestStartup!.updatePaneContent(latestStartup!.activePaneId, "live edit"));
-    } finally { await act(async () => settle()); }
-    expect(latestStartup!.panes[0].content).toBe("live edit");
-    expect(latestStartup!.saveState).toBe("unsaved");
-    expect(latestStartup!.blockingError?.message.key).toBe("settingsNewer.body");
-    expect(latestStartup!.blockingError?.details).toEqual([{ key: "load.settingsSetAside", values: { path: "/actual/config.invalid" } }]);
-    expect(latestStartup!.loadRecovery).toEqual(latestStartup!.blockingError?.details);
-  });
-
-  it.each([null, "/actual/current-config.invalid"])("adds an earlier stale move alongside the current settings notice (%s)", async (currentMove) => {
-    let settleOld!: () => void;
-    let settleCurrent!: () => void;
-    persistence.loadAppData.mockImplementationOnce(() => new Promise<LoadedAppData>((resolve) => {
-      settleOld = () => resolve(loadedAppData({ configQuarantinedTo: "/actual/config.invalid" }));
-    }));
-    persistence.loadAppData.mockImplementationOnce(() => new Promise<LoadedAppData>((resolve) => {
-      settleCurrent = () => resolve(loadedAppData({ configNewer: currentMove === null ? 2 : null, configQuarantinedTo: currentMove }));
-    }));
-    const host = document.createElement("div"); document.body.append(host); root = createRoot(host);
-    await act(async () => root?.render(<React.StrictMode><AppStateProvider><StartupState /></AppStateProvider></React.StrictMode>));
-    try { await act(async () => settleOld()); }
-    finally { await act(async () => { settleOld(); settleCurrent(); }); }
-    expect(latestStartup!.loadStatus).toBe("ready");
-    expect(latestStartup!.blockingError?.message.key).toBe(currentMove === null ? "settingsNewer.body" : "settingsReset.body");
-    expect(latestStartup!.blockingError?.details).toEqual([{ key: "load.settingsSetAside", values: { path: "/actual/config.invalid" } }]);
-  });
-
   it.each([null, 2])("reports actual authored panes after a move and preserves newer-settings notice (%s)", async (configNewer) => {
     persistence.loadAppData.mockResolvedValueOnce(loadedAppData({ panesError: "bad" }));
     persistence.quarantineCorruptPanes.mockResolvedValueOnce("/actual/panes.invalid");
@@ -345,18 +308,6 @@ describe("startup invocation and recovery truth", () => {
       { key: "load.panesSetAside", values: { path: "/actual/panes.invalid" } },
     ]);
     expect(latestStartup!.blockingError).toBeNull();
-  });
-
-  it("claims reset synchronously so a duplicate request cannot lose its completed move", async () => {
-    persistence.loadAppData.mockResolvedValueOnce(loadedAppData({ panesError: "bad" }));
-    await renderStartupState();
-    let settle!: () => void;
-    persistence.quarantineCorruptPanes.mockImplementationOnce(() => new Promise<string>((resolve) => { settle = () => resolve("/actual/panes.invalid"); }));
-    let resetting!: Promise<void>;
-    await act(async () => { resetting = latestStartup!.resetCorruptPanes(); void latestStartup!.resetCorruptPanes(); });
-    try { expect(persistence.quarantineCorruptPanes).toHaveBeenCalledOnce(); }
-    finally { await act(async () => { settle(); await resetting; }); }
-    expect(latestStartup!.blockingError?.message).toEqual({ key: "panesSetAside.body", values: { path: "/actual/panes.invalid" } });
   });
 
   it.each([null, 2])("reloads a repaired/newer reset target without claiming a move (newer: %s)", async (newer) => {
