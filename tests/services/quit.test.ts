@@ -11,7 +11,7 @@ vi.mock("../../src/services/logger", () => ({
   serializeError: (error: unknown) => ({ value: String(error) }),
 }));
 
-import { QUIT_SAVE_BOUND_MS, QUIT_SNAPSHOT_BOUND_MS, saveForQuit } from "../../src/services/quit";
+import { EXIT_DEADLINE_MS, saveForQuit } from "../../src/services/quit";
 
 const never = () => new Promise<void>(() => undefined);
 
@@ -48,18 +48,18 @@ describe("saveForQuit", () => {
     expect(mocks.logWarn).toHaveBeenCalledWith("close snapshot failed", expect.anything());
   });
 
-  it("gives up on a snapshot past its bound, logs it, and still saves", async () => {
+  it("stops waiting for a snapshot at the deadline, logs it, and keeps the landed save", async () => {
     const save = vi.fn(() => Promise.resolve(true));
-    const saved = saveForQuit({ snapshot: never, save });
+    const saved = saveForQuit({ snapshot: never, save }, Date.now() + EXIT_DEADLINE_MS);
 
-    await vi.advanceTimersByTimeAsync(QUIT_SNAPSHOT_BOUND_MS - 1);
+    await vi.advanceTimersByTimeAsync(EXIT_DEADLINE_MS - 1);
     expect(save).toHaveBeenCalledOnce();
     await vi.advanceTimersByTimeAsync(1);
 
     await expect(saved).resolves.toBe(true);
     expect(save).toHaveBeenCalledOnce();
-    expect(mocks.logWarn).toHaveBeenCalledWith("close snapshot wait expired", {
-      ms: QUIT_SNAPSHOT_BOUND_MS,
+    expect(mocks.logWarn).toHaveBeenCalledWith("close snapshot unfinished at the exit deadline", {
+      ms: EXIT_DEADLINE_MS,
     });
   });
 
@@ -77,20 +77,32 @@ describe("saveForQuit", () => {
     expect(mocks.logError).toHaveBeenCalledWith("save on close failed", expect.anything());
   });
 
-  it("reports a save past its bound as not saved, and logs it", async () => {
+  it("reports a save unfinished at the deadline as not saved, and logs it", async () => {
+    let settled: boolean | null = null;
+    const pending = () => new Promise<boolean>(() => undefined);
+    void saveForQuit({ snapshot: () => Promise.resolve(), save: pending }, Date.now() + EXIT_DEADLINE_MS).then((value) => {
+      settled = value;
+    });
+
+    await vi.advanceTimersByTimeAsync(EXIT_DEADLINE_MS - 1);
+    expect(settled).toBeNull();
+    await vi.advanceTimersByTimeAsync(1);
+
+    expect(settled).toBe(false);
+    expect(mocks.logError).toHaveBeenCalledWith("save on close unfinished at the exit deadline", {
+      ms: EXIT_DEADLINE_MS,
+    });
+  });
+
+  it("holds no timer without a deadline: the session end's wait belongs to the core", async () => {
     let settled: boolean | null = null;
     void saveForQuit({ snapshot: () => Promise.resolve(), save: () => new Promise<boolean>(() => undefined) }).then((value) => {
       settled = value;
     });
 
-    await vi.advanceTimersByTimeAsync(QUIT_SAVE_BOUND_MS - 1);
+    await vi.advanceTimersByTimeAsync(EXIT_DEADLINE_MS * 2);
     expect(settled).toBeNull();
-    await vi.advanceTimersByTimeAsync(1);
-
-    expect(settled).toBe(false);
-    expect(mocks.logError).toHaveBeenCalledWith("save on close wait expired", {
-      ms: QUIT_SAVE_BOUND_MS,
-    });
+    expect(vi.getTimerCount()).toBe(0);
   });
 
   it("treats a step that throws before returning a promise as failed", async () => {

@@ -1,11 +1,7 @@
 use std::{
     collections::BTreeMap,
     path::Path,
-    sync::{
-        mpsc::{self, RecvTimeoutError},
-        Arc, Mutex,
-    },
-    time::Duration,
+    sync::{Arc, Mutex},
 };
 
 use serde::{Deserialize, Serialize};
@@ -13,10 +9,6 @@ use serde_json::Value as JsonValue;
 use tauri::{AppHandle, Manager, PhysicalPosition, PhysicalSize, Window, WindowEvent, Wry};
 
 use crate::{logging, storage};
-
-// How long exit waits for window.json before going on without it; part of the
-// quit's budget (src/quit.rs).
-pub(crate) const SAVE_WAIT: Duration = Duration::from_millis(500);
 
 /// The durable windows, by label: each keeps its own placement in window.json,
 /// which holds one record per label (window conventions, Placement).
@@ -191,22 +183,12 @@ fn replace_state(state: &PlacementState, label: &str, placement: Option<Placemen
     }
 }
 
-// Prepare on a worker before showing the first frame (window conventions).
-// A late result never mutates the live placement state.
+// Read before showing the first frame (window conventions).
 pub(crate) fn load(app: &AppHandle, state: &PlacementState) {
-    let Some(root) = app
-        .try_state::<crate::paths::DataRoot>()
-        .map(|root| root.0.clone())
-    else {
+    let Some(root) = app.try_state::<crate::paths::DataRoot>() else {
         return;
     };
-    let saved = match crate::startup::prepare(
-        "window placement",
-        crate::startup::PREPARE_WAIT,
-        move || storage::load_window_state_in(&root),
-    )
-    .and_then(|result| result)
-    {
+    let saved = match storage::load_window_state_in(&root.0) {
         Ok(value) => placements_from(value),
         Err(error) => {
             logging::warn(
@@ -346,9 +328,8 @@ pub(crate) fn on_window_event(window: &Window<Wry>, event: &WindowEvent, state: 
     });
 }
 
-// The exit write runs on its own thread so a stalled data volume
-// cannot hold the quit for longer than `SAVE_WAIT`. It writes into the root resolved at launch, and a data
-// folder deleted while the app runs stays deleted.
+// The exit write, inline in the exit sequence. It writes into the root
+// resolved at launch, and a data folder deleted while the app runs stays deleted.
 pub fn save(root: &Path, state: &PlacementState) {
     let Some(placements) = state
         .lock()
@@ -358,18 +339,7 @@ pub fn save(root: &Path, state: &PlacementState) {
     else {
         return;
     };
-    let root = root.to_owned();
-    let (done, finished) = mpsc::channel();
-    std::thread::spawn(move || {
-        write_placements(&root, placements);
-        let _ = done.send(());
-    });
-    if let Err(RecvTimeoutError::Timeout) = finished.recv_timeout(SAVE_WAIT) {
-        logging::warn(
-            "window placement save wait expired",
-            serde_json::json!({ "ms": SAVE_WAIT.as_millis() }),
-        );
-    }
+    write_placements(root, placements);
 }
 
 fn write_placements(root: &Path, placements: Placements) {
@@ -386,14 +356,6 @@ fn write_placements(root: &Path, placements: Placements) {
                 "window placement could not be saved",
                 serde_json::json!({ "error": error.to_string() }),
             )
-        }
-    }
-    // A window not captured this run keeps its saved placement: a launch read
-    // that failed or timed out left it out of the live state.
-    let mut placements = placements;
-    if let Ok(saved) = storage::load_window_state_in(root) {
-        for (label, placement) in placements_from(saved) {
-            placements.entry(label).or_insert(placement);
         }
     }
     match serde_json::to_value(placements) {

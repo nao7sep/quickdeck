@@ -258,7 +258,7 @@ fn the_writer_thread_writes_lines_in_order_before_answering_a_flush() {
     for message in ["first", "second"] {
         assert!(logger.write_event(Level::Info, message, now_iso(), Map::new()));
     }
-    logger.flush();
+    logger.flush(Duration::MAX);
     drop(logger);
     thread.join().unwrap();
 
@@ -370,7 +370,7 @@ fn disconnected_writer_never_uses_a_caller_thread_fallback() {
     let (logger, lines) = Logger::channel(session(Some(dir.path())), true);
     drop(lines);
     assert!(!logger.write_event(Level::Error, "disconnected", now_iso(), Map::new()));
-    logger.flush();
+    logger.flush(Duration::MAX);
     assert!(fs::read_dir(dir.path()).unwrap().next().is_none());
 }
 

@@ -71,7 +71,7 @@ vi.mock("../src/services/logger", () => ({
 }));
 
 import { App } from "../src/App";
-import { QUIT_SAVE_BOUND_MS, QUIT_SNAPSHOT_BOUND_MS } from "../src/services/quit";
+import { EXIT_DEADLINE_MS } from "../src/services/quit";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -214,6 +214,8 @@ describe("closing the window", () => {
     expect(preventDefault).toHaveBeenCalledOnce();
     expect(state.snapshotAllPanes).toHaveBeenCalledWith("app_close");
     expect(state.saveNow).toHaveBeenCalledOnce();
+    // The core's exit steps get what remains of the deadline fixed as the close began.
+    expect(mocks.invoke).toHaveBeenCalledWith("begin_exit", { remainingMs: EXIT_DEADLINE_MS });
     expect(mocks.destroy).toHaveBeenCalledOnce();
     expect(dialog()).toBeNull();
   });
@@ -232,16 +234,18 @@ describe("closing the window", () => {
     expect(dialog()).toBeNull();
   });
 
-  it("closes once a stalled snapshot passes its bound", async () => {
+  it("closes at the exit deadline past a stalled snapshot, leaving the core nothing", async () => {
     const state = createAppState({ snapshotAllPanes: vi.fn(() => new Promise(() => undefined)) });
     await renderApp(state);
 
     const { done } = await requestClose();
     expect(state.saveNow).toHaveBeenCalledOnce();
-    await advance(QUIT_SNAPSHOT_BOUND_MS);
+    await advance(EXIT_DEADLINE_MS);
     await done;
 
     expect(state.saveNow).toHaveBeenCalledOnce();
+    expect(mocks.logWarn).toHaveBeenCalledWith("close snapshot unfinished at the exit deadline", { ms: EXIT_DEADLINE_MS });
+    expect(mocks.invoke).toHaveBeenCalledWith("begin_exit", { remainingMs: 0 });
     expect(mocks.destroy).toHaveBeenCalledOnce();
   });
 
@@ -301,18 +305,18 @@ describe("closing the window", () => {
     });
   });
 
-  it("treats a save stalled past its bound as failed", async () => {
+  it("asks the save-failure question for a save unfinished at the exit deadline", async () => {
     const state = createAppState({ saveNow: vi.fn(() => new Promise(() => undefined)) });
     await renderApp(state);
 
     await requestClose();
-    await advance(QUIT_SAVE_BOUND_MS - 1);
+    await advance(EXIT_DEADLINE_MS - 1);
     expect(dialog()).toBeNull();
     await advance(1);
 
     expect(dialog()?.textContent).toContain("QuickDeck couldn't save your data");
-    expect(mocks.logError).toHaveBeenCalledWith("save on close wait expired", {
-      ms: QUIT_SAVE_BOUND_MS,
+    expect(mocks.logError).toHaveBeenCalledWith("save on close unfinished at the exit deadline", {
+      ms: EXIT_DEADLINE_MS,
     });
     expect(mocks.destroy).not.toHaveBeenCalled();
   });
@@ -443,18 +447,16 @@ describe("an OS logout, restart or shutdown", () => {
     expect(mocks.invoke).toHaveBeenCalledExactlyOnceWith("session_end_saved", { attempt: 1 });
   });
 
-  it("reports once a stalled snapshot and save pass their bounds", async () => {
+  it("holds no deadline of its own: the core's wait ends a stalled save", async () => {
     const stalled = vi.fn(() => new Promise<void>(() => undefined));
     const state = createAppState({ snapshotAllPanes: stalled, saveNow: stalled });
     await renderApp(state);
 
     await endSession();
-    await advance(Math.max(QUIT_SNAPSHOT_BOUND_MS, QUIT_SAVE_BOUND_MS) - 1);
-    expect(mocks.invoke).not.toHaveBeenCalled();
-    await advance(1);
+    await advance(EXIT_DEADLINE_MS * 2);
 
     expect(dialog()).toBeNull();
-    expect(mocks.invoke).toHaveBeenCalledExactlyOnceWith("session_end_saved", { attempt: 1 });
+    expect(mocks.invoke).not.toHaveBeenCalled();
   });
 
   it.each([true, false])("joins a user save already in flight without a second save or a prompt (saved: %s)", async (saved) => {

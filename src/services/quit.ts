@@ -2,28 +2,13 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { logError, logWarn, serializeError } from "./logger";
 
-// The quit's save, shared by every quit path (unsaved-edits conventions,
-// Quitting). Each step is bounded: the snapshots by QUIT_SNAPSHOT_BOUND_MS, the
-// user's own work by QUIT_SAVE_BOUND_MS. Together they stay inside the Rust
-// core's wait for an OS session end (SESSION_SAVE_WAIT in src-tauri/src/quit.rs).
-export const QUIT_SNAPSHOT_BOUND_MS = 400;
-export const QUIT_SAVE_BOUND_MS = 1000;
-
-type Settled<T> = { kind: "done"; value: T } | { kind: "failed"; error: unknown } | { kind: "expired" };
-
-// A step past its bound keeps running; its outcome is unknown.
-function within<T>(step: () => Promise<T>, ms: number): Promise<Settled<T>> {
-  return new Promise((resolve) => {
-    const timer = setTimeout(() => resolve({ kind: "expired" }), ms);
-    Promise.resolve()
-      .then(step)
-      .then(
-        (value) => resolve({ kind: "done", value }),
-        (error: unknown) => resolve({ kind: "failed", error }),
-      )
-      .finally(() => clearTimeout(timer));
-  });
-}
+// The exit sequence's one deadline for a quit the main window starts, fixed
+// when its close begins (architecture conventions, Deadlines at the owner).
+// The quit's save draws on it; the close hands what remains to the Rust core
+// (beginExit), whose own exit steps draw on the rest. At an OS session end the
+// core's wait is the deadline and the window holds none (EXIT_DEADLINE in
+// src-tauri/src/quit.rs).
+export const EXIT_DEADLINE_MS = 3000;
 
 export type QuitSaveSteps = {
   // The insurance snapshots: logged when they fail, never holding the quit.
@@ -33,27 +18,47 @@ export type QuitSaveSteps = {
   onFailure?: (error: unknown) => void;
 };
 
-// Resolves whether the user's own work is known to be saved.
-export async function saveForQuit(steps: QuitSaveSteps): Promise<boolean> {
-  // Both begin immediately: optional snapshot preparation cannot delay saving
-  // authored text. Each retains its own physical owner after a caller deadline.
-  const snapshotWork = within(steps.snapshot, QUIT_SNAPSHOT_BOUND_MS);
-  const saveWork = within(steps.save, QUIT_SAVE_BOUND_MS);
-  const snapshot = await snapshotWork;
-  if (snapshot.kind === "failed") {
-    logWarn("close snapshot failed", { error: serializeError(snapshot.error) });
-  } else if (snapshot.kind === "expired") {
-    logWarn("close snapshot wait expired", { ms: QUIT_SNAPSHOT_BOUND_MS });
+// Resolves whether the user's own work is known to be saved, shared by every
+// quit path (unsaved-edits conventions, Quitting). Both steps begin at once, so
+// the optional snapshot cannot delay saving authored text. With a deadline (a
+// Date.now() time), work not finished by then is not waited for: it carries on
+// in its owner, and an unfinished save counts as not saved.
+export async function saveForQuit(steps: QuitSaveSteps, deadline?: number): Promise<boolean> {
+  const snapshotWork = Promise.resolve().then(steps.snapshot).then(
+    () => true,
+    (error: unknown) => {
+      logWarn("close snapshot failed", { error: serializeError(error) });
+      return true;
+    },
+  );
+  const saveWork = Promise.resolve().then(steps.save).catch((error: unknown) => {
+    logError("save on close failed", { error: serializeError(error) });
+    steps.onFailure?.(error);
+    return false;
+  });
+  if (deadline === undefined) {
+    await snapshotWork;
+    return saveWork;
   }
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const passed = new Promise<null>((resolve) => {
+    timer = setTimeout(() => resolve(null), Math.max(0, deadline - Date.now()));
+  });
+  try {
+    if ((await Promise.race([snapshotWork, passed])) === null) {
+      logWarn("close snapshot unfinished at the exit deadline", { ms: EXIT_DEADLINE_MS });
+    }
+    const saved = await Promise.race([saveWork, passed]);
+    if (saved === null) logError("save on close unfinished at the exit deadline", { ms: EXIT_DEADLINE_MS });
+    return saved === true;
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
-  const save = await saveWork;
-  if (save.kind === "failed") {
-    logError("save on close failed", { error: serializeError(save.error) });
-    steps.onFailure?.(save.error);
-  } else if (save.kind === "expired") {
-    logError("save on close wait expired", { ms: QUIT_SAVE_BOUND_MS });
-  }
-  return save.kind === "done" && save.value;
+// Hands the Rust core what remains of the exit's deadline as the window closes.
+export function beginExit(deadline: number): Promise<void> {
+  return invoke("begin_exit", { remainingMs: Math.max(0, Math.round(deadline - Date.now())) });
 }
 
 // The event the Rust core sends when an OS logout, restart or shutdown asks
@@ -65,7 +70,7 @@ export function onSessionEnding(listener: (attempt: number) => void): Promise<()
 }
 
 // Tells the Rust core the session-end save has finished, whatever its outcome,
-// so the app exits without waiting out its bound.
+// so the app exits without waiting out its deadline.
 export function reportSessionEndSaved(attempt: number): Promise<void> {
   return invoke("session_end_saved", { attempt });
 }

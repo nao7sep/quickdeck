@@ -114,28 +114,17 @@ fn is_activation(stream: &mut TcpStream) -> bool {
 pub fn init() -> tauri::plugin::TauriPlugin<tauri::Wry> {
     tauri::plugin::Builder::<tauri::Wry>::new("instance-owner")
         .setup(|app, _api| {
-            let handle = app.app_handle().clone();
-            let prepared = crate::startup::prepare(
-                "instance ownership",
-                crate::startup::PREPARE_WAIT,
-                move || {
-                    let root = crate::paths::app_data_dir(&handle)?;
-                    let claimed = claim(&root)?;
-                    Ok::<_, String>((root, claimed))
-                },
-            );
-            match prepared.and_then(|claimed| claimed) {
+            let claimed = crate::paths::app_data_dir(app.app_handle())
+                .and_then(|root| claim(&root).map(|claimed| (root, claimed)));
+            match claimed {
                 Ok((root, Claim::Primary { lock, listener })) => {
                     app.manage(crate::paths::DataRoot(root));
                     listen(listener, app.app_handle().clone());
                     app.manage(Owner { _lock: lock });
                 }
                 Ok((_, Claim::Secondary { endpoint_path })) => {
-                    let _ = crate::startup::prepare(
-                        "existing instance activation",
-                        NOTIFY_TIMEOUT,
-                        move || notify_primary(&endpoint_path),
-                    );
+                    // A first instance that never answers still lets this one exit quietly.
+                    let _ = notify_primary(&endpoint_path);
                     std::process::exit(0);
                 }
                 Err(error) => {

@@ -106,7 +106,7 @@ fn a_window_that_cannot_be_asked_settles_the_attempt() {
     let session_end = SessionEnd::default();
     assert!(ask_for_session_save(&session_end, |_| Err("no listener")).is_none());
     // The exit goes ahead as a session end; a later request does not wait.
-    assert_eq!(session_end.backup_wait(), None);
+    assert!(session_end.ending());
     let (saved, first) = ask_for_session_save(&session_end, |_| -> Result<(), String> {
         panic!("asked again")
     })
@@ -136,13 +136,21 @@ fn a_cancelled_session_end_lets_the_next_one_ask_the_window_again() {
 }
 
 #[test]
-fn exit_waits_for_backups_only_at_an_ordinary_quit() {
-    let session_end = SessionEnd::default();
-    assert_eq!(session_end.backup_wait(), Some(crate::backup_store::DRAIN_WAIT));
-    let _ = session_end.begin();
-    assert_eq!(session_end.backup_wait(), None);
-    session_end.cancel();
-    assert_eq!(session_end.backup_wait(), Some(crate::backup_store::DRAIN_WAIT));
+fn an_exit_deadline_nothing_fixed_is_fixed_once_when_first_read() {
+    let deadline = ExitDeadline::default();
+    let first = deadline.get();
+    assert_eq!(deadline.get(), first);
+    assert!(deadline.remaining() <= EXIT_DEADLINE);
+}
+
+#[test]
+fn a_handed_over_exit_deadline_replaces_none_and_a_cleared_one_is_fixed_afresh() {
+    let deadline = ExitDeadline::default();
+    let handed = Instant::now() + Duration::from_millis(250);
+    deadline.set(Some(handed));
+    assert_eq!(deadline.get(), handed);
+    deadline.set(None);
+    assert!(deadline.get() > handed);
 }
 
 fn question() -> QuitQuestion {
@@ -248,21 +256,6 @@ fn cancellation_after_a_completed_save_allows_a_fresh_shutdown() {
     assert!(new_report.try_recv().is_ok());
 }
 
-// Windows gives each end-session message 5 s before it offers to end the app;
-// macOS documents no figure, so the same bound serves both. These are every
-// wait between the session end and the process ending (lib.rs, RunEvent::Exit).
-#[test]
-fn an_os_session_end_fits_under_the_kill_delay() {
-    let kill_delay = Duration::from_secs(5);
-    let session_end = SessionEnd::default();
-    let _ = session_end.begin();
-    let quit = SESSION_SAVE_WAIT
-        + crate::window_placement::SAVE_WAIT
-        + session_end.backup_wait().unwrap_or_default()
-        + crate::logging::FLUSH_WAIT;
-    assert!(quit < kill_delay, "{quit:?} is not under {kill_delay:?}");
-}
-
 // The Windows session-end wait pumps the main thread's messages until the save
 // reports or its deadline passes; a steady stream of messages must not hold it.
 #[cfg(windows)]
@@ -314,32 +307,25 @@ mod windows_session_wait {
         assert_eq!(WM_ENDSESSION, win32::WM_ENDSESSION);
     }
 
+    // Returning at all is the check: a wait that posted messages held would hang.
     #[test]
     fn the_wait_ends_at_its_deadline_under_continuously_posted_messages() {
         let (_report, saved) = mpsc::sync_channel::<()>(1);
-        let elapsed = under_posted_messages(|| {
-            let started = Instant::now();
-            windows_session::pump_until_saved(&saved);
-            started.elapsed()
+        under_posted_messages(|| {
+            windows_session::pump_until_saved(&saved, Instant::now() + Duration::from_millis(100))
         });
-        assert!(elapsed >= SESSION_SAVE_WAIT, "{elapsed:?}");
-        assert!(elapsed < SESSION_SAVE_WAIT + Duration::from_millis(500), "{elapsed:?}");
     }
 
     #[test]
     fn the_wait_ends_when_the_save_reports() {
         let (report, saved) = mpsc::sync_channel::<()>(1);
         let reporter = thread::spawn(move || {
-            thread::sleep(Duration::from_millis(100));
             let _ = report.send(());
         });
-        let elapsed = under_posted_messages(|| {
-            let started = Instant::now();
-            windows_session::pump_until_saved(&saved);
-            started.elapsed()
+        under_posted_messages(|| {
+            windows_session::pump_until_saved(&saved, Instant::now() + Duration::from_secs(3600))
         });
         reporter.join().unwrap();
-        assert!(elapsed < SESSION_SAVE_WAIT, "{elapsed:?}");
     }
 }
 

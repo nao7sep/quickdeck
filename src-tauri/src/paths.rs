@@ -14,7 +14,7 @@ const DATA_DIR_NAME: &str = ".quickdeck";
 pub struct DataRoot(pub PathBuf);
 
 // Why this process could not claim its storage root at launch: the folder is
-// unreachable or unwritable, or the claim outlasted its bound. The app then
+// unreachable or unwritable. The app then
 // opens on its load-error screen (load_app_data reports this) and writes
 // nothing into the folder, instead of closing with no window and no message.
 pub struct ClaimFailure(pub String);

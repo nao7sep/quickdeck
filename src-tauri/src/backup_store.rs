@@ -11,8 +11,8 @@
 //! `storage::write_json_atomically`), so history follows save order. `record`
 //! only queues them; one writer thread applies them. A newer save of a path
 //! replaces that path's pending version, so pending work never holds more than
-//! one version per file. Ordinary quit drains the queue for at most
-//! `DRAIN_WAIT`; an OS session end does not wait (lib.rs).
+//! one version per file. Ordinary quit drains the queue with what remains of
+//! the exit's deadline; an OS session end does not wait (lib.rs).
 //!
 //! Nothing here can delay or fail a save. A store that cannot be opened is
 //! logged once and recording stops for the session; a failed write is logged
@@ -41,10 +41,6 @@ use crate::format_version::{self, SqliteFormat};
 /// composed by the caller, which already holds the resolved data dir, so this
 /// module never resolves a path itself.
 pub const BACKUPS_DB_FILE_NAME: &str = "backups.sqlite3";
-
-/// How long an ordinary quit waits for pending history; part of the quit's
-/// budget (src/quit.rs). An OS session end skips it.
-pub(crate) const DRAIN_WAIT: Duration = Duration::from_millis(500);
 
 /// The one table. `content` is a BLOB of the exact bytes written — never decoded
 /// text, so CR/LF, a BOM and non-UTF-8 bytes are stored byte-identically.

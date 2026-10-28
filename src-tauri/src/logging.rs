@@ -28,10 +28,6 @@ use crate::{
 // The free fields that name a domain object, and the column each one fills.
 const DOMAIN_IDS: [&str; 2] = ["paneId", "snapshotId"];
 
-// How long `flush` waits for the writer before going on without it; part of
-// the quit's budget (src/quit.rs).
-pub(crate) const FLUSH_WAIT: Duration = Duration::from_millis(500);
-
 // The four levels, and only four.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Level {
@@ -107,13 +103,13 @@ impl Logger {
         self.writer.send(line).is_ok()
     }
 
-    fn flush(&self) {
+    fn flush(&self, bound: Duration) {
         let (done, written) = mpsc::sync_channel(1);
         if self.writer.send(Message::Flush(done)).is_err() {
             return;
         }
-        if written.recv_timeout(FLUSH_WAIT).is_err() {
-            to_stderr(format_args!("log flush gave up after {} ms", FLUSH_WAIT.as_millis()));
+        if written.recv_timeout(bound).is_err() {
+            to_stderr(format_args!("log flush gave up after {} ms", bound.as_millis()));
         }
     }
 }
@@ -236,13 +232,14 @@ pub(crate) fn to_stderr(message: std::fmt::Arguments) {
     let _ = writeln!(std::io::stderr(), "[{}] {message}", env!("CARGO_PKG_NAME"));
 }
 
-// Waits, at most `FLUSH_WAIT`, until every line sent so far is written: on exit
-// and after a panic (logging conventions, Flush and durability).
-pub fn flush() {
+// Waits, at most `bound`, until every line sent so far is written: on exit,
+// with what remains of its deadline, and after a panic (logging conventions,
+// Flush and durability).
+pub fn flush(bound: Duration) {
     let Some(logger) = LOGGER.get() else {
         return;
     };
-    logger.flush();
+    logger.flush(bound);
 }
 
 // not recorded: records.sqlite3 is written only here, never through the
@@ -563,7 +560,8 @@ fn install_panic_hook() {
             now_iso(),
             into_map(json!({ "payload": payload, "location": location })),
         );
-        flush();
+        // A panic may be the last thing the process does, so it gets an exit's time.
+        flush(crate::quit::EXIT_DEADLINE);
         previous(info);
     }));
 }

@@ -2,7 +2,7 @@ import React, { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AppStateProvider, useAppState } from "../../src/state/AppStateContext";
-import { saveForQuit, QUIT_SAVE_BOUND_MS } from "../../src/services/quit";
+import { saveForQuit } from "../../src/services/quit";
 import type { LoadedAppData } from "../../src/services/persistence";
 
 const persistence = vi.hoisted(() => ({
@@ -134,7 +134,7 @@ describe("current input save truth", () => {
       let result: boolean | undefined;
       await act(async () => {
         void saveForQuit({ snapshot: async () => {}, save: latestState!.saveNow }).then((saved) => { result = saved; });
-        await vi.advanceTimersByTimeAsync(QUIT_SAVE_BOUND_MS);
+        await vi.advanceTimersByTimeAsync(0);
       });
       expect(result).toBe(true);
       expect(latestState!.saveState).toBe("saved");

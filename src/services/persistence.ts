@@ -122,7 +122,7 @@ export type LaunchLanguage = {
 };
 
 // The language the native menu speaks, read without touching the data folder,
-// for a halt screen after a load that failed or timed out.
+// for a halt screen after a load that failed.
 export async function launchLanguage(): Promise<LaunchLanguage> {
   if (!isTauri()) return { language: "en", systemLanguage: "en", systemLocale: null };
   return invoke<LaunchLanguage>("launch_language");

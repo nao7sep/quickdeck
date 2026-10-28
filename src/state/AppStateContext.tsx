@@ -37,7 +37,6 @@ import {
   saveFailureMessage,
   saveState as persistState,
 } from "../services/persistence";
-import { awaitStartup, STARTUP_LOAD_BOUND_MS } from "../services/startup";
 import { logError, logInfo, logWarn, serializeError } from "../services/logger";
 import { resolveTimeZone } from "../utils/timeZone";
 import { I18nProvider } from "../i18n/I18nContext";
@@ -229,7 +228,6 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     const current = () => !canceledRef.current && generation === loadGenerationRef.current;
     loadReadyRef.current = false;
     if (panesSetAsideTo !== null) retainRecovery(message("load.panesSetAside", { path: panesSetAsideTo }));
-    const deadline = Date.now() + STARTUP_LOAD_BOUND_MS;
     try {
       const loading = loadAppData().then((data) => {
         // A timed-out native operation can still complete a material move.
@@ -239,7 +237,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         for (const fact of loadFailureRecovery(error)) retainRecovery(fact);
         throw error;
       });
-      const data = await awaitStartup(loading, deadline);
+      const data = await loading;
       if (!current()) return null;
 
       // The language is settled before anything renders, including a halt
@@ -247,7 +245,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       const loadedSystemLanguage = isLanguage(data.systemLanguage) ? data.systemLanguage : "en";
       const loadedSettings = readSettingsSets(data.config);
       const loadedLanguage = effectiveLanguage(loadedSettings.language, loadedSystemLanguage);
-      await awaitStartup(loadCatalogue(loadedLanguage), deadline);
+      await loadCatalogue(loadedLanguage);
       if (!current()) {
         return null;
       }
@@ -314,7 +312,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
 
       let countLate = false;
       try {
-        const initialCount = await awaitStartup(countSnapshots(), deadline);
+        const initialCount = await countSnapshots();
         if (current()) {
           setSnapshotCount(initialCount);
         }

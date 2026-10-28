@@ -2,15 +2,15 @@
 //! Quitting): the menu's Quit, the Dock's Quit, and an OS logout, restart or
 //! shutdown. The main window's close owns the save. A quit the user started
 //! goes through that close, so a failed save can cancel it; an OS session end
-//! asks the window to save without prompting and waits at most
-//! `SESSION_SAVE_WAIT`.
+//! asks the window to save without prompting and waits for it until the exit's
+//! deadline.
 
 use std::{
     sync::{
         atomic::{AtomicBool, Ordering},
         mpsc, Mutex, PoisonError,
     },
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use serde_json::json;
@@ -22,9 +22,47 @@ use crate::logging;
 /// The event that asks the main window to save for an OS session end.
 pub const SESSION_ENDING_EVENT: &str = "session-ending";
 
-/// How long an OS session end waits for the window's save. With the exit steps
-/// that follow it stays under the host's kill delay (tests/unit/quit.rs).
-pub(crate) const SESSION_SAVE_WAIT: Duration = Duration::from_millis(1500);
+/// The exit sequence's one deadline when the core fixes it: an OS session end
+/// fixes it as it asks the window to save, and an exit nothing has fixed one
+/// for fixes it as the exit begins. A quit the main window starts fixes its own
+/// (EXIT_DEADLINE_MS in src/services/quit.ts) and hands what remains over with
+/// its close (`begin_exit`). Every step draws on what remains. Windows gives
+/// each end-session message 5 s before it offers to end the app, and macOS
+/// documents no figure, so 3 s leaves the OS room on both.
+pub(crate) const EXIT_DEADLINE: Duration = Duration::from_secs(3);
+
+/// When the exit must be done. Only the main thread changes it (sync commands,
+/// the session-end handlers and the run loop); the Mutex is what Tauri's
+/// managed state requires.
+#[derive(Default)]
+pub struct ExitDeadline(Mutex<Option<Instant>>);
+
+impl ExitDeadline {
+    fn set(&self, deadline: Option<Instant>) {
+        *self.0.lock().unwrap_or_else(PoisonError::into_inner) = deadline;
+    }
+
+    /// The deadline, fixed now when nothing fixed it earlier.
+    pub fn get(&self) -> Instant {
+        *self
+            .0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get_or_insert_with(|| Instant::now() + EXIT_DEADLINE)
+    }
+
+    /// What remains of the deadline.
+    pub fn remaining(&self) -> Duration {
+        self.get().saturating_duration_since(Instant::now())
+    }
+}
+
+/// The main window's close hands over what remains of the deadline it fixed
+/// when the close began, just before it destroys itself.
+#[tauri::command]
+pub fn begin_exit(deadline: State<ExitDeadline>, remaining_ms: u64) {
+    deadline.set(Some(Instant::now() + Duration::from_millis(remaining_ms)));
+}
 
 /// Quits through the main window's close, which saves first and may be
 /// cancelled; exits directly when there is no window to close.
@@ -172,15 +210,10 @@ impl SessionEnd {
         }
     }
 
-    /// Whether this exit is an OS logout, restart or shutdown.
-    fn ending(&self) -> bool {
+    /// Whether this exit is an OS logout, restart or shutdown, when exit does
+    /// not wait for pending backup history (data-backup conventions).
+    pub fn ending(&self) -> bool {
         self.ending.load(Ordering::Relaxed)
-    }
-
-    /// How long exit waits for pending backup history: briefly at an ordinary
-    /// quit, not at all at an OS session end (data-backup conventions).
-    pub fn backup_wait(&self) -> Option<Duration> {
-        (!self.ending()).then_some(crate::backup_store::DRAIN_WAIT)
     }
 
     /// The session end did not happen (Windows: another app cancelled it), so
@@ -195,12 +228,17 @@ impl SessionEnd {
 }
 
 /// Asks the main window to save for an OS session end. The receiver hears when
-/// it has; `None` when there is no window to ask.
+/// it has; `None` when there is no window to ask. The request that asks fixes
+/// the exit's deadline, which is how long the save is waited for.
 fn begin_session_end<R: Runtime>(app: &AppHandle<R>) -> Option<(mpsc::Receiver<()>, bool)> {
     app.get_webview_window("main")?;
-    ask_for_session_save(&app.state::<SessionEnd>(), |attempt| {
+    let begun = ask_for_session_save(&app.state::<SessionEnd>(), |attempt| {
         app.emit_to("main", SESSION_ENDING_EVENT, attempt)
-    })
+    });
+    if let Some((_, true)) = begun {
+        app.state::<ExitDeadline>().set(Some(Instant::now() + EXIT_DEADLINE));
+    }
+    begun
 }
 
 /// Admits a session-end save. Only the request that begins the attempt asks
@@ -227,8 +265,8 @@ fn ask_for_session_save<E: std::fmt::Display>(
 
 fn log_session_save_expired() {
     logging::warn(
-        "session end save wait expired",
-        json!({ "ms": SESSION_SAVE_WAIT.as_millis() }),
+        "session end save unfinished at the exit deadline",
+        json!({ "ms": EXIT_DEADLINE.as_millis() }),
     );
 }
 
@@ -318,7 +356,7 @@ mod macos {
 
     use super::{
         answer_terminate, begin_session_end, log_session_save_expired, quit_origin, request_quit,
-        TerminateAnswer, SESSION_SAVE_WAIT,
+        ExitDeadline, TerminateAnswer,
     };
     use crate::logging;
 
@@ -377,8 +415,9 @@ mod macos {
             TerminateAnswer::Later(None) => TERMINATE_LATER,
             TerminateAnswer::Later(Some(saved)) => {
                 let app = app.clone();
+                let wait = app.state::<ExitDeadline>().remaining();
                 std::thread::spawn(move || {
-                    if let Err(RecvTimeoutError::Timeout) = saved.recv_timeout(SESSION_SAVE_WAIT) {
+                    if let Err(RecvTimeoutError::Timeout) = saved.recv_timeout(wait) {
                         log_session_save_expired();
                     }
                     if let Err(error) = app.run_on_main_thread(reply_terminate_now) {
@@ -426,7 +465,7 @@ mod windows_session {
     //! Windows asks every top-level window `WM_QUERYENDSESSION` before a
     //! logout, restart or shutdown, and tao answers none. The main window's
     //! subclass asks the webview to save and pumps messages until it reports,
-    //! so its IPC keeps running, for at most `SESSION_SAVE_WAIT`.
+    //! so its IPC keeps running, until the exit's deadline.
 
     use std::{
         sync::mpsc::{self, TryRecvError},
@@ -447,8 +486,8 @@ mod windows_session {
     };
 
     use super::{
-        begin_session_end, end_session_step, log_session_save_expired, EndSessionStep, SessionEnd,
-        SESSION_SAVE_WAIT,
+        begin_session_end, end_session_step, log_session_save_expired, EndSessionStep,
+        ExitDeadline, SessionEnd,
     };
     use crate::logging;
 
@@ -493,18 +532,18 @@ mod windows_session {
             let app = unsafe { &*(data as *const AppHandle) };
             if step == EndSessionStep::Save {
                 if let Some((saved, true)) = begin_session_end(app) {
-                    pump_until_saved(&saved);
+                    pump_until_saved(&saved, app.state::<ExitDeadline>().get());
                 }
             } else {
                 app.state::<SessionEnd>().cancel();
+                app.state::<ExitDeadline>().set(None);
             }
         }
         // SAFETY: forwards the message this subclass received.
         unsafe { DefSubclassProc(hwnd, message, wparam, lparam) }
     }
 
-    pub(super) fn pump_until_saved(saved: &mpsc::Receiver<()>) {
-        let deadline = Instant::now() + SESSION_SAVE_WAIT;
+    pub(super) fn pump_until_saved(saved: &mpsc::Receiver<()>, deadline: Instant) {
         loop {
             if !matches!(saved.try_recv(), Err(TryRecvError::Empty)) {
                 return;

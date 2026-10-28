@@ -39,6 +39,8 @@ import {
   onSessionEnding,
   reportSessionEndSaved,
   saveForQuit,
+  beginExit,
+  EXIT_DEADLINE_MS,
   windowIsHidden,
 } from "./services/quit";
 import { useI18n } from "./i18n/I18nContext";
@@ -562,7 +564,7 @@ export function App() {
     let closeUnlisten: (() => void) | undefined;
     let sessionEndUnlisten: (() => void) | undefined;
     let retired = false;
-    let closing: Promise<boolean> | null = null;
+    let closing: Promise<unknown> | null = null;
     let sessionEnding = false;
     let sessionAttempt: number | null = null;
 
@@ -624,22 +626,25 @@ export function App() {
     // window teardown, so it could not be relied on to persist. The failure
     // paths log while the window is still open.
     //
-    // Resolves whether the window may close: the save landed, or the user chose
-    // to quit without it. A failed save cancels the quit (unsaved-edits
-    // conventions, Quitting).
-    async function saveBeforeClose(): Promise<boolean> {
+    // Resolves the exit's deadline when the window may close: the save landed
+    // within it, or the user chose to quit without it; null when the quit is
+    // cancelled (unsaved-edits conventions, Quitting). The deadline is fixed
+    // as the close begins and again after the user answers the question, since
+    // the time the question waits for the user is not the exit's.
+    async function saveBeforeClose(): Promise<number | null> {
       for (;;) {
-        const saved = await saveForQuit(quitSteps);
-        if (retired) return false;
-        if (saved) return true;
-        if (sessionEnding) return false;
+        const deadline = Date.now() + EXIT_DEADLINE_MS;
+        const saved = await saveForQuit(quitSteps, deadline);
+        if (retired) return null;
+        if (saved) return deadline;
+        if (sessionEnding) return null;
         const choice = await askAfterQuitSaveFailure();
-        if (retired) return false;
+        if (retired) return null;
         if (choice === "quitAnyway") {
           logWarn("quit without saving", {});
-          return true;
+          return Date.now() + EXIT_DEADLINE_MS;
         }
-        if (choice === "cancel") return false;
+        if (choice === "cancel") return null;
       }
     }
 
@@ -659,11 +664,14 @@ export function App() {
         // mid-write.
         event.preventDefault();
         if (closing || sessionEnding) return;
-        closing = saveBeforeClose();
+        const saving = saveBeforeClose();
+        closing = saving;
         try {
-          if (!(await closing) || retired || sessionEnding) {
+          const deadline = await saving;
+          if (deadline === null || retired || sessionEnding) {
             return;
           }
+          await beginExit(deadline);
           appDestroyingRef.current = true;
           await appWindow.destroy();
         } catch (error) {
@@ -689,9 +697,10 @@ export function App() {
         );
       });
 
-      // An OS logout, restart or shutdown never prompts: the same save runs,
-      // its failures are logged, and the Rust core exits once it hears back or
-      // its own bound passes (unsaved-edits conventions, Quitting).
+      // An OS logout, restart or shutdown never prompts: the same save runs with
+      // no deadline of its own, its failures are logged, and the Rust core exits
+      // once it hears back or its exit deadline passes (unsaved-edits
+      // conventions, Quitting).
       void onSessionEnding((attempt) => {
         if (retired || sessionAttempt === attempt) return;
         const previousSessionEnding = sessionEnding;

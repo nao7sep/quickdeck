@@ -12,7 +12,6 @@ mod presentation;
 mod quit;
 pub mod records;
 mod records_window;
-mod startup;
 pub mod storage;
 pub mod theme;
 pub mod window_placement;
@@ -132,7 +131,7 @@ async fn load_app_data(app: AppHandle) -> Result<LoadedAppData, CommandFailure> 
 }
 
 // The language the native menu speaks, for a halt screen shown when the load
-// failed or timed out: no file access, so it answers at once.
+// failed: no file access, so it answers at once.
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct LaunchLanguage {
@@ -545,7 +544,7 @@ pub fn run() {
     // AppKit's language when the application object is created.
     let config_path =
         paths::data_dir_before_launch().map(|dir| dir.join(storage::CONFIG_FILE_NAME));
-    let config = startup::saved_config(config_path);
+    let config = config_path.and_then(|path| std::fs::read_to_string(path).ok());
     let config = config.as_deref().and_then(storage::launch_config);
     let saved_theme = theme::saved_window_theme(config.as_ref());
     let language = PresentationState::detect(config.as_ref());
@@ -555,6 +554,7 @@ pub fn run() {
         .manage(language)
         .manage(managed_placement_state)
         .manage(quit::SessionEnd::default())
+        .manage(quit::ExitDeadline::default())
         .manage(storage::SnapshotConnection::default())
         .plugin(instance_owner::init())
         .plugin(tauri_plugin_opener::init())
@@ -652,6 +652,7 @@ pub fn run() {
             copy_text,
             log_event,
             quit::session_end_saved,
+            quit::begin_exit,
             quit::ask_quit_save_failure_standalone,
         ])
         .build(tauri::generate_context!())
@@ -681,14 +682,19 @@ pub fn run() {
             shutdown_logged = true;
             logging::log_shutdown();
         }
+        // The exit's steps draw on its one deadline: placement is written
+        // inline, then pending backup history (not at an OS session end,
+        // data-backup conventions) and the log get what remains.
         if matches!(event, RunEvent::Exit) {
+            let deadline = app.state::<quit::ExitDeadline>();
+            deadline.get();
             if let Some(root) = app.try_state::<paths::DataRoot>() {
                 window_placement::save(&root.0, &placement_state);
             }
-            if let Some(wait) = app.state::<quit::SessionEnd>().backup_wait() {
-                backup_store::drain(wait);
+            if !app.state::<quit::SessionEnd>().ending() {
+                backup_store::drain(deadline.remaining());
             }
-            logging::flush();
+            logging::flush(deadline.remaining());
         }
     });
 }
