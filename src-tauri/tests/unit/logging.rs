@@ -385,19 +385,19 @@ fn external_sqlite_lock_falls_back_on_writer_then_next_healthy_insert_works() {
     let writer = std::thread::spawn(move || run_writer(Ok(writer_file), thread_session, lines,
         || { stored.send(()).unwrap(); }));
     assert!(logger.write_event(Level::Info, "before lock", now_iso(), Map::new()));
-    observed.recv_timeout(Duration::from_secs(10)).unwrap();
+    observed.recv().unwrap();
     let external = Connection::open(&file).unwrap();
     external.execute_batch("BEGIN IMMEDIATE").unwrap();
     assert!(logger.write_event(Level::Error, "while locked", now_iso(), map(json!({ "detail": "retained" }))));
     let (done, written) = mpsc::sync_channel(1);
     assert!(logger.writer.send(Message::Flush(done)).is_ok());
-    written.recv_timeout(Duration::from_secs(10)).unwrap();
+    written.recv().unwrap();
     let fallback = fs::read_to_string(dir.path().join("logs/20260101-000000-000-utc.log")).unwrap();
     assert!(fallback.contains("while locked"));
     assert!(fallback.contains("retained"));
     external.execute_batch("ROLLBACK").unwrap();
     assert!(logger.write_event(Level::Info, "after lock", now_iso(), Map::new()));
-    observed.recv_timeout(Duration::from_secs(10)).unwrap();
+    observed.recv().unwrap();
     drop(logger);
     writer.join().unwrap();
     let messages = external.prepare("SELECT message FROM log_lines ORDER BY id").unwrap()

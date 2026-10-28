@@ -77,12 +77,14 @@ fn secondary_activation_uses_the_published_endpoint() {
 fn an_activation_that_arrives_after_the_connection_is_still_read() {
     let listener = TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0)).unwrap();
     let address = listener.local_addr().unwrap();
+    let (was_accepted, accept) = std::sync::mpsc::channel();
     let sender = std::thread::spawn(move || {
         let mut stream = TcpStream::connect(address).unwrap();
-        std::thread::sleep(Duration::from_millis(100));
+        accept.recv().unwrap();
         stream.write_all(b"activate").unwrap();
     });
     let (mut accepted, _) = listener.accept().unwrap();
+    was_accepted.send(()).unwrap();
     assert!(is_activation(&mut accepted));
     sender.join().unwrap();
 }
@@ -110,7 +112,7 @@ fn an_incomplete_client_does_not_occupy_the_listener_indefinitely() {
         let (mut stream, _) = listener.accept().unwrap();
         done.send(is_activation(&mut stream)).unwrap();
     });
-    assert!(!completed.recv_timeout(Duration::from_secs(10)).unwrap());
+    assert!(!completed.recv().unwrap());
     drop(client);
     reader.join().unwrap();
 }

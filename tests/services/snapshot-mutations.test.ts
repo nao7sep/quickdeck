@@ -15,12 +15,15 @@ it("does not let an earlier capture repopulate Delete all", async () => {
   const { createSnapshot, deleteAllSnapshots } = await import("../../src/services/persistence");
   let rows: string[] = [];
   let release!: () => void;
+  let captureAdmitted!: () => void;
+  const admitted = new Promise<void>((resolve) => { captureAdmitted = resolve; });
   invoke.mockImplementation((command: string) => {
     if (command === "create_snapshot") return new Promise((resolve) => {
       release = () => {
         rows.push(input.content);
         resolve({ inserted: true, id: "snapshot" });
       };
+      captureAdmitted();
     });
     const removed = rows.length;
     rows = [];
@@ -28,7 +31,7 @@ it("does not let an earlier capture repopulate Delete all", async () => {
   });
   const capturing = createSnapshot(input);
   const deleting = deleteAllSnapshots();
-  await vi.waitFor(() => expect(release).toBeTypeOf("function"));
+  await admitted;
   release();
   await Promise.all([capturing, deleting]);
   expect(rows).toEqual([]);
@@ -37,15 +40,18 @@ it("does not let an earlier capture repopulate Delete all", async () => {
 it("orders a batch and a single deletion with single captures", async () => {
   const { createSnapshot, createSnapshots, deleteSnapshot } = await import("../../src/services/persistence");
   let release!: () => void;
+  let firstAdmitted!: () => void;
+  const admitted = new Promise<void>((resolve) => { firstAdmitted = resolve; });
   invoke.mockImplementationOnce(() => new Promise((resolve) => {
     release = () => resolve({ inserted: true, id: "first" });
+    firstAdmitted();
   }));
   invoke.mockResolvedValueOnce([{ inserted: true, id: "second" }]);
   invoke.mockResolvedValueOnce(true);
   const first = createSnapshot(input);
   const batch = createSnapshots([input]);
   const deletion = deleteSnapshot("first");
-  await vi.waitFor(() => expect(release).toBeTypeOf("function"));
+  await admitted;
   try {
     expect(invoke.mock.calls.map(([command]) => command)).toEqual(["create_snapshot"]);
   } finally {

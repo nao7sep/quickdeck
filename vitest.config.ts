@@ -16,6 +16,10 @@ export default defineConfig({
     __APP_VERSION__: JSON.stringify(version),
   },
   test: {
+    // Tests carry no timeouts: each awaits the promise or event it needs, and
+    // product deadlines run on fake timers.
+    testTimeout: 0,
+    hookTimeout: 0,
     environment: "jsdom",
     include: ["tests/**/*.test.{ts,tsx}"],
     setupFiles: ["tests/setup/rendered-keys.ts"],

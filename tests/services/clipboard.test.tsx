@@ -77,12 +77,14 @@ it("keeps snapshot copies ordered through settlement across closing and reopenin
 
 it("keeps a failed copy rejectable and admits the next copy only after rejection settles", async () => {
   let rejectFirst!: (error: Error) => void;
-  invoke.mockImplementationOnce(() => new Promise<void>((_, reject) => { rejectFirst = reject; }));
+  let firstAdmitted!: () => void;
+  const admitted = new Promise<void>((resolve) => { firstAdmitted = resolve; });
+  invoke.mockImplementationOnce(() => new Promise<void>((_, reject) => { rejectFirst = reject; firstAdmitted(); }));
   invoke.mockResolvedValueOnce(undefined);
   const first = copyText("first copy");
   const failure = expect(first).rejects.toThrow("clipboard busy");
   const second = copyText("second copy");
-  await vi.waitFor(() => expect(rejectFirst).toBeTypeOf("function"));
+  await admitted;
   try {
     expect(invoke.mock.calls).toEqual([["copy_text", { text: "first copy" }]]);
   } finally {

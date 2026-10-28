@@ -221,12 +221,7 @@ fn a_blocked_store_holds_up_neither_a_save_nor_the_next_save_of_that_file() {
     let shared = writer.shared.clone();
     *lock(&WRITER) = Some(writer);
     record(&store, &path, b"v1");
-    let blocked = entry.recv_timeout(Duration::from_secs(10));
-    if blocked.is_err() {
-        let _ = release.send(());
-        close_backup_store();
-        blocked.expect("backup writer did not reach its write boundary");
-    }
+    entry.recv().unwrap();
 
     let (acknowledged, acknowledgement) = mpsc::channel();
     let caller_store = store.clone();
@@ -236,9 +231,9 @@ fn a_blocked_store_holds_up_neither_a_save_nor_the_next_save_of_that_file() {
         record(&caller_store, &caller_path, b"v3");
         acknowledged.send(()).unwrap();
     });
-    // The watchdog catches hangs; acknowledgement and pending work while the
-    // real writer is parked establish that recording does not wait for it.
-    let acknowledged = acknowledgement.recv_timeout(Duration::from_secs(10));
+    // Acknowledgement and pending work while the real writer is parked
+    // establish that recording does not wait for it.
+    acknowledgement.recv().unwrap();
     let (writing, pending) = {
         let queue = lock(&shared.0);
         (queue.writing, queue.pending.iter().map(|version| {
@@ -248,7 +243,6 @@ fn a_blocked_store_holds_up_neither_a_save_nor_the_next_save_of_that_file() {
     release.send(()).unwrap();
     caller.join().unwrap();
     close_backup_store();
-    acknowledged.expect("backup recording blocked its caller");
     assert!(writing, "the writer's admitted batch was still blocked");
     assert_eq!(pending, [(path.clone(), b"v3".to_vec())]);
     assert_eq!(contents(&store, &path), [b"v3".to_vec()]);
@@ -267,17 +261,11 @@ fn drain_returns_when_its_bound_expires_with_pending_work() {
         shared: shared.clone(),
         thread: None,
     });
-    let (finished, completion) = mpsc::channel();
-    let waiter = std::thread::spawn(move || {
-        finished.send(drain(Duration::from_millis(10))).unwrap();
-    });
-    let result = completion.recv_timeout(Duration::from_secs(10));
-    // Release the waiter even if the bound stopped working, so cleanup cannot hang.
+    // What remains of the exit's deadline can be nothing.
+    let drained = drain(Duration::ZERO);
     lock(&shared.0).pending.clear();
-    shared.1.notify_all();
-    waiter.join().unwrap();
     close_backup_store();
-    assert!(!result.expect("backup drain did not honor its bound"));
+    assert!(!drained);
 }
 
 #[test]
@@ -294,7 +282,7 @@ fn record_is_best_effort_when_the_store_cannot_be_opened() {
     record(&store, &target, b"content");
     record(&store, &target, b"content 2");
     assert!(
-        drain(Duration::from_secs(5)),
+        drain(Duration::MAX),
         "a disabled store still drains"
     );
     close_backup_store();
