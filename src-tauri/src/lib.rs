@@ -468,39 +468,35 @@ async fn records_list_width(app: AppHandle) -> Result<Option<f64>, CommandFailur
 // The Records window's reads. Unlike every other command they log nothing when
 // they succeed (records.rs says why); a failure is logged once.
 async fn read_records<T: Send + 'static>(
-    app: AppHandle,
     op: &'static str,
     read: impl FnOnce(&rusqlite::Connection) -> rusqlite::Result<T> + Send + 'static,
 ) -> Result<T, CommandFailure> {
-    off_main_thread(move || {
-        let file = paths::app_data_dir(&app)?.join(storage::RECORDS_DB_FILE_NAME);
-        records::read(&file, read)
-    })
+    off_main_thread(move || logging::read(read))
     .await
     .inspect_err(|error| logging::error("records read failed", json!({ "op": op, "error": error })))
     .map_err(CommandFailure::recorded)
 }
 
 #[tauri::command]
-async fn read_records_page(app: AppHandle, query: RecordsQuery) -> Result<RecordsPage, CommandFailure> {
-    read_records(app, "read_records_page", move |conn| {
+async fn read_records_page(query: RecordsQuery) -> Result<RecordsPage, CommandFailure> {
+    read_records("read_records_page", move |conn| {
         records::read_page(conn, &query)
     })
     .await
 }
 
 #[tauri::command]
-async fn read_record_detail(app: AppHandle, id: i64) -> Result<Option<RecordDetail>, CommandFailure> {
-    read_records(app, "read_record_detail", move |conn| {
+async fn read_record_detail(id: i64) -> Result<Option<RecordDetail>, CommandFailure> {
+    read_records("read_record_detail", move |conn| {
         records::read_detail(conn, id)
     })
     .await
 }
 
 #[tauri::command]
-async fn read_record_sources(app: AppHandle) -> Result<RecordSources, CommandFailure> {
+async fn read_record_sources() -> Result<RecordSources, CommandFailure> {
     let current_session = logging::session().unwrap_or_default();
-    read_records(app, "read_record_sources", move |conn| {
+    read_records("read_record_sources", move |conn| {
         Ok(RecordSources {
             current_session,
             sessions: records::read_sessions(conn)?,

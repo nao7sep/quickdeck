@@ -1,6 +1,5 @@
-use quickdeck_lib::format_version::RECORDS;
 use quickdeck_lib::records::{
-    read, read_detail, read_page, read_sessions, Cursor, LevelFilter, RecordsQuery,
+    read_detail, read_page, read_sessions, Cursor, LevelFilter, RecordsQuery,
     PAGE_SIZE, SCHEMA,
 };
 use rusqlite::{params, Connection};
@@ -303,61 +302,4 @@ fn a_detail_holds_every_column_as_stored() {
     assert_eq!(detail.snapshot_id, None);
     assert_eq!(detail.fields, r#"{"op":"save_panes","error":"disk full"}"#);
     assert_eq!(read_detail(&conn, id + 1).unwrap(), None);
-}
-
-#[test]
-fn a_bounded_read_opens_the_file_read_only_and_reports_a_missing_database() {
-    let dir = tempfile::tempdir().unwrap();
-    let file = dir.path().join("records.sqlite3");
-    {
-        let conn = Connection::open(&file).unwrap();
-        conn.execute_batch(SCHEMA).unwrap();
-        conn.pragma_update(None, "user_version", RECORDS).unwrap();
-        insert(
-            &conn,
-            LAUNCH,
-            "2026-10-01T08:00:01.000Z",
-            "info",
-            "kept",
-            "{}",
-        );
-    }
-
-    let page = read(&file, |conn| {
-        read_page(conn, &RecordsQuery::default())
-    })
-    .unwrap();
-    assert_eq!(page.records[0].message, "kept");
-    let write = read(&file, |conn| {
-        conn.execute("DELETE FROM log_lines", []).map(|_| ())
-    });
-    assert!(write.is_err(), "a read connection must not write");
-    assert!(read(&dir.path().join("missing.sqlite3"), read_sessions).is_err());
-}
-
-#[test]
-fn a_records_database_from_a_newer_build_is_not_read() {
-    let dir = tempfile::tempdir().unwrap();
-    let file = dir.path().join("records.sqlite3");
-    let conn = Connection::open(&file).unwrap();
-    conn.execute_batch(SCHEMA).unwrap();
-    conn.execute_batch("pragma user_version = 2;").unwrap();
-    drop(conn);
-
-    let refused = read(&file, read_sessions).err().unwrap();
-    assert!(refused.contains("records.sqlite3"), "{refused}");
-    assert!(refused.contains("newer"), "{refused}");
-}
-
-#[test]
-fn a_records_database_without_its_marker_is_not_read() {
-    let dir = tempfile::tempdir().unwrap();
-    let file = dir.path().join("records.sqlite3");
-    Connection::open(&file)
-        .unwrap()
-        .execute_batch(SCHEMA)
-        .unwrap();
-
-    let refused = read(&file, read_sessions).err().unwrap();
-    assert!(refused.contains("no format version"), "{refused}");
 }

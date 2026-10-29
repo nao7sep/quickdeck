@@ -183,7 +183,7 @@ fn distinct_paths_keep_their_own_rows() {
 
 #[test]
 #[serial(backup_store)]
-fn pending_work_keeps_only_the_newest_version_of_each_path() {
+fn pending_work_keeps_every_version_in_save_order() {
     let dir = tempfile::tempdir().unwrap();
     let writer = Writer {
         store_file: dir.path().join(BACKUPS_DB_FILE_NAME),
@@ -203,7 +203,10 @@ fn pending_work_keeps_only_the_newest_version_of_each_path() {
         .iter()
         .map(|version| (version.path.clone(), version.bytes.clone()))
         .collect();
-    assert_eq!(pending, [(panes, b"1".to_vec()), (config, b"2".to_vec())]);
+    assert_eq!(
+        pending,
+        [(config.clone(), b"1".to_vec()), (panes, b"1".to_vec()), (config, b"2".to_vec())]
+    );
 }
 
 #[test]
@@ -244,7 +247,7 @@ fn a_blocked_store_holds_up_neither_a_save_nor_the_next_save_of_that_file() {
     caller.join().unwrap();
     close_backup_store();
     assert!(writing, "the writer's admitted batch was still blocked");
-    assert_eq!(pending, [(path.clone(), b"v3".to_vec())]);
+    assert_eq!(pending, [(path.clone(), b"v2".to_vec()), (path.clone(), b"v3".to_vec())]);
     assert_eq!(contents(&store, &path), [b"v3".to_vec()]);
 }
 

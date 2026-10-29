@@ -2,7 +2,9 @@
 //! conventions), each carrying its session and the pane or snapshot it belongs
 //! to. The Rust core owns the database; the webview forwards structured log
 //! objects via the `log_event` command (see `lib.rs`). Rows are written on the
-//! logger's own thread, and `flush` waits for those already sent. A failed write
+//! logger's own thread, which owns the one connection to the database: the
+//! Records window's reads (`read`) run there too, in order with the lines.
+//! `flush` waits for those already sent. A failed write
 //! goes to `logs/<session stamp>.log` as one JSON line. The schema and the reads
 //! the Records window makes live in `records.rs`.
 
@@ -68,8 +70,12 @@ struct Session {
     root: Option<PathBuf>,
 }
 
-// What the writer thread receives: a line to write, or a request to say when
-// every line sent before it is written.
+// A read of the records database, given the writer's connection or why the
+// database could not be opened.
+type Read = Box<dyn FnOnce(Result<&Connection, &str>) + Send>;
+
+// What the writer thread receives: a line to write, a read to run, or a request
+// to say when every line sent before it is written.
 enum Message {
     Line {
         level: Level,
@@ -77,6 +83,7 @@ enum Message {
         time: String,
         fields: Map<String, Value>,
     },
+    Read(Read),
     Flush(mpsc::SyncSender<()>),
 }
 
@@ -193,20 +200,16 @@ fn run_writer(
     stored: impl Fn(),
 ) {
     let records = file.and_then(|file| open_records(&file));
-    let records = match records {
-        Ok(conn) => Some(conn),
-        Err(error) => {
-            write_record(
-                None,
-                &session,
-                Level::Warn,
-                "records database unavailable",
-                &now_iso(),
-                &into_map(json!({ "error": error })),
-            );
-            None
-        }
-    };
+    if let Err(error) = &records {
+        write_record(
+            None,
+            &session,
+            Level::Warn,
+            "records database unavailable",
+            &now_iso(),
+            &into_map(json!({ "error": error })),
+        );
+    }
     for line in lines {
         match line {
             Message::Line {
@@ -215,10 +218,11 @@ fn run_writer(
                 time,
                 fields,
             } => {
-                if write_record(records.as_ref(), &session, level, &message, &time, &fields) {
+                if write_record(records.as_ref().ok(), &session, level, &message, &time, &fields) {
                     stored();
                 }
             }
+            Message::Read(read) => read(records.as_ref().map_err(String::as_str)),
             Message::Flush(done) => {
                 let _ = done.send(());
             }
@@ -248,10 +252,6 @@ pub fn flush(bound: Duration) {
 fn open_records(file: &Path) -> Result<Connection, String> {
     let to_string = |error: rusqlite::Error| error.to_string();
     let conn = Connection::open(file).map_err(to_string)?;
-    // Diagnostics fall back on this writer immediately when another process
-    // holds SQLite, instead of backing up later records behind repeated waits.
-    conn.pragma_update(None, "busy_timeout", 0)
-        .map_err(to_string)?;
     match format_version::check_sqlite(&conn, RECORDS_DB_FILE_NAME, format_version::RECORDS)? {
         SqliteFormat::Newer(recorded) => {
             return Err(format_version::newer_message(
@@ -311,6 +311,28 @@ pub fn log_forwarded(
 // message racing the window teardown.
 pub fn log_shutdown() {
     write_event(Level::Info, "shutdown", now_iso(), Map::new());
+}
+
+/// Runs `read` on the records database after the lines sent so far, on the
+/// writer's thread and connection, and waits for its result. A read must not
+/// log: each stored row signals the Records window to read again.
+pub fn read<T: Send + 'static>(
+    read: impl FnOnce(&Connection) -> rusqlite::Result<T> + Send + 'static,
+) -> Result<T, String> {
+    let logger = LOGGER.get().ok_or_else(|| "the records database is not open".to_string())?;
+    let (answer, answered) = mpsc::sync_channel(1);
+    let job: Read = Box::new(move |records| {
+        let _ = answer.send(
+            records
+                .map_err(str::to_string)
+                .and_then(|conn| read(conn).map_err(|error| error.to_string())),
+        );
+    });
+    logger
+        .writer
+        .send(Message::Read(job))
+        .map_err(|_| "the records writer is not running".to_string())?;
+    answered.recv().map_err(|_| "the records writer stopped".to_string())?
 }
 
 // This launch's session, as every row of it carries.

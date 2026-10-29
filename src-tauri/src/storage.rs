@@ -1075,10 +1075,6 @@ fn open_snapshot_store(data_dir: &Path) -> Result<SnapshotStore, String> {
     // (data-backup conventions).
     fs::create_dir_all(data_dir).map_err(to_string_error)?;
     let conn = Connection::open(data_dir.join(SNAPSHOTS_DB_FILE_NAME)).map_err(to_string_error)?;
-    // Only this process writes the store; the timeout covers a reader such as a
-    // developer inspecting it.
-    conn.pragma_update(None, "busy_timeout", 5000)
-        .map_err(to_string_error)?;
     match format_version::check_sqlite(&conn, SNAPSHOTS_DB_FILE_NAME, format_version::SNAPSHOTS)? {
         SqliteFormat::Newer(recorded) => return Ok(SnapshotStore::Newer(recorded)),
         SqliteFormat::New => init_schema(&conn)?,

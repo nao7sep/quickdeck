@@ -1,21 +1,15 @@
 //! What the Records window reads from `records.sqlite3`: a filtered page of log
 //! lines, newest first and keyset-paged, the launches that have records, and one
-//! line whole. The schema lives here beside the reads; logging.rs writes the rows.
+//! line whole. The schema lives here beside the reads; logging.rs writes the rows
+//! and runs these reads on its writer thread and connection (`logging::read`).
 //!
 //! A read never writes a record of its own, not even on success: every stored
 //! record signals the open window to read again, so a logged read would make the
 //! window read forever. Only a failed read is logged, by the command layer, and the
 //! window stops following new records until a read succeeds.
 
-use std::{path::Path, time::Duration};
-
-use rusqlite::{params_from_iter, types::Value, Connection, OpenFlags, OptionalExtension, Row};
+use rusqlite::{params_from_iter, types::Value, Connection, OptionalExtension, Row};
 use serde::{Deserialize, Serialize};
-
-use crate::{
-    format_version::{self, SqliteFormat},
-    storage::RECORDS_DB_FILE_NAME,
-};
 
 // `fields` holds the free fields as given, minus the domain ids, which have their
 // own columns. The (time, id) index serves the Records window's newest-first pages.
@@ -35,9 +29,6 @@ CREATE INDEX IF NOT EXISTS log_lines_time ON log_lines (time, id);
 ";
 
 pub const PAGE_SIZE: usize = 100;
-
-// SQLite's own wait for a lock the writer holds.
-const BUSY_WAIT: Duration = Duration::from_secs(2);
 
 // The operation a boundary line names, when its fields carry one as text.
 const OP: &str = "CASE WHEN json_valid(fields) AND json_type(fields, '$.op') = 'text' \
@@ -215,33 +206,4 @@ pub fn read_detail(conn: &Connection, id: i64) -> rusqlite::Result<Option<Record
         },
     )
     .optional()
-}
-
-// A connection of its own for each read, read-only, beside the writer's: WAL lets
-// it read every row already committed while the writer goes on. A store in a
-// newer format, or without its format marker, is not read.
-fn open(file: &Path) -> Result<Connection, String> {
-    let to_string = |error: rusqlite::Error| error.to_string();
-    let conn = Connection::open_with_flags(
-        file,
-        OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
-    )
-    .map_err(to_string)?;
-    conn.busy_timeout(BUSY_WAIT).map_err(to_string)?;
-    match format_version::check_sqlite(&conn, RECORDS_DB_FILE_NAME, format_version::RECORDS)? {
-        SqliteFormat::Newer(recorded) => Err(format_version::newer_message(
-            RECORDS_DB_FILE_NAME,
-            recorded,
-        )),
-        SqliteFormat::New | SqliteFormat::Readable => Ok(conn),
-    }
-}
-
-/// Opens the store read-only and runs one read on it. The command layer runs
-/// this on the runtime's blocking pool and awaits it.
-pub fn read<T>(
-    file: &Path,
-    read: impl FnOnce(&Connection) -> rusqlite::Result<T>,
-) -> Result<T, String> {
-    open(file).and_then(|conn| read(&conn).map_err(|error| error.to_string()))
 }

@@ -374,33 +374,46 @@ fn disconnected_writer_never_uses_a_caller_thread_fallback() {
     assert!(fs::read_dir(dir.path()).unwrap().next().is_none());
 }
 
+// Queues a read of the row count, as `read` does, and returns where it answers.
+fn queue_count(logger: &Logger) -> mpsc::Receiver<Result<i64, String>> {
+    let (answer, answered) = mpsc::sync_channel(1);
+    let job: Read = Box::new(move |records| {
+        let _ = answer.send(records.map_err(str::to_string).and_then(|conn| {
+            conn.query_row("SELECT count(*) FROM log_lines", [], |row| row.get(0))
+                .map_err(|error| error.to_string())
+        }));
+    });
+    assert!(logger.writer.send(Message::Read(job)).is_ok());
+    answered
+}
+
 #[test]
-fn external_sqlite_lock_falls_back_on_writer_then_next_healthy_insert_works() {
+fn a_read_runs_on_the_writer_after_the_lines_sent_before_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let (logger, lines) = Logger::channel(session(Some(dir.path())), true);
+    for message in ["first", "second"] {
+        assert!(logger.write_event(Level::Info, message, now_iso(), Map::new()));
+    }
+    let answered = queue_count(&logger);
+    let thread_session = logger.session.clone();
+    drop(logger);
+    run_writer(Ok(dir.path().join("records.sqlite3")), thread_session, lines, || {});
+    assert_eq!(answered.recv().unwrap(), Ok(2));
+}
+
+#[test]
+fn a_read_of_a_records_database_from_a_newer_build_answers_its_error() {
     let dir = tempfile::tempdir().unwrap();
     let file = dir.path().join("records.sqlite3");
+    Connection::open(&file)
+        .unwrap()
+        .execute_batch("pragma user_version = 2;")
+        .unwrap();
     let (logger, lines) = Logger::channel(session(Some(dir.path())), true);
+    let answered = queue_count(&logger);
     let thread_session = logger.session.clone();
-    let writer_file = file.clone();
-    let (stored, observed) = mpsc::channel();
-    let writer = std::thread::spawn(move || run_writer(Ok(writer_file), thread_session, lines,
-        || { stored.send(()).unwrap(); }));
-    assert!(logger.write_event(Level::Info, "before lock", now_iso(), Map::new()));
-    observed.recv().unwrap();
-    let external = Connection::open(&file).unwrap();
-    external.execute_batch("BEGIN IMMEDIATE").unwrap();
-    assert!(logger.write_event(Level::Error, "while locked", now_iso(), map(json!({ "detail": "retained" }))));
-    let (done, written) = mpsc::sync_channel(1);
-    assert!(logger.writer.send(Message::Flush(done)).is_ok());
-    written.recv().unwrap();
-    let fallback = fs::read_to_string(dir.path().join("logs/20260101-000000-000-utc.log")).unwrap();
-    assert!(fallback.contains("while locked"));
-    assert!(fallback.contains("retained"));
-    external.execute_batch("ROLLBACK").unwrap();
-    assert!(logger.write_event(Level::Info, "after lock", now_iso(), Map::new()));
-    observed.recv().unwrap();
     drop(logger);
-    writer.join().unwrap();
-    let messages = external.prepare("SELECT message FROM log_lines ORDER BY id").unwrap()
-        .query_map([], |row| row.get::<_, String>(0)).unwrap().collect::<Result<Vec<_>, _>>().unwrap();
-    assert_eq!(messages, ["before lock", "after lock"]);
+    run_writer(Ok(file), thread_session, lines, || {});
+    let refused = answered.recv().unwrap().unwrap_err();
+    assert!(refused.contains("records.sqlite3"), "{refused}");
 }

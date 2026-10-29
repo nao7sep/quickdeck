@@ -9,10 +9,9 @@
 //! A save hands its exact bytes to `record` strictly after its atomic rename
 //! lands (see `storage::write_json_atomically`); each file's saves arrive one at
 //! a time from its one writer, so history follows save order. `record`
-//! only queues them; one writer thread applies them. A newer save of a path
-//! replaces that path's pending version, so pending work never holds more than
-//! one version per file. Ordinary quit drains the queue with what remains of
-//! the exit's deadline; an OS session end does not wait (lib.rs).
+//! only queues them; one writer thread applies every one in save order.
+//! Ordinary quit drains the queue with what remains of the exit's deadline; an
+//! OS session end does not wait (lib.rs).
 //!
 //! Nothing here can delay or fail a save. A store that cannot be opened is
 //! logged once and recording stops for the session; a failed write is logged
@@ -227,7 +226,6 @@ impl Writer {
         if queue.closed {
             return;
         }
-        queue.pending.retain(|pending| pending.path != version.path);
         queue.pending.push(version);
         changed.notify_all();
     }
@@ -304,10 +302,6 @@ fn open_store(file: &Path) -> Result<Connection, ()> {
 /// schema and its format marker; unsupported stores are left untouched.
 fn prepare_store(conn: &Connection) -> Result<(), String> {
     let to_string = |error: rusqlite::Error| error.to_string();
-    // Only this process writes the store (instance.lock); the timeout covers a
-    // reader such as a developer inspecting it, without holding up the writer long.
-    conn.busy_timeout(Duration::from_secs(1))
-        .map_err(to_string)?;
     match format_version::check_sqlite(conn, BACKUPS_DB_FILE_NAME, format_version::BACKUPS)? {
         SqliteFormat::Newer(recorded) => Err(format_version::newer_message(
             BACKUPS_DB_FILE_NAME,
