@@ -2,7 +2,7 @@ use std::{
     fs::{self, File},
     io::Write,
     path::{Path, PathBuf},
-    sync::Mutex,
+    sync::mpsc,
 };
 
 use chrono::{SecondsFormat, Utc};
@@ -469,7 +469,7 @@ pub fn create_snapshots(
     app: &AppHandle,
     snapshots: Vec<SnapshotInput>,
 ) -> Result<Vec<SnapshotWriteResult>, String> {
-    app.state::<SnapshotConnection>().with(|conn| {
+    app.state::<SnapshotConnection>().with(move |conn| {
         let transaction = begin_snapshot_write(conn)?;
         let results = snapshots
             .into_iter()
@@ -487,7 +487,7 @@ pub fn list_snapshots(
     offset: u32,
 ) -> Result<SnapshotListResult, String> {
     app.state::<SnapshotConnection>()
-        .with(|conn| list_snapshots_with_connection(conn, &query, limit, offset))
+        .with(move |conn| list_snapshots_with_connection(conn, &query, limit, offset))
 }
 
 // A blank query lists the whole store newest-first; terms narrow that list. The
@@ -565,7 +565,7 @@ fn create_snapshot_from_input(
         });
     }
 
-    app.state::<SnapshotConnection>().with(|conn| {
+    app.state::<SnapshotConnection>().with(move |conn| {
         let transaction = begin_snapshot_write(conn)?;
         let result = create_snapshot_with_connection(&transaction, snapshot)?;
         transaction.commit().map_err(to_string_error)?;
@@ -664,7 +664,7 @@ pub fn count_snapshots(app: &AppHandle) -> Result<u64, String> {
 /// two windows at once reports honestly rather than twice.
 pub fn delete_snapshot(app: &AppHandle, id: String) -> Result<bool, String> {
     app.state::<SnapshotConnection>()
-        .with(|conn| delete_snapshot_with_connection(conn, &id))
+        .with(move |conn| delete_snapshot_with_connection(conn, &id))
 }
 
 fn delete_snapshot_with_connection(conn: &Connection, id: &str) -> Result<bool, String> {
@@ -1015,13 +1015,16 @@ enum SnapshotStore {
     Newer(u32),
 }
 
-// The snapshot store's one connection for this process, opened and checked by the
-// launch's load; instance_owner makes this process the store's only one. Every
-// snapshot command runs on it behind one lock, which serializes their writes, and
-// opening under that lock leaves a new store's WAL switch to a single opener:
-// React's development StrictMode sends load_app_data twice together.
-#[derive(Default)]
-pub struct SnapshotConnection(Mutex<SnapshotSlot>);
+// The snapshot store's owner: one thread that holds the store's one connection
+// for this process, opened and checked by the launch's load; instance_owner makes
+// this process the store's only one. Every snapshot command is a message it
+// answers in order on that connection, so their writes never overlap, and a new
+// store's WAL switch has a single opener although React's development StrictMode
+// sends load_app_data twice together. Callers wait for the answer on their own
+// thread (the runtime's blocking pool for commands).
+pub struct SnapshotConnection(mpsc::Sender<SnapshotJob>);
+
+type SnapshotJob = Box<dyn FnOnce(&mut SnapshotSlot) + Send>;
 
 #[derive(Default)]
 enum SnapshotSlot {
@@ -1031,41 +1034,74 @@ enum SnapshotSlot {
     Newer(u32),
 }
 
+impl Default for SnapshotConnection {
+    fn default() -> Self {
+        let (jobs, received) = mpsc::channel::<SnapshotJob>();
+        // A thread that cannot start drops the receiver, so every command
+        // reports the store unavailable.
+        let spawned = std::thread::Builder::new()
+            .name("snapshots".to_string())
+            .spawn(move || {
+                let mut slot = SnapshotSlot::Unopened;
+                for job in received {
+                    job(&mut slot);
+                }
+            });
+        if let Err(error) = spawned {
+            crate::logging::warn(
+                "snapshot store owner unavailable",
+                serde_json::json!({ "error": error.to_string() }),
+            );
+        }
+        Self(jobs)
+    }
+}
+
 impl SnapshotConnection {
+    fn run<T: Send + 'static>(
+        &self,
+        job: impl FnOnce(&mut SnapshotSlot) -> Result<T, String> + Send + 'static,
+    ) -> Result<T, String> {
+        let (answer, answered) = mpsc::sync_channel(1);
+        self.0
+            .send(Box::new(move |slot| {
+                let _ = answer.send(job(slot));
+            }))
+            .map_err(|_| format!("{SNAPSHOTS_DB_FILE_NAME} is unavailable"))?;
+        answered
+            .recv()
+            .map_err(|_| format!("{SNAPSHOTS_DB_FILE_NAME} is unavailable"))?
+    }
+
     // Opens the store unless an earlier load already did. Returns the newer
     // format a store records, which the load reports and halts on.
     fn open(&self, data_dir: &Path) -> Result<Option<u32>, String> {
-        let mut slot = self
-            .0
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        if let SnapshotSlot::Ready(_) = *slot {
-            return Ok(None);
-        }
-        let (opened, newer) = match open_snapshot_store(data_dir)? {
-            SnapshotStore::Ready(conn) => (SnapshotSlot::Ready(conn), None),
-            SnapshotStore::Newer(recorded) => (SnapshotSlot::Newer(recorded), Some(recorded)),
-        };
-        *slot = opened;
-        Ok(newer)
+        let data_dir = data_dir.to_path_buf();
+        self.run(move |slot| {
+            if let SnapshotSlot::Ready(_) = slot {
+                return Ok(None);
+            }
+            let (opened, newer) = match open_snapshot_store(&data_dir)? {
+                SnapshotStore::Ready(conn) => (SnapshotSlot::Ready(conn), None),
+                SnapshotStore::Newer(recorded) => (SnapshotSlot::Newer(recorded), Some(recorded)),
+            };
+            *slot = opened;
+            Ok(newer)
+        })
     }
 
-    fn with<T>(
+    fn with<T: Send + 'static>(
         &self,
-        work: impl FnOnce(&mut Connection) -> Result<T, String>,
+        work: impl FnOnce(&mut Connection) -> Result<T, String> + Send + 'static,
     ) -> Result<T, String> {
-        let mut slot = self
-            .0
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        match &mut *slot {
+        self.run(move |slot| match slot {
             SnapshotSlot::Ready(conn) => work(conn),
             SnapshotSlot::Newer(recorded) => Err(format_version::newer_message(
                 SNAPSHOTS_DB_FILE_NAME,
                 *recorded,
             )),
             SnapshotSlot::Unopened => Err(format!("{SNAPSHOTS_DB_FILE_NAME} is not open")),
-        }
+        })
     }
 }
 
