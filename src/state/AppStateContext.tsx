@@ -667,7 +667,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         logError("autosave failed", { error: serializeError(error) });
         showBlockingError(message("saveError.title"), saveFailureMessage(error) ?? message("saveError.autosave"));
       });
-    }, Math.max(1, settings.autosaveDelaySeconds) * 1000);
+    }, settings.autosaveDelaySeconds * 1000);
 
     return () => window.clearTimeout(timeoutId);
   }, [loadStatus, saveNow, saveState, settings.autosaveDelaySeconds, showBlockingError]);

@@ -1291,7 +1291,6 @@ input[type="range"]:focus-visible {
 /* Every one-line field: one height, one edge, one corner. The search box is the
    field there, its input a borderless part of it, so the box takes the height. */
 .formGrid input[type="text"],
-.formGrid input[type="number"],
 .formGrid select,
 .recordsSelect,
 .searchBox {
@@ -1306,7 +1305,6 @@ input[type="range"]:focus-visible {
 }
 
 .formGrid input[type="text"]:hover,
-.formGrid input[type="number"]:hover,
 .formGrid select:hover,
 .recordsSelect:hover,
 .searchBox:hover {
@@ -1316,7 +1314,6 @@ input[type="range"]:focus-visible {
 /* A field shows focus by recolouring its own frame, with a soft glow of the
    ring's colour, rather than a second ring outside it. */
 .formGrid input[type="text"]:focus,
-.formGrid input[type="number"]:focus,
 .formGrid select:focus,
 .recordsSelect:focus,
 .searchBox:focus-within {
@@ -1352,15 +1349,25 @@ input[type="range"]:focus-visible {
   color: var(--text-muted);
 }
 
-/* An out-of-range numeric value is what disables Save; flag the offending
-   field so the disabled commit button is not unexplained. */
-.formGrid input[type="number"]:invalid {
+/* A number field whose text is not an accepted value is what disables Save:
+   its frame turns red and the accepted values show under it, so the disabled
+   button is never unexplained. */
+.numberField {
+  display: grid;
+  gap: 6px;
+}
+
+.formGrid input[aria-invalid="true"] {
   border-color: var(--danger);
 }
 
-.formGrid input[type="number"]:invalid:focus {
+.formGrid input[aria-invalid="true"]:focus {
   border-color: var(--danger);
   box-shadow: 0 0 0 3px var(--danger-surface-pressed);
+}
+
+.fieldError {
+  font-size: 13px;
 }
 
 .formGrid input[type="range"] {

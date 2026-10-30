@@ -62,6 +62,8 @@
   "settings.editorUnderline": "エディタの文字に下線を引く",
   "settings.autosaveDelay": "編集後に自動保存するまでの時間（秒）",
   "settings.snapshotPageSize": "1 ページあたりのスナップショット件数",
+  "settings.wholeNumberRange": "{min} から {max} までの整数を入力してください。",
+  "settings.numberRange": "{min} から {max} までの数値を入力してください。",
 
   "discard.title": "変更を破棄しますか？",
   "discard.body": "保存していない変更があります。破棄して閉じますか？",

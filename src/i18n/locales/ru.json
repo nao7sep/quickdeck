@@ -62,6 +62,8 @@
   "settings.editorUnderline": "Подчёркнутый текст в редакторе",
   "settings.autosaveDelay": "Задержка автосохранения после правок (секунды)",
   "settings.snapshotPageSize": "Снимков на странице",
+  "settings.wholeNumberRange": "Введите целое число от {min} до {max}.",
+  "settings.numberRange": "Введите число от {min} до {max}.",
 
   "discard.title": "Отказаться от изменений?",
   "discard.body": "Есть несохранённые изменения. Отказаться от них и закрыть?",

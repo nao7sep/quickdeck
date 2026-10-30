@@ -1,7 +1,13 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import { useAppState } from "../state/AppStateContext";
 import type { AppSettings } from "../types";
-import { SETTINGS_BOUNDS, isSettingsDraftValid, normalizeSettings } from "../state/normalize";
+import {
+  NUMBER_SETTING_KEYS,
+  SETTINGS_BOUNDS,
+  normalizeSettings,
+  parseNumberSetting,
+  type NumberSettingKey,
+} from "../state/normalize";
 import { DEFAULT_EDITOR_FONT_FAMILY_STACK } from "../state/defaults";
 import { THEME_PREFERENCES } from "../utils/theme";
 import { SYSTEM_ZONE, systemTimeZone, timeZones } from "../utils/timeZone";
@@ -21,13 +27,23 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
   const { t } = i18n;
   const [draft, setDraft] = useState<AppSettings>(settings);
   const [confirmingClose, setConfirmingClose] = useState(false);
+  // The number fields keep exactly what was typed; only an accepted value is
+  // ever saved (number-field conventions).
+  const [numberText, setNumberText] = useState(() => numberTextsOf(settings));
+  const numbers = useMemo(
+    () => Object.fromEntries(NUMBER_SETTING_KEYS.map((key) => [key, parseNumberSetting(numberText[key], key)])) as
+      Record<NumberSettingKey, number | null>,
+    [numberText],
+  );
 
   const isDirty = useMemo(() => {
     const keys = Object.keys(settings) as (keyof AppSettings)[];
-    return keys.some((k) => draft[k] !== settings[k]);
-  }, [draft, settings]);
+    const initialText = numberTextsOf(settings);
+    return keys.some((k) => draft[k] !== settings[k]) ||
+      NUMBER_SETTING_KEYS.some((key) => numberText[key] !== initialText[key]);
+  }, [draft, numberText, settings]);
 
-  const isValid = useMemo(() => isSettingsDraftValid(draft), [draft]);
+  const isValid = NUMBER_SETTING_KEYS.every((key) => numbers[key] !== null);
   const zones = useMemo(() => timeZones(), []);
   // Every System entry shows what it resolves to now (app-chrome and timestamp
   // conventions). The OS appearance comes from the Rust core: a saved Light or
@@ -62,13 +78,23 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
   function save() {
     // Reuse the load-path normalizer so the form and disk agree on the canonical
     // shape.
-    updateSettings(normalizeSettings(draft));
+    updateSettings(normalizeSettings({ ...draft, ...(numbers as Record<NumberSettingKey, number>) }));
     onClose();
   }
 
   function setField<Key extends keyof AppSettings>(key: Key, value: AppSettings[Key]) {
     setDraft((current) => ({ ...current, [key]: value }));
   }
+
+  const numberField = (key: NumberSettingKey, label: string) => (
+    <NumberField
+      label={label}
+      setting={key}
+      text={numberText[key]}
+      valid={numbers[key] !== null}
+      onChange={(text) => setNumberText((current) => ({ ...current, [key]: text }))}
+    />
+  );
 
   return (
     <>
@@ -182,52 +208,9 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
               placeholder={DEFAULT_EDITOR_FONT_FAMILY_STACK}
             />
           </label>
-          <label>
-            <span>
-              {t("settings.editorFontSize")}{" "}
-              <span className="fieldRange">
-                {i18n.number(SETTINGS_BOUNDS.editorFontSize.min)}–{i18n.number(SETTINGS_BOUNDS.editorFontSize.max)}
-              </span>
-            </span>
-            <input
-              type="number"
-              min={SETTINGS_BOUNDS.editorFontSize.min}
-              max={SETTINGS_BOUNDS.editorFontSize.max}
-              value={draft.editorFontSize}
-              onChange={(event) => setField("editorFontSize", Number(event.target.value))}
-            />
-          </label>
-          <label>
-            <span>
-              {t("settings.editorLineHeight")}{" "}
-              <span className="fieldRange">
-                {i18n.number(SETTINGS_BOUNDS.editorLineHeight.min)}–{i18n.number(SETTINGS_BOUNDS.editorLineHeight.max)}
-              </span>
-            </span>
-            <input
-              type="number"
-              step={0.1}
-              min={SETTINGS_BOUNDS.editorLineHeight.min}
-              max={SETTINGS_BOUNDS.editorLineHeight.max}
-              value={draft.editorLineHeight}
-              onChange={(event) => setField("editorLineHeight", Number(event.target.value))}
-            />
-          </label>
-          <label>
-            <span>
-              {t("settings.editorPadding")}{" "}
-              <span className="fieldRange">
-                {i18n.number(SETTINGS_BOUNDS.editorPadding.min)}–{i18n.number(SETTINGS_BOUNDS.editorPadding.max)}
-              </span>
-            </span>
-            <input
-              type="number"
-              min={SETTINGS_BOUNDS.editorPadding.min}
-              max={SETTINGS_BOUNDS.editorPadding.max}
-              value={draft.editorPadding}
-              onChange={(event) => setField("editorPadding", Number(event.target.value))}
-            />
-          </label>
+          {numberField("editorFontSize", t("settings.editorFontSize"))}
+          {numberField("editorLineHeight", t("settings.editorLineHeight"))}
+          {numberField("editorPadding", t("settings.editorPadding"))}
           <label className="checkboxRow">
             <input
               type="checkbox"
@@ -252,41 +235,65 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
             />
             <span>{t("settings.editorUnderline")}</span>
           </label>
-          <label>
-            <span>
-              {t("settings.autosaveDelay")}{" "}
-              <span className="fieldRange">
-                {i18n.number(SETTINGS_BOUNDS.autosaveDelaySeconds.min)}–{i18n.number(SETTINGS_BOUNDS.autosaveDelaySeconds.max)}
-              </span>
-            </span>
-            <input
-              type="number"
-              min={SETTINGS_BOUNDS.autosaveDelaySeconds.min}
-              max={SETTINGS_BOUNDS.autosaveDelaySeconds.max}
-              value={draft.autosaveDelaySeconds}
-              onChange={(event) => setField("autosaveDelaySeconds", Number(event.target.value))}
-            />
-          </label>
-          <label>
-            <span>
-              {t("settings.snapshotPageSize")}{" "}
-              <span className="fieldRange">
-                {i18n.number(SETTINGS_BOUNDS.snapshotSearchPageSize.min)}–{i18n.number(SETTINGS_BOUNDS.snapshotSearchPageSize.max)}
-              </span>
-            </span>
-            <input
-              type="number"
-              min={SETTINGS_BOUNDS.snapshotSearchPageSize.min}
-              max={SETTINGS_BOUNDS.snapshotSearchPageSize.max}
-              value={draft.snapshotSearchPageSize}
-              onChange={(event) => setField("snapshotSearchPageSize", Number(event.target.value))}
-            />
-          </label>
+          {numberField("autosaveDelaySeconds", t("settings.autosaveDelay"))}
+          {numberField("snapshotSearchPageSize", t("settings.snapshotPageSize"))}
         </div>
       </ModalBase>
       {confirmingClose ? (
         <ConfirmCloseModal onCancel={() => setConfirmingClose(false)} onDiscard={onClose} />
       ) : null}
     </>
+  );
+}
+
+function numberTextsOf(settings: AppSettings): Record<NumberSettingKey, string> {
+  return Object.fromEntries(NUMBER_SETTING_KEYS.map((key) => [key, String(settings[key])])) as
+    Record<NumberSettingKey, string>;
+}
+
+// A plain text field rather than a number input: the platform's number input
+// reads partial or unreadable text as empty and steps the value on arrow keys,
+// so the app could neither show what was typed nor judge it. The accepted range
+// shows beside the label, and under the field while the text is not one of them.
+function NumberField({
+  label,
+  setting,
+  text,
+  valid,
+  onChange,
+}: {
+  label: string;
+  setting: NumberSettingKey;
+  text: string;
+  valid: boolean;
+  onChange: (text: string) => void;
+}) {
+  const { t, number } = useI18n();
+  const errorId = useId();
+  const { min, max, whole } = SETTINGS_BOUNDS[setting];
+  return (
+    <div className="numberField">
+      <label>
+        <span>
+          {label}{" "}
+          <span className="fieldRange">
+            {number(min)}–{number(max)}
+          </span>
+        </span>
+        <input
+          type="text"
+          inputMode={whole ? "numeric" : "decimal"}
+          value={text}
+          aria-invalid={!valid}
+          aria-describedby={valid ? undefined : errorId}
+          onChange={(event) => onChange(event.target.value)}
+        />
+      </label>
+      {valid ? null : (
+        <p id={errorId} className="fieldError errorText">
+          {t(whole ? "settings.wholeNumberRange" : "settings.numberRange", { min, max })}
+        </p>
+      )}
+    </div>
   );
 }

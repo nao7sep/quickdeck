@@ -248,6 +248,37 @@ pub struct ConfigToWrite {
     pub quarantined_to: Option<String>,
 }
 
+// The numeric settings' accepted values, as the Settings form and the read of
+// config.json accept them (number-field conventions): inclusive bounds, and
+// whether only a whole number is accepted, by where each sits in the sets.
+const NUMBER_SETTINGS: &[(&[&str], f64, f64, bool)] = &[
+    (&["editorFont", "size"], 10.0, 32.0, true),
+    (&["editorFont", "lineHeight"], 1.0, 3.0, false),
+    (&["editorFont", "padding"], 0.0, 64.0, true),
+    (&["autosaveDelaySeconds"], 1.0, 60.0, true),
+    (&["snapshotSearchPageSize"], 5.0, 200.0, true),
+];
+
+/// The snapshot page sizes a list read accepts: the Snapshots per page setting's
+/// range.
+pub const SNAPSHOT_PAGE_SIZE: std::ops::RangeInclusive<u32> = 5..=200;
+
+// A save is refused, never corrected, when a set it holds carries a numeric
+// setting outside its accepted values; a set it leaves out is at its built-in.
+fn check_number_settings(sets: &serde_json::Map<String, JsonValue>) -> Result<(), String> {
+    for (path, min, max, whole) in NUMBER_SETTINGS {
+        let Some(set) = sets.get(path[0]) else { continue };
+        let value = path[1..].iter().try_fold(set, |value, member| value.get(member));
+        let accepted = value.and_then(JsonValue::as_f64).is_some_and(|number| {
+            (*min..=*max).contains(&number) && (!whole || number.fract() == 0.0)
+        });
+        if !accepted {
+            return Err(format!("config setting {} is not an accepted value", path.join(".")));
+        }
+    }
+    Ok(())
+}
+
 // The file content for the given sets — every set that differs from its
 // built-in, which the frontend decides — keeping only known keys, or None when
 // that equals the file, so an absent file stays absent and a file whose sets are
@@ -264,11 +295,12 @@ pub fn config_to_write(data_dir: &Path, sets: JsonValue) -> Result<ConfigToWrite
         "snapshotSearchPageSize",
         "editorFont",
     ];
-    let current = read_rebuildable_store(&data_dir.join(CONFIG_FILE_NAME), format_version::CONFIG)?;
     let mut stored = sets
         .as_object()
         .ok_or("config sets are not an object")?
         .clone();
+    check_number_settings(&stored)?;
+    let current = read_rebuildable_store(&data_dir.join(CONFIG_FILE_NAME), format_version::CONFIG)?;
     stored.retain(|key, _| KEYS.contains(&key.as_str()));
     Ok(ConfigToWrite {
         content: (current.value.unwrap_or_default() != stored).then_some(JsonValue::Object(stored)),
@@ -505,8 +537,10 @@ fn list_snapshots_with_connection(
         .filter(|term| !term.is_empty())
         .collect::<Vec<_>>();
 
-    let bounded_limit = limit.clamp(1, 200);
-    let fetch_limit = bounded_limit + 1;
+    if !SNAPSHOT_PAGE_SIZE.contains(&limit) {
+        return Err(format!("snapshot page size {limit} is not an accepted value"));
+    }
+    let fetch_limit = limit + 1;
     let mut sql = String::from(
         "select id, pane_id, pane_title, created_at_utc, content from snapshots where 1 = 1",
     );
@@ -548,8 +582,8 @@ fn list_snapshots_with_connection(
         .collect::<Result<Vec<_>, _>>()
         .map_err(to_string_error)?;
 
-    let has_more = rows.len() > bounded_limit as usize;
-    rows.truncate(bounded_limit as usize);
+    let has_more = rows.len() > limit as usize;
+    rows.truncate(limit as usize);
 
     Ok(SnapshotListResult { rows, has_more })
 }

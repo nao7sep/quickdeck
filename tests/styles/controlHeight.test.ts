@@ -37,7 +37,6 @@ describe("one control height", () => {
     const sized = selectorsSizedByControlHeight("height");
     for (const field of [
       '.formGridinput[type="text"]',
-      '.formGridinput[type="number"]',
       ".formGridselect",
       ".searchBox",
     ]) {

@@ -13,18 +13,21 @@ import { normalizeThemePreference } from "../utils/theme";
 import { isDisplayZone } from "../utils/timeZone";
 import { ZOOM_DEFAULT, ZOOM_MAX, ZOOM_MIN } from "../utils/zoom";
 
-// Inclusive bounds for the numeric settings: the Settings form's input min/max
-// and labels, and isSettingsDraftValid, which gates Save and the read of each
-// set (config-sets conventions).
+// The numeric settings' accepted values: inclusive bounds, and whether only a
+// whole number is accepted. The Settings form's errors and Save, the read of
+// each set (config-sets conventions) and the core's config save all accept
+// exactly these (number-field conventions).
 export const SETTINGS_BOUNDS = {
-  editorFontSize: { min: 10, max: 32 },
-  editorLineHeight: { min: 1, max: 3 },
-  editorPadding: { min: 0, max: 64 },
-  autosaveDelaySeconds: { min: 1, max: 60 },
-  snapshotSearchPageSize: { min: 5, max: 200 },
+  editorFontSize: { min: 10, max: 32, whole: true },
+  editorLineHeight: { min: 1, max: 3, whole: false },
+  editorPadding: { min: 0, max: 64, whole: true },
+  autosaveDelaySeconds: { min: 1, max: 60, whole: true },
+  snapshotSearchPageSize: { min: 5, max: 200, whole: true },
 } as const;
 
-type BoundedKey = keyof typeof SETTINGS_BOUNDS;
+export type NumberSettingKey = keyof typeof SETTINGS_BOUNDS;
+
+export const NUMBER_SETTING_KEYS = Object.keys(SETTINGS_BOUNDS) as NumberSettingKey[];
 
 export function clampNumber(value: number, min: number, max: number, fallback: number): number {
   if (!Number.isFinite(value)) {
@@ -34,24 +37,28 @@ export function clampNumber(value: number, min: number, max: number, fallback: n
   return Math.min(max, Math.max(min, value));
 }
 
-function inBounds(value: number, key: BoundedKey): boolean {
-  const { min, max } = SETTINGS_BOUNDS[key];
-  return Number.isFinite(value) && value >= min && value <= max;
+function accepted(value: number, key: NumberSettingKey): boolean {
+  const { min, max, whole } = SETTINGS_BOUNDS[key];
+  return Number.isFinite(value) && (!whole || Number.isInteger(value)) && value >= min && value <= max;
 }
 
-// Whether a Settings form draft may be committed. Gates the Save button: every
-// numeric field must be finite and within SETTINGS_BOUNDS; snapshot page size
-// must also be an integer. An emptied number input yields 0, accepted only for
-// editor padding. The font families may be blank: blank uses the built-in stack.
+// A plain decimal as typed: no exponent, hex, Infinity or empty text, which
+// Number() would otherwise read.
+const DECIMAL = /^\s*[+-]?(\d+(\.\d*)?|\.\d+)\s*$/;
+
+// The value a Settings number field's text gives, or null while the text is not
+// an accepted value; the field keeps the text either way.
+export function parseNumberSetting(text: string, key: NumberSettingKey): number | null {
+  if (!DECIMAL.test(text)) return null;
+  const value = Number(text);
+  return accepted(value, key) ? value : null;
+}
+
+// Whether a set of settings may be committed or read: every numeric setting is
+// an accepted value. The font families may be blank: blank uses the built-in
+// stack.
 export function isSettingsDraftValid(draft: AppSettings): boolean {
-  return (
-    inBounds(draft.editorFontSize, "editorFontSize") &&
-    inBounds(draft.editorLineHeight, "editorLineHeight") &&
-    inBounds(draft.editorPadding, "editorPadding") &&
-    inBounds(draft.autosaveDelaySeconds, "autosaveDelaySeconds") &&
-    Number.isInteger(draft.snapshotSearchPageSize) &&
-    inBounds(draft.snapshotSearchPageSize, "snapshotSearchPageSize")
-  );
+  return NUMBER_SETTING_KEYS.every((key) => accepted(draft[key], key));
 }
 
 // Callers pass values that already passed isSettingsDraftValid; this keeps the

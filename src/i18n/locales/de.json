@@ -62,6 +62,8 @@
   "settings.editorUnderline": "Editortext unterstrichen",
   "settings.autosaveDelay": "Verzögerung der automatischen Speicherung nach Änderungen (Sekunden)",
   "settings.snapshotPageSize": "Snapshots pro Seite",
+  "settings.wholeNumberRange": "Geben Sie eine ganze Zahl von {min} bis {max} ein.",
+  "settings.numberRange": "Geben Sie eine Zahl von {min} bis {max} ein.",
 
   "discard.title": "Änderungen verwerfen?",
   "discard.body": "Sie haben nicht gespeicherte Änderungen. Verwerfen und schließen?",

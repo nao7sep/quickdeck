@@ -103,3 +103,79 @@ describe("SettingsModal language", () => {
     expect(mocks.updateSettings).toHaveBeenCalledWith(expect.objectContaining({ language: "ru" }));
   });
 });
+
+// number-field conventions: the text stays as typed, an unusable value says what
+// the field accepts under it, and Save waits until every field is usable.
+describe("SettingsModal number fields", () => {
+  const field = (label: string) => {
+    const input = Array.from(document.querySelectorAll("label"))
+      .find((element) => element.textContent?.startsWith(label))
+      ?.querySelector("input");
+    if (!(input instanceof HTMLInputElement)) throw new Error(`Missing ${label}`);
+    return input;
+  };
+  const type = async (input: HTMLInputElement, text: string) => {
+    await act(async () => {
+      const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+      setValue.call(input, text);
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+  };
+  const saveButton = () =>
+    Array.from(document.querySelectorAll("button")).find((button) => button.textContent === "Save Settings")!;
+  const errorOf = (input: HTMLInputElement) =>
+    input.getAttribute("aria-describedby") === null
+      ? null
+      : document.getElementById(input.getAttribute("aria-describedby")!)?.textContent;
+
+  it("keeps an unusable entry as typed, says what the field accepts under it, and holds Save until it is fixed", async () => {
+    await renderSettings();
+    const size = field("Editor font size");
+    for (const text of ["16.5", "9", "abc", "1e1"]) {
+      await type(size, text);
+      expect(size.value).toBe(text);
+      expect(size.getAttribute("aria-invalid")).toBe("true");
+      expect(errorOf(size)).toBe("Enter a whole number from 10 to 32.");
+      expect(saveButton().disabled).toBe(true);
+    }
+
+    await type(size, "18");
+    expect(size.getAttribute("aria-invalid")).toBe("false");
+    expect(errorOf(size)).toBeNull();
+    await act(async () => saveButton().click());
+    expect(mocks.updateSettings).toHaveBeenCalledWith(expect.objectContaining({ editorFontSize: 18 }));
+  });
+
+  it("treats an empty padding as an error rather than zero", async () => {
+    await renderSettings();
+    const padding = field("Editor padding");
+    await type(padding, "");
+    expect(errorOf(padding)).toBe("Enter a whole number from 0 to 64.");
+    expect(saveButton().disabled).toBe(true);
+    await type(padding, "0");
+    await act(async () => saveButton().click());
+    expect(mocks.updateSettings).toHaveBeenCalledWith(expect.objectContaining({ editorPadding: 0 }));
+  });
+
+  it("takes any line height from 1 to 3, with no step", async () => {
+    await renderSettings();
+    const lineHeight = field("Editor line height");
+    await type(lineHeight, "3.5");
+    expect(errorOf(lineHeight)).toBe("Enter a number from 1 to 3.");
+    await type(lineHeight, "1.37");
+    expect(errorOf(lineHeight)).toBeNull();
+    await act(async () => saveButton().click());
+    expect(mocks.updateSettings).toHaveBeenCalledWith(expect.objectContaining({ editorLineHeight: 1.37 }));
+  });
+
+  it("checks the autosave delay and snapshot page size the same way", async () => {
+    await renderSettings();
+    const delay = field("Autosave delay");
+    const pageSize = field("Snapshots per page");
+    await type(delay, "0.5");
+    expect(errorOf(delay)).toBe("Enter a whole number from 1 to 60.");
+    await type(pageSize, "201");
+    expect(errorOf(pageSize)).toBe("Enter a whole number from 5 to 200.");
+    expect(saveButton().disabled).toBe(true);
+  });
+});

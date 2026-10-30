@@ -62,6 +62,8 @@
   "settings.editorUnderline": "Testo dell’editor sottolineato",
   "settings.autosaveDelay": "Ritardo del salvataggio automatico dopo le modifiche (secondi)",
   "settings.snapshotPageSize": "Istantanee per pagina",
+  "settings.wholeNumberRange": "Inserisci un numero intero da {min} a {max}.",
+  "settings.numberRange": "Inserisci un numero da {min} a {max}.",
 
   "discard.title": "Scartare le modifiche?",
   "discard.body": "Hai modifiche non salvate. Scartarle e chiudere?",

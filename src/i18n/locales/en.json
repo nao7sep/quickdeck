@@ -62,6 +62,8 @@
   "settings.editorUnderline": "Underline editor text",
   "settings.autosaveDelay": "Autosave delay after edits (seconds)",
   "settings.snapshotPageSize": "Snapshots per page",
+  "settings.wholeNumberRange": "Enter a whole number from {min} to {max}.",
+  "settings.numberRange": "Enter a number from {min} to {max}.",
 
   "discard.title": "Discard changes?",
   "discard.body": "You have unsaved changes. Discard them and close?",

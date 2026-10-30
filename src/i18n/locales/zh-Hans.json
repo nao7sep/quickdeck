@@ -62,6 +62,8 @@
   "settings.editorUnderline": "编辑器文字加下划线",
   "settings.autosaveDelay": "编辑后自动保存的延迟（秒）",
   "settings.snapshotPageSize": "每页快照数",
+  "settings.wholeNumberRange": "请输入 {min} 到 {max} 之间的整数。",
+  "settings.numberRange": "请输入 {min} 到 {max} 之间的数字。",
 
   "discard.title": "放弃更改？",
   "discard.body": "你有未保存的更改。要放弃这些更改并关闭吗？",

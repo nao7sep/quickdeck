@@ -358,7 +358,7 @@ fn blank_query_lists_the_whole_store_newest_first() {
 #[test]
 fn blank_query_paginates_like_a_search() {
     let conn = mem_db();
-    for index in 1..=3 {
+    for index in 1..=6 {
         insert_row(
             &conn,
             &format!("id{index}"),
@@ -368,18 +368,18 @@ fn blank_query_paginates_like_a_search() {
         );
     }
 
-    let first = list_snapshots_with_connection(&conn, "", 2, 0).unwrap();
+    let first = list_snapshots_with_connection(&conn, "", 5, 0).unwrap();
     assert_eq!(
         first
             .rows
             .iter()
             .map(|row| row.id.as_str())
             .collect::<Vec<_>>(),
-        ["id3", "id2"]
+        ["id6", "id5", "id4", "id3", "id2"]
     );
     assert!(first.has_more);
 
-    let second = list_snapshots_with_connection(&conn, "", 2, 2).unwrap();
+    let second = list_snapshots_with_connection(&conn, "", 5, 5).unwrap();
     assert_eq!(
         second
             .rows
@@ -505,7 +505,7 @@ fn search_orders_same_second_rows_by_subsecond_precision() {
 #[test]
 fn search_paginates_with_has_more_flag() {
     let conn = mem_db();
-    for i in 0..3 {
+    for i in 0..6 {
         insert_row(
             &conn,
             &format!("id{i}"),
@@ -515,11 +515,11 @@ fn search_paginates_with_has_more_flag() {
         );
     }
 
-    let page = list_snapshots_with_connection(&conn, "term", 2, 0).unwrap();
-    assert_eq!(page.rows.len(), 2);
+    let page = list_snapshots_with_connection(&conn, "term", 5, 0).unwrap();
+    assert_eq!(page.rows.len(), 5);
     assert!(page.has_more);
 
-    let rest = list_snapshots_with_connection(&conn, "term", 2, 2).unwrap();
+    let rest = list_snapshots_with_connection(&conn, "term", 5, 5).unwrap();
     assert_eq!(rest.rows.len(), 1);
     assert!(!rest.has_more);
 }
@@ -527,14 +527,14 @@ fn search_paginates_with_has_more_flag() {
 #[test]
 fn search_pagination_is_stable_across_same_second_rows() {
     let conn = mem_db();
-    // Four snapshots sharing one created_at_utc.
+    // Eight snapshots sharing one created_at_utc.
     let ts = "2026-01-01T00:00:01.000Z";
-    for i in 0..4 {
+    for i in 0..8 {
         insert_row(&conn, &format!("id{i}"), "p1", ts, &format!("term {i}"));
     }
 
-    let page1 = list_snapshots_with_connection(&conn, "term", 2, 0).unwrap();
-    let page2 = list_snapshots_with_connection(&conn, "term", 2, 2).unwrap();
+    let page1 = list_snapshots_with_connection(&conn, "term", 5, 0).unwrap();
+    let page2 = list_snapshots_with_connection(&conn, "term", 5, 5).unwrap();
 
     let mut paged: Vec<_> = page1
         .rows
@@ -543,10 +543,10 @@ fn search_pagination_is_stable_across_same_second_rows() {
         .map(|r| r.id.clone())
         .collect();
     // Every row appears exactly once across the two pages — no repeats, no skips.
-    assert_eq!(paged.len(), 4);
+    assert_eq!(paged.len(), 8);
     paged.sort();
     paged.dedup();
-    assert_eq!(paged, vec!["id0", "id1", "id2", "id3"]);
+    assert_eq!(paged, vec!["id0", "id1", "id2", "id3", "id4", "id5", "id6", "id7"]);
     // The id tiebreaker fixes the order to newest-id-first.
     let order: Vec<_> = page1
         .rows
@@ -554,25 +554,18 @@ fn search_pagination_is_stable_across_same_second_rows() {
         .chain(page2.rows.iter())
         .map(|r| r.id.as_str())
         .collect();
-    assert_eq!(order, vec!["id3", "id2", "id1", "id0"]);
+    assert_eq!(order, vec!["id7", "id6", "id5", "id4", "id3", "id2", "id1", "id0"]);
 }
 
 #[test]
-fn search_limit_is_clamped_to_bounds() {
+fn a_page_size_outside_the_settings_range_is_refused_not_corrected() {
     let conn = mem_db();
-    for i in 0..5 {
-        insert_row(
-            &conn,
-            &format!("id{i}"),
-            "p1",
-            &format!("2026-01-01T00:00:0{}.000Z", i + 1),
-            &format!("term {i}"),
-        );
+    for limit in [0, 4, 201] {
+        assert!(list_snapshots_with_connection(&conn, "", limit, 0).is_err(), "{limit}");
     }
-    // limit 0 clamps up to 1.
-    let result = list_snapshots_with_connection(&conn, "term", 0, 0).unwrap();
-    assert_eq!(result.rows.len(), 1);
-    assert!(result.has_more);
+    for limit in [5, 200] {
+        assert!(list_snapshots_with_connection(&conn, "", limit, 0).is_ok(), "{limit}");
+    }
 }
 
 // --- JSON file IO ------------------------------------------------------
@@ -1702,6 +1695,37 @@ fn a_config_write_stores_exactly_the_given_known_sets() {
         serde_json::json!({"formatVersion": 1, "topmost": true})
     );
     crate::backup_store::close_backup_store();
+}
+
+#[test]
+fn a_config_write_with_a_number_setting_outside_its_accepted_values_is_refused() {
+    let root = tempfile::tempdir().unwrap();
+    let font = |size: JsonValue, line_height: JsonValue, padding: JsonValue| {
+        serde_json::json!({"editorFont": {"family": "", "size": size, "lineHeight": line_height,
+            "padding": padding, "bold": false, "italic": false, "underline": false}})
+    };
+    for sets in [
+        font(9.into(), 1.5.into(), 15.into()),
+        font(16.5.into(), 1.5.into(), 15.into()),
+        font(16.into(), 3.01.into(), 15.into()),
+        font(16.into(), 1.5.into(), 65.into()),
+        font(16.into(), 1.5.into(), JsonValue::Null),
+        serde_json::json!({"editorFont": {"size": 16}}),
+        serde_json::json!({"autosaveDelaySeconds": 0}),
+        serde_json::json!({"autosaveDelaySeconds": 1.5}),
+        serde_json::json!({"snapshotSearchPageSize": 201}),
+        serde_json::json!({"snapshotSearchPageSize": "20"}),
+    ] {
+        assert!(config_to_write(root.path(), sets.clone()).is_err(), "{sets}");
+    }
+    assert!(!root.path().join(CONFIG_FILE_NAME).exists());
+    for sets in [
+        font(10.into(), 1.37.into(), 0.into()),
+        font(32.into(), 3.into(), 64.into()),
+        serde_json::json!({"autosaveDelaySeconds": 60, "snapshotSearchPageSize": 5}),
+    ] {
+        assert!(config_to_write(root.path(), sets.clone()).is_ok(), "{sets}");
+    }
 }
 
 #[test]

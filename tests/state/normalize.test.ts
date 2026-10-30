@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
+  NUMBER_SETTING_KEYS,
   SETTINGS_BOUNDS,
   clampNumber,
   isSettingsDraftValid,
   normalizeSettings,
   normalizeZoomLevel,
+  parseNumberSetting,
   settingsShapeIssues,
   settingsBySet,
   readSettingsSets,
@@ -79,6 +81,31 @@ describe("normalizeZoomLevel", () => {
   });
 });
 
+describe("parseNumberSetting", () => {
+  it("reads a plain decimal in range", () => {
+    expect(parseNumberSetting("16", "editorFontSize")).toBe(16);
+    expect(parseNumberSetting(" 0 ", "editorPadding")).toBe(0);
+    expect(parseNumberSetting("1.37", "editorLineHeight")).toBe(1.37);
+    expect(parseNumberSetting("+2", "editorLineHeight")).toBe(2);
+    expect(parseNumberSetting("2.", "editorLineHeight")).toBe(2);
+  });
+
+  it("gives nothing for empty text, a fraction where a whole number is needed, or a value out of range", () => {
+    expect(parseNumberSetting("", "editorPadding")).toBeNull();
+    expect(parseNumberSetting("   ", "editorFontSize")).toBeNull();
+    expect(parseNumberSetting("16.5", "editorFontSize")).toBeNull();
+    expect(parseNumberSetting("9", "editorFontSize")).toBeNull();
+    expect(parseNumberSetting("3.01", "editorLineHeight")).toBeNull();
+    expect(parseNumberSetting("201", "snapshotSearchPageSize")).toBeNull();
+  });
+
+  it("gives nothing for text Number() would read but a person would not type as a decimal", () => {
+    for (const text of ["1e1", "0x10", "Infinity", "12px", "1,5", "--2"]) {
+      expect(parseNumberSetting(text, "autosaveDelaySeconds"), text).toBeNull();
+    }
+  });
+});
+
 describe("isSettingsDraftValid", () => {
   it("accepts the default settings", () => {
     expect(isSettingsDraftValid(defaultSettings)).toBe(true);
@@ -101,13 +128,11 @@ describe("isSettingsDraftValid", () => {
     expect(isSettingsDraftValid({ ...defaultSettings, snapshotSearchPageSize: 4 })).toBe(false);
   });
 
-  it("accepts cleared padding as zero but rejects a cleared font size", () => {
-    expect(isSettingsDraftValid({ ...defaultSettings, editorPadding: Number("") })).toBe(true);
-    expect(isSettingsDraftValid({ ...defaultSettings, editorFontSize: Number("") })).toBe(false);
-  });
-
-  it("rejects fractional snapshot page sizes", () => {
-    expect(isSettingsDraftValid({ ...defaultSettings, snapshotSearchPageSize: 5.5 })).toBe(false);
+  it("rejects a fraction in every whole-number setting, and takes any line height in range", () => {
+    for (const key of NUMBER_SETTING_KEYS.filter((name) => SETTINGS_BOUNDS[name].whole)) {
+      expect(isSettingsDraftValid({ ...defaultSettings, [key]: SETTINGS_BOUNDS[key].min + 0.5 }), key).toBe(false);
+    }
+    expect(isSettingsDraftValid({ ...defaultSettings, editorLineHeight: 1.37 })).toBe(true);
   });
 
   it("rejects non-finite values", () => {
@@ -163,7 +188,7 @@ describe("snapshot page-size settings boundary", () => {
   });
 
   it("retains zero editor padding through a settings save and read", () => {
-    const draft = { ...defaultSettings, editorPadding: Number("") };
+    const draft = { ...defaultSettings, editorPadding: 0 };
     expect(readSettingsSets(storedSettingsSets(draft)).editorPadding).toBe(0);
   });
 });

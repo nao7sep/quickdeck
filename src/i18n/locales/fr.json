@@ -62,6 +62,8 @@
   "settings.editorUnderline": "Texte de l’éditeur souligné",
   "settings.autosaveDelay": "Délai d’enregistrement automatique après modification (secondes)",
   "settings.snapshotPageSize": "Instantanés par page",
+  "settings.wholeNumberRange": "Saisissez un nombre entier de {min} à {max}.",
+  "settings.numberRange": "Saisissez un nombre de {min} à {max}.",
 
   "discard.title": "Abandonner les modifications\u00a0?",
   "discard.body": "Des modifications ne sont pas enregistrées. Les abandonner et fermer\u00a0?",
