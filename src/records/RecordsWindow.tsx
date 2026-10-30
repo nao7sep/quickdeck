@@ -216,6 +216,13 @@ export function RecordsWindow({ initialListWidth }: { initialListWidth: number }
         if (generation !== listGeneration.current) return;
         pagePaused.current = false;
         syncLiveSuspension();
+        // The list left the top while this was read: the page waits with the
+        // records that arrive after it, and is read again once back there.
+        const scroll = scrollRef.current;
+        if (scroll !== null && !atTop(scroll)) {
+          newestPending.current = true;
+          return;
+        }
         setList((current) =>
           current.status === "ready"
             ? { ...current, ...mergeNewestPage(current.records, current.more, { records, more: page.more }) }

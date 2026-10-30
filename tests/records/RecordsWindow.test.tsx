@@ -66,8 +66,9 @@ const newer: RecordSummary = {
 let root: Root | null = null;
 
 // jsdom lays nothing out, so the list's scroll box and the shell's width are set
-// here. By default the list is scrolled to the top and far from its end.
-const box = { scrollTop: 0, scrollHeight: 1000, clientHeight: 200, shellWidth: 2000 };
+// here. By default the list is scrolled to the top and far from its end; with a
+// row height set, the content is as tall as the rows shown.
+const box = { scrollTop: 0, scrollHeight: 1000, clientHeight: 200, shellWidth: 2000, rowHeight: 0 };
 const resizeCallbacks = new Set<() => void>();
 class TestResizeObserver {
   private readonly callback: () => void;
@@ -94,7 +95,7 @@ beforeEach(() => {
   mocks.sendRecordsListWidth.mockResolvedValue();
   mocks.logWarn.mockReset();
   mocks.recordsChanged = null;
-  Object.assign(box, { scrollTop: 0, scrollHeight: 1000, clientHeight: 200, shellWidth: 2000 });
+  Object.assign(box, { scrollTop: 0, scrollHeight: 1000, clientHeight: 200, shellWidth: 2000, rowHeight: 0 });
   resizeCallbacks.clear();
   vi.stubGlobal("ResizeObserver", TestResizeObserver);
   Object.defineProperties(HTMLElement.prototype, {
@@ -110,7 +111,8 @@ beforeEach(() => {
     scrollHeight: {
       configurable: true,
       get(this: HTMLElement) {
-        return isScroll(this) ? box.scrollHeight : 0;
+        if (!isScroll(this)) return 0;
+        return box.rowHeight === 0 ? box.scrollHeight : this.querySelectorAll('[role="option"]').length * box.rowHeight;
       },
     },
     clientHeight: {
@@ -438,6 +440,63 @@ describe("RecordsWindow", () => {
     await scrollTo(0);
     expect(mocks.readRecordsPage).toHaveBeenCalledTimes(2);
     expect(titles()).toEqual(["boundary ok", "boundary failed", "set zoom failed"]);
+  });
+
+  it("holds a newest page that arrives after the list left the top until it is back there", async () => {
+    await mount();
+    vi.useFakeTimers();
+    const next = deferred<RecordsPage>();
+    mocks.readRecordsPage.mockReturnValueOnce(next.promise);
+    mocks.readRecordsPage.mockResolvedValueOnce({ records: [newer, failure, warning], more: false });
+
+    await signal();
+    await act(async () => vi.advanceTimersByTime(1000));
+    expect(mocks.readRecordsPage).toHaveBeenCalledTimes(2);
+    await scrollTo(300);
+    await act(async () => next.resolve({ records: [newer, failure, warning], more: false }));
+    expect(titles()).toEqual(["boundary failed", "set zoom failed"]);
+
+    await scrollTo(0);
+    expect(mocks.readRecordsPage).toHaveBeenCalledTimes(3);
+    expect(titles()).toEqual(["boundary ok", "boundary failed", "set zoom failed"]);
+  });
+
+  it("pages through 10,000 records once each while three arrive a second, holding still until back at the top", async () => {
+    const row = (id: number): RecordSummary => ({ ...newer, id, message: `line ${id}`, op: null, time: SESSION });
+    const lines = (from: number, to: number) => Array.from({ length: from - to + 1 }, (_, index) => `line ${from - index}`);
+    let newestId = 10_000;
+    mocks.readRecordsPage.mockImplementation(async ({ after }) => {
+      const firstId = after === null ? newestId : after.id - 1;
+      const lastId = Math.max(1, firstId - 99);
+      return { records: Array.from({ length: firstId - lastId + 1 }, (_, index) => row(firstId - index)), more: lastId > 1 };
+    });
+    box.rowHeight = 20;
+    await mount();
+    expect(titles()).toEqual(lines(10_000, 9_901));
+    await act(async () => options()[0]!.click());
+    vi.useFakeTimers();
+    const arriveForASecond = async () => {
+      newestId += 3;
+      await signal();
+      await act(async () => vi.advanceTimersByTime(1000));
+    };
+
+    for (let shown = 100; shown < 10_000; shown += 100) {
+      await scrollTo(shown * box.rowHeight - box.clientHeight);
+      await arriveForASecond();
+      expect(options()).toHaveLength(shown + 100);
+      expect(titles()[0]).toBe("line 10000");
+    }
+    expect(titles()).toEqual(lines(10_000, 1));
+    expect(options()[0]!.getAttribute("aria-selected")).toBe("true");
+    expect(mocks.readRecordDetail).toHaveBeenCalledOnce();
+
+    await scrollTo(0);
+    expect(titles()).toEqual(lines(newestId, 1));
+    await arriveForASecond();
+    expect(titles()).toEqual(lines(newestId, 1));
+    expect(options().find((option) => option.getAttribute("aria-selected") === "true")?.textContent).toContain("line 10000");
+    expect(mocks.readRecordDetail).toHaveBeenCalledOnce();
   });
 
   it("keeps the selected record selected through an update", async () => {
