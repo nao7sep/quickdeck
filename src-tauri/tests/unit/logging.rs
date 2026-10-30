@@ -417,3 +417,47 @@ fn a_read_of_a_records_database_from_a_newer_build_answers_its_error() {
     let refused = answered.recv().unwrap().unwrap_err();
     assert!(refused.contains("records.sqlite3"), "{refused}");
 }
+
+// The Records window pages the real store from the newest line down while new
+// lines keep arriving: over 10,000 lines, each read once, newest first, with no
+// gap or repeat, and the arrivals read from the top afterwards.
+#[test]
+fn paging_10000_records_while_new_ones_arrive_reads_each_once_newest_first() {
+    let dir = tempfile::tempdir().unwrap();
+    let conn = open_records(&dir.path().join("records.sqlite3")).unwrap();
+    let session = session(Some(dir.path()));
+    let base: chrono::DateTime<Utc> = "2026-01-01T00:00:00.000Z".parse().unwrap();
+    // Pairs of lines share a millisecond, so the id breaks the tie.
+    let time = |index: i64| (base + chrono::Duration::milliseconds(index / 2)).to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+    let write = |index: i64| {
+        assert!(write_record(Some(&conn), &session, Level::Info, &format!("line {index}"), &time(index), &Map::new()));
+    };
+    conn.execute_batch("BEGIN").unwrap();
+    for index in 0..10_000 {
+        write(index);
+    }
+    conn.execute_batch("COMMIT").unwrap();
+
+    let mut read = Vec::new();
+    let mut after = None;
+    let mut arrived = 10_000;
+    loop {
+        let page = records::read_page(&conn, &records::RecordsQuery { after, ..Default::default() }).unwrap();
+        read.extend(page.records.iter().map(|record| record.message.clone()));
+        if !page.more {
+            break;
+        }
+        let last = page.records.last().unwrap();
+        after = Some(records::Cursor { time: last.time.clone(), id: last.id });
+        for _ in 0..3 {
+            write(arrived);
+            arrived += 1;
+        }
+    }
+    let expected: Vec<String> = (0..10_000).rev().map(|index| format!("line {index}")).collect();
+    assert_eq!(read, expected);
+
+    let top = records::read_page(&conn, &records::RecordsQuery::default()).unwrap();
+    assert_eq!(top.records[0].message, format!("line {}", arrived - 1));
+    assert!(arrived > 10_000 + 3 * 98);
+}

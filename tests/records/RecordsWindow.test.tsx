@@ -461,19 +461,33 @@ describe("RecordsWindow", () => {
     expect(titles()).toEqual(["boundary ok", "boundary failed", "set zoom failed"]);
   });
 
-  it("pages through 10,000 records once each while three arrive a second, holding still until back at the top", async () => {
+  it("follows 10,000 records arriving live: fills the window, shows arrivals at the top, and holds still while scrolled down", async () => {
     const row = (id: number): RecordSummary => ({ ...newer, id, message: `line ${id}`, op: null, time: SESSION });
     const lines = (from: number, to: number) => Array.from({ length: from - to + 1 }, (_, index) => `line ${from - index}`);
     let newestId = 10_000;
-    mocks.readRecordsPage.mockImplementation(async ({ after }) => {
-      const firstId = after === null ? newestId : after.id - 1;
+    // A newest-page read held open, to land after the user has scrolled away.
+    let held: { promise: Promise<RecordsPage>; resolve: (value: RecordsPage) => void } | null = null;
+    const pageFrom = (firstId: number): RecordsPage => {
       const lastId = Math.max(1, firstId - 99);
       return { records: Array.from({ length: firstId - lastId + 1 }, (_, index) => row(firstId - index)), more: lastId > 1 };
+    };
+    mocks.readRecordsPage.mockImplementation(async ({ after }) => {
+      if (after === null && held !== null) {
+        const read = held;
+        held = null;
+        return read.promise;
+      }
+      return pageFrom(after === null ? newestId : after.id - 1);
     });
-    box.rowHeight = 20;
+    // A window taller than one page: pages load until less than a window is
+    // left below the visible part.
+    Object.assign(box, { rowHeight: 20, clientHeight: 2500 });
+    const offset = () => scrollBox().scrollTop;
+    const firstVisible = () => titles()[Math.floor(offset() / box.rowHeight)];
+    const selected = () => options().find((option) => option.getAttribute("aria-selected") === "true")?.querySelector(".recordsRowTitle")?.textContent;
     await mount();
-    expect(titles()).toEqual(lines(10_000, 9_901));
-    await act(async () => options()[0]!.click());
+    expect(titles()).toEqual(lines(10_000, 9_701));
+
     vi.useFakeTimers();
     const arriveForASecond = async () => {
       newestId += 3;
@@ -481,21 +495,45 @@ describe("RecordsWindow", () => {
       await act(async () => vi.advanceTimersByTime(1000));
     };
 
-    for (let shown = 100; shown < 10_000; shown += 100) {
-      await scrollTo(shown * box.rowHeight - box.clientHeight);
-      await arriveForASecond();
-      expect(options()).toHaveLength(shown + 100);
-      expect(titles()[0]).toBe("line 10000");
-    }
-    expect(titles()).toEqual(lines(10_000, 1));
-    expect(options()[0]!.getAttribute("aria-selected")).toBe("true");
-    expect(mocks.readRecordDetail).toHaveBeenCalledOnce();
+    // At the top, arrivals appear at once.
+    await arriveForASecond();
+    expect(titles().slice(0, 4)).toEqual(lines(10_003, 10_000));
+    await act(async () => options()[5]!.click());
+    expect(selected()).toBe("line 9998");
 
+    // A newest read already under way when the user scrolls away is not applied.
+    const late = deferred<RecordsPage>();
+    held = late;
+    await arriveForASecond();
+    await scrollTo(400);
+    const shownBefore = titles();
+    await act(async () => late.resolve(pageFrom(newestId)));
+    expect(titles()).toEqual(shownBefore);
+    expect(offset()).toBe(400);
+    expect(firstVisible()).toBe("line 9983");
+    expect(selected()).toBe("line 9998");
+
+    // Paging down through every record while three arrive each second.
+    while (options().length < 10_003) {
+      const shown = options().length;
+      await scrollTo(shown * box.rowHeight - box.clientHeight);
+      const before = { offset: offset(), first: firstVisible() };
+      await arriveForASecond();
+      // The page read at the end leaves under a window below, so one more follows.
+      expect(options()).toHaveLength(Math.min(shown + 200, 10_003));
+      expect(titles()[0]).toBe("line 10003");
+      expect({ offset: offset(), first: firstVisible() }).toEqual(before);
+    }
+    expect(titles()).toEqual(lines(10_003, 1));
+    expect(selected()).toBe("line 9998");
+
+    // Back at the top, the held read's records and everything since appear.
     await scrollTo(0);
     expect(titles()).toEqual(lines(newestId, 1));
+    expect(newestId).toBeGreaterThan(10_006);
     await arriveForASecond();
     expect(titles()).toEqual(lines(newestId, 1));
-    expect(options().find((option) => option.getAttribute("aria-selected") === "true")?.textContent).toContain("line 10000");
+    expect(selected()).toBe("line 9998");
     expect(mocks.readRecordDetail).toHaveBeenCalledOnce();
   });
 
