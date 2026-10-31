@@ -31,7 +31,12 @@ fn every_menu_key_is_in_every_language() {
             if let Title::Text(key) = submenu.title {
                 keys.push(key);
             }
-            keys.extend(submenu.entries.iter().filter_map(|&entry| label_key(entry, mac)));
+            keys.extend(
+                submenu
+                    .entries
+                    .iter()
+                    .filter_map(|&entry| label_key(entry, mac)),
+            );
         }
         for language in i18n::LANGUAGES {
             let text = i18n::catalogue(language);
@@ -50,22 +55,39 @@ fn quit_appears_once_in_the_platforms_place_with_its_platform_name() {
     assert_eq!(label_key(Entry::Quit, true), Some("nativeMenu.quit"));
 
     let windows = layout(false);
-    assert_eq!(holding(&windows, Entry::Quit), [Title::Text("nativeMenu.file")]);
+    assert_eq!(
+        holding(&windows, Entry::Quit),
+        [Title::Text("nativeMenu.file")]
+    );
     assert_eq!(label_key(Entry::Quit, false), Some("nativeMenu.exit"));
 }
 
 #[test]
 fn about_is_in_the_app_menu_on_the_mac_and_in_help_on_windows() {
     assert_eq!(holding(&layout(true), Entry::About), [Title::AppName]);
-    assert_eq!(holding(&layout(false), Entry::About), [Title::Text("nativeMenu.help")]);
+    assert_eq!(
+        holding(&layout(false), Entry::About),
+        [Title::Text("nativeMenu.help")]
+    );
 }
 
 #[test]
 fn only_the_mac_has_the_app_menu_services_hide_and_full_screen() {
     let windows = layout(false);
-    assert!(windows.iter().all(|submenu| submenu.title != Title::AppName));
-    for entry in [Entry::Services, Entry::Hide, Entry::HideOthers, Entry::Fullscreen] {
-        assert_eq!(holding(&layout(true), entry).len(), 1, "{entry:?} on the Mac");
+    assert!(windows
+        .iter()
+        .all(|submenu| submenu.title != Title::AppName));
+    for entry in [
+        Entry::Services,
+        Entry::Hide,
+        Entry::HideOthers,
+        Entry::Fullscreen,
+    ] {
+        assert_eq!(
+            holding(&layout(true), entry).len(),
+            1,
+            "{entry:?} on the Mac"
+        );
         assert!(holding(&windows, entry).is_empty(), "{entry:?} on Windows");
     }
 }
@@ -73,15 +95,26 @@ fn only_the_mac_has_the_app_menu_services_hide_and_full_screen() {
 #[test]
 fn the_maximize_item_is_zoom_on_the_mac() {
     assert_eq!(label_key(Entry::Maximize, true), Some("nativeMenu.zoom"));
-    assert_eq!(label_key(Entry::Maximize, false), Some("nativeMenu.maximize"));
+    assert_eq!(
+        label_key(Entry::Maximize, false),
+        Some("nativeMenu.maximize")
+    );
 }
 
 #[test]
 fn window_and_help_carry_the_predefined_ids_on_both_platforms() {
     for (platform, mac) in PLATFORMS {
         let menus = layout(mac);
-        assert_eq!(titled(&menus, Title::Text("nativeMenu.window")).id, Some(WINDOW_SUBMENU_ID), "{platform}");
-        assert_eq!(titled(&menus, Title::Text("nativeMenu.help")).id, Some(HELP_SUBMENU_ID), "{platform}");
+        assert_eq!(
+            titled(&menus, Title::Text("nativeMenu.window")).id,
+            Some(WINDOW_SUBMENU_ID),
+            "{platform}"
+        );
+        assert_eq!(
+            titled(&menus, Title::Text("nativeMenu.help")).id,
+            Some(HELP_SUBMENU_ID),
+            "{platform}"
+        );
         let with_ids = menus.iter().filter(|submenu| submenu.id.is_some()).count();
         assert_eq!(with_ids, 2, "{platform}");
     }

@@ -18,14 +18,12 @@ pub mod window_placement;
 
 use std::sync::Mutex;
 
-use presentation::PresentationState;
 use menu::{ABOUT_MENU_ID, CLOSE_WINDOW_MENU_ID, SAFE_QUIT_MENU_ID};
+use presentation::PresentationState;
 use records::{RecordDetail, RecordSources, RecordsPage, RecordsQuery};
 use serde::Serialize;
 use serde_json::{json, Map, Value as JsonValue};
-use storage::{
-    LoadFailure, LoadedAppData, SnapshotInput, SnapshotListResult, SnapshotWriteResult,
-};
+use storage::{LoadFailure, LoadedAppData, SnapshotInput, SnapshotListResult, SnapshotWriteResult};
 use tauri::{AppHandle, Emitter, Manager, RunEvent, Runtime, State, Theme, WindowEvent};
 use window_placement::PlacementState;
 
@@ -125,7 +123,8 @@ async fn load_app_data(app: AppHandle) -> Result<LoadedAppData, CommandFailure> 
                     "systemLocale": data.system_locale,
                 })
             },
-        ).map_err(CommandFailure::recorded)
+        )
+        .map_err(CommandFailure::recorded)
     })
     .await
 }
@@ -168,7 +167,8 @@ fn apply_theme(
                 .try_for_each(|window| theme::apply(window, theme))
         },
         |_| json!({}),
-    ).map_err(CommandFailure::recorded)
+    )
+    .map_err(CommandFailure::recorded)
 }
 
 // The OS appearance, which Settings shows as System's current value.
@@ -206,7 +206,8 @@ fn apply_topmost(app: AppHandle, topmost: bool) -> Result<(), CommandFailure> {
             Ok(())
         },
         |_| json!({}),
-    ).map_err(CommandFailure::recorded)
+    )
+    .map_err(CommandFailure::recorded)
 }
 
 // Rebuilds the native menu in the interface language after a change is saved.
@@ -243,12 +244,16 @@ fn apply_language(
                 );
             }
             if let Err(error) = presentation::notify(&app, &snapshot) {
-                logging::warn("records presentation update failed", json!({ "error": error }));
+                logging::warn(
+                    "records presentation update failed",
+                    json!({ "error": error }),
+                );
             }
             Ok(())
         },
         |_| json!({}),
-    ).map_err(CommandFailure::recorded)
+    )
+    .map_err(CommandFailure::recorded)
 }
 
 // Sets equal to the file write nothing and log nothing, so every autosave can
@@ -265,8 +270,10 @@ async fn save_config(app: AppHandle, config: JsonValue) -> Result<Option<String>
                 json!({}),
                 || storage::write_config(&data_dir, &config),
                 |_| json!({}),
-            ).map_err(|error| CommandFailure::recorded(error)
-                .with_config_set_aside(write.quarantined_to.clone()))?;
+            )
+            .map_err(|error| {
+                CommandFailure::recorded(error).with_config_set_aside(write.quarantined_to.clone())
+            })?;
         }
         Ok(write.quarantined_to)
     })
@@ -278,7 +285,8 @@ async fn save_config(app: AppHandle, config: JsonValue) -> Result<Option<String>
 #[tauri::command]
 async fn save_state(app: AppHandle, state: JsonValue) -> Result<(), CommandFailure> {
     off_main_thread(move || {
-        logging::write_boundary("save_state", json!({}), || storage::save_state(&app, state)).map_err(CommandFailure::recorded)
+        logging::write_boundary("save_state", json!({}), || storage::save_state(&app, state))
+            .map_err(CommandFailure::recorded)
     })
     .await
 }
@@ -286,7 +294,8 @@ async fn save_state(app: AppHandle, state: JsonValue) -> Result<(), CommandFailu
 #[tauri::command]
 async fn save_panes(app: AppHandle, panes: JsonValue) -> Result<(), CommandFailure> {
     off_main_thread(move || {
-        logging::write_boundary("save_panes", json!({}), || storage::save_panes(&app, panes)).map_err(CommandFailure::recorded)
+        logging::write_boundary("save_panes", json!({}), || storage::save_panes(&app, panes))
+            .map_err(CommandFailure::recorded)
     })
     .await
 }
@@ -299,7 +308,8 @@ async fn quarantine_corrupt_panes(app: AppHandle) -> Result<Option<String>, Comm
             json!({}),
             || storage::quarantine_corrupt_panes(&app),
             |quarantined| json!({ "quarantinedTo": quarantined }),
-        ).map_err(CommandFailure::recorded)
+        )
+        .map_err(CommandFailure::recorded)
     })
     .await
 }
@@ -342,7 +352,8 @@ async fn create_snapshots(
                     "inserted": results.iter().filter(|result| result.inserted).count(),
                 })
             },
-        ).map_err(CommandFailure::recorded)
+        )
+        .map_err(CommandFailure::recorded)
     })
     .await
 }
@@ -362,7 +373,8 @@ async fn list_snapshots(
             params,
             move || storage::list_snapshots(&app, query, limit, offset),
             |result| json!({ "rows": result.rows.len(), "hasMore": result.has_more }),
-        ).map_err(CommandFailure::recorded)
+        )
+        .map_err(CommandFailure::recorded)
     })
     .await
 }
@@ -380,7 +392,8 @@ async fn copy_text(text: String) -> Result<(), CommandFailure> {
                 clipboard.set_text(text).map_err(|error| error.to_string())
             },
             |_| json!({}),
-        ).map_err(CommandFailure::recorded)
+        )
+        .map_err(CommandFailure::recorded)
     })
     .await
 }
@@ -393,7 +406,8 @@ async fn count_snapshots(app: AppHandle) -> Result<u64, CommandFailure> {
             json!({}),
             || storage::count_snapshots(&app),
             |count| json!({ "count": count }),
-        ).map_err(CommandFailure::recorded)
+        )
+        .map_err(CommandFailure::recorded)
     })
     .await
 }
@@ -406,7 +420,8 @@ async fn delete_snapshot(app: AppHandle, id: String) -> Result<bool, CommandFail
             json!({ "snapshotId": id.clone() }),
             move || storage::delete_snapshot(&app, id),
             |removed| json!({ "removed": removed }),
-        ).map_err(CommandFailure::recorded)
+        )
+        .map_err(CommandFailure::recorded)
     })
     .await
 }
@@ -419,7 +434,8 @@ async fn delete_all_snapshots(app: AppHandle) -> Result<u64, CommandFailure> {
             json!({}),
             || storage::delete_all_snapshots(&app),
             |count| json!({ "count": count }),
-        ).map_err(CommandFailure::recorded)
+        )
+        .map_err(CommandFailure::recorded)
     })
     .await
 }
@@ -440,7 +456,8 @@ async fn open_records_window(
                 records_window::open(&app, &placements, window_theme, language)
             },
             |_| json!({}),
-        ).map_err(CommandFailure::recorded)
+        )
+        .map_err(CommandFailure::recorded)
     })
     .await
 }
@@ -461,8 +478,10 @@ async fn records_list_width(app: AppHandle) -> Result<Option<f64>, CommandFailur
             json!({}),
             || storage::records_list_width(&app),
             |width| json!({ "listWidth": width }),
-        ).map_err(CommandFailure::recorded)
-    }).await
+        )
+        .map_err(CommandFailure::recorded)
+    })
+    .await
 }
 
 // The Records window's reads. Unlike every other command they log nothing when
@@ -472,9 +491,11 @@ async fn read_records<T: Send + 'static>(
     read: impl FnOnce(&rusqlite::Connection) -> rusqlite::Result<T> + Send + 'static,
 ) -> Result<T, CommandFailure> {
     off_main_thread(move || logging::read(read))
-    .await
-    .inspect_err(|error| logging::error("records read failed", json!({ "op": op, "error": error })))
-    .map_err(CommandFailure::recorded)
+        .await
+        .inspect_err(|error| {
+            logging::error("records read failed", json!({ "op": op, "error": error }))
+        })
+        .map_err(CommandFailure::recorded)
 }
 
 #[tauri::command]

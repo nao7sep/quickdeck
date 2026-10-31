@@ -254,7 +254,8 @@ fn the_writer_thread_writes_lines_in_order_before_answering_a_flush() {
     let (logger, lines) = Logger::channel(session(Some(dir.path())), true);
     let thread_session = logger.session.clone();
     let thread_file = file.clone();
-    let thread = std::thread::spawn(move || run_writer(Ok(thread_file), thread_session, lines, || {}));
+    let thread =
+        std::thread::spawn(move || run_writer(Ok(thread_file), thread_session, lines, || {}));
     for message in ["first", "second"] {
         assert!(logger.write_event(Level::Info, message, now_iso(), Map::new()));
     }
@@ -263,8 +264,13 @@ fn the_writer_thread_writes_lines_in_order_before_answering_a_flush() {
     thread.join().unwrap();
 
     let conn = Connection::open(&file).unwrap();
-    let messages: Vec<String> = conn.prepare("SELECT message FROM log_lines ORDER BY id").unwrap()
-        .query_map([], |row| row.get(0)).unwrap().collect::<Result<_, _>>().unwrap();
+    let messages: Vec<String> = conn
+        .prepare("SELECT message FROM log_lines ORDER BY id")
+        .unwrap()
+        .query_map([], |row| row.get(0))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
     assert_eq!(messages, ["first", "second"]);
 }
 
@@ -276,13 +282,22 @@ fn the_writer_thread_falls_back_when_the_database_cannot_open() {
     let thread_session = logger.session.clone();
     drop(logger);
     let stored = std::cell::Cell::new(0);
-    run_writer(Err("no data directory".to_string()), thread_session, lines,
-        || stored.set(stored.get() + 1));
+    run_writer(
+        Err("no data directory".to_string()),
+        thread_session,
+        lines,
+        || stored.set(stored.get() + 1),
+    );
     assert_eq!(stored.get(), 0);
     let contents = fs::read_to_string(dir.path().join("logs/20260101-000000-000-utc.log")).unwrap();
-    let messages: Vec<Value> = contents.lines()
-        .map(|line| serde_json::from_str::<Value>(line).unwrap()["message"].clone()).collect();
-    assert_eq!(messages, [json!("records database unavailable"), json!("kept")]);
+    let messages: Vec<Value> = contents
+        .lines()
+        .map(|line| serde_json::from_str::<Value>(line).unwrap()["message"].clone())
+        .collect();
+    assert_eq!(
+        messages,
+        [json!("records database unavailable"), json!("kept")]
+    );
 }
 
 #[test]
@@ -295,8 +310,12 @@ fn the_writer_thread_signals_each_row_the_database_stored() {
     let thread_session = logger.session.clone();
     drop(logger);
     let stored = std::cell::Cell::new(0);
-    run_writer(Ok(dir.path().join("records.sqlite3")), thread_session, lines,
-        || stored.set(stored.get() + 1));
+    run_writer(
+        Ok(dir.path().join("records.sqlite3")),
+        thread_session,
+        lines,
+        || stored.set(stored.get() + 1),
+    );
     assert_eq!(stored.get(), 2);
 }
 
@@ -397,7 +416,12 @@ fn a_read_runs_on_the_writer_after_the_lines_sent_before_it() {
     let answered = queue_count(&logger);
     let thread_session = logger.session.clone();
     drop(logger);
-    run_writer(Ok(dir.path().join("records.sqlite3")), thread_session, lines, || {});
+    run_writer(
+        Ok(dir.path().join("records.sqlite3")),
+        thread_session,
+        lines,
+        || {},
+    );
     assert_eq!(answered.recv().unwrap(), Ok(2));
 }
 
@@ -428,9 +452,19 @@ fn paging_10000_records_while_new_ones_arrive_reads_each_once_newest_first() {
     let session = session(Some(dir.path()));
     let base: chrono::DateTime<Utc> = "2026-01-01T00:00:00.000Z".parse().unwrap();
     // Pairs of lines share a millisecond, so the id breaks the tie.
-    let time = |index: i64| (base + chrono::Duration::milliseconds(index / 2)).to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+    let time = |index: i64| {
+        (base + chrono::Duration::milliseconds(index / 2))
+            .to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
+    };
     let write = |index: i64| {
-        assert!(write_record(Some(&conn), &session, Level::Info, &format!("line {index}"), &time(index), &Map::new()));
+        assert!(write_record(
+            Some(&conn),
+            &session,
+            Level::Info,
+            &format!("line {index}"),
+            &time(index),
+            &Map::new()
+        ));
     };
     conn.execute_batch("BEGIN").unwrap();
     for index in 0..10_000 {
@@ -442,19 +476,32 @@ fn paging_10000_records_while_new_ones_arrive_reads_each_once_newest_first() {
     let mut after = None;
     let mut arrived = 10_000;
     loop {
-        let page = records::read_page(&conn, &records::RecordsQuery { after, ..Default::default() }).unwrap();
+        let page = records::read_page(
+            &conn,
+            &records::RecordsQuery {
+                after,
+                ..Default::default()
+            },
+        )
+        .unwrap();
         read.extend(page.records.iter().map(|record| record.message.clone()));
         if !page.more {
             break;
         }
         let last = page.records.last().unwrap();
-        after = Some(records::Cursor { time: last.time.clone(), id: last.id });
+        after = Some(records::Cursor {
+            time: last.time.clone(),
+            id: last.id,
+        });
         for _ in 0..3 {
             write(arrived);
             arrived += 1;
         }
     }
-    let expected: Vec<String> = (0..10_000).rev().map(|index| format!("line {index}")).collect();
+    let expected: Vec<String> = (0..10_000)
+        .rev()
+        .map(|index| format!("line {index}"))
+        .collect();
     assert_eq!(read, expected);
 
     let top = records::read_page(&conn, &records::RecordsQuery::default()).unwrap();

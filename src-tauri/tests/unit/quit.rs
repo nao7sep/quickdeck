@@ -4,7 +4,10 @@ const QUIT_APPLICATION: u32 = u32::from_be_bytes(*b"quit");
 
 #[test]
 fn a_quit_event_with_a_reason_is_an_os_session_end() {
-    assert_eq!(quit_origin(Some(QUIT_APPLICATION), true), QuitOrigin::SessionEnd);
+    assert_eq!(
+        quit_origin(Some(QUIT_APPLICATION), true),
+        QuitOrigin::SessionEnd
+    );
 }
 
 #[test]
@@ -15,12 +18,19 @@ fn the_docks_quit_carries_no_reason_and_is_the_users() {
 #[test]
 fn a_terminate_without_a_quit_event_is_the_users() {
     assert_eq!(quit_origin(None, false), QuitOrigin::User);
-    assert_eq!(quit_origin(Some(u32::from_be_bytes(*b"odoc")), true), QuitOrigin::User);
+    assert_eq!(
+        quit_origin(Some(u32::from_be_bytes(*b"odoc")), true),
+        QuitOrigin::User
+    );
 }
 
 // `applicationShouldTerminate:`'s answer, with the window's close and save
 // supplied by the test.
-fn answer(has_main: bool, origin: QuitOrigin, save: Option<(u32, bool)>) -> (TerminateAnswer<u32>, bool, bool) {
+fn answer(
+    has_main: bool,
+    origin: QuitOrigin,
+    save: Option<(u32, bool)>,
+) -> (TerminateAnswer<u32>, bool, bool) {
     let routed = std::cell::Cell::new(false);
     let saved = std::cell::Cell::new(false);
     let answer = answer_terminate(
@@ -37,7 +47,10 @@ fn answer(has_main: bool, origin: QuitOrigin, save: Option<(u32, bool)>) -> (Ter
 
 #[test]
 fn a_terminate_with_no_main_window_exits_at_once() {
-    assert_eq!(answer(false, QuitOrigin::User, None), (TerminateAnswer::Now, false, false));
+    assert_eq!(
+        answer(false, QuitOrigin::User, None),
+        (TerminateAnswer::Now, false, false)
+    );
     assert_eq!(
         answer(false, QuitOrigin::SessionEnd, Some((1, true))),
         (TerminateAnswer::Now, false, false)
@@ -46,7 +59,10 @@ fn a_terminate_with_no_main_window_exits_at_once() {
 
 #[test]
 fn the_users_quit_is_cancelled_and_routed_through_the_windows_close() {
-    assert_eq!(answer(true, QuitOrigin::User, Some((1, true))), (TerminateAnswer::Cancel, true, false));
+    assert_eq!(
+        answer(true, QuitOrigin::User, Some((1, true))),
+        (TerminateAnswer::Cancel, true, false)
+    );
 }
 
 #[test]
@@ -67,18 +83,33 @@ fn a_repeated_session_end_request_waits_without_owning_the_reply() {
 
 #[test]
 fn a_session_end_whose_save_cannot_be_asked_for_exits_at_once() {
-    assert_eq!(answer(true, QuitOrigin::SessionEnd, None), (TerminateAnswer::Now, false, true));
+    assert_eq!(
+        answer(true, QuitOrigin::SessionEnd, None),
+        (TerminateAnswer::Now, false, true)
+    );
 }
 
 #[test]
 fn windows_end_session_messages_save_cancel_or_pass_through() {
-    assert_eq!(end_session_step(WM_QUERYENDSESSION, 0), EndSessionStep::Save);
+    assert_eq!(
+        end_session_step(WM_QUERYENDSESSION, 0),
+        EndSessionStep::Save
+    );
     // ENDSESSION_CLOSEAPP and friends arrive in lParam; wParam is the answer.
-    assert_eq!(end_session_step(WM_QUERYENDSESSION, 1), EndSessionStep::Save);
-    assert_eq!(end_session_step(WM_ENDSESSION, 0), EndSessionStep::Cancelled);
+    assert_eq!(
+        end_session_step(WM_QUERYENDSESSION, 1),
+        EndSessionStep::Save
+    );
+    assert_eq!(
+        end_session_step(WM_ENDSESSION, 0),
+        EndSessionStep::Cancelled
+    );
     // A session end going ahead is tao's to finish: it ends the event loop.
     assert_eq!(end_session_step(WM_ENDSESSION, 1), EndSessionStep::Pass);
-    assert_eq!(end_session_step(0x0010 /* WM_CLOSE */, 0), EndSessionStep::Pass);
+    assert_eq!(
+        end_session_step(0x0010 /* WM_CLOSE */, 0),
+        EndSessionStep::Pass
+    );
 }
 
 #[test]
@@ -92,7 +123,10 @@ fn the_window_is_asked_once_for_each_session_end_attempt() {
     .unwrap();
     assert!(first);
     let (repeated, repeated_first) =
-        ask_for_session_save(&session_end, |_| -> Result<(), String> { panic!("asked twice") }).unwrap();
+        ask_for_session_save(&session_end, |_| -> Result<(), String> {
+            panic!("asked twice")
+        })
+        .unwrap();
     assert!(!repeated_first);
     assert_eq!(asked.len(), 1);
 
@@ -166,12 +200,30 @@ fn question() -> QuitQuestion {
 #[test]
 fn the_standalone_question_maps_its_buttons_and_treats_dismissal_as_cancel() {
     let question = question();
-    assert_eq!(quit_choice(&MessageDialogResult::Custom("Retry".into()), &question), "retry");
-    assert_eq!(quit_choice(&MessageDialogResult::Custom("Quit Anyway".into()), &question), "quitAnyway");
-    assert_eq!(quit_choice(&MessageDialogResult::Custom("Cancel".into()), &question), "cancel");
+    assert_eq!(
+        quit_choice(&MessageDialogResult::Custom("Retry".into()), &question),
+        "retry"
+    );
+    assert_eq!(
+        quit_choice(
+            &MessageDialogResult::Custom("Quit Anyway".into()),
+            &question
+        ),
+        "quitAnyway"
+    );
+    assert_eq!(
+        quit_choice(&MessageDialogResult::Custom("Cancel".into()), &question),
+        "cancel"
+    );
     assert_eq!(quit_choice(&MessageDialogResult::Yes, &question), "retry");
-    assert_eq!(quit_choice(&MessageDialogResult::No, &question), "quitAnyway");
-    assert_eq!(quit_choice(&MessageDialogResult::Cancel, &question), "cancel");
+    assert_eq!(
+        quit_choice(&MessageDialogResult::No, &question),
+        "quitAnyway"
+    );
+    assert_eq!(
+        quit_choice(&MessageDialogResult::Cancel, &question),
+        "cancel"
+    );
 }
 
 #[test]
@@ -227,12 +279,18 @@ fn cancellation_retires_an_unanswered_attempt_and_ignores_its_late_report() {
     let (old_report, old_attempt, _) = session_end.begin();
     session_end.cancel();
     assert!(!session_end.ending());
-    assert!(matches!(old_report.try_recv(), Err(mpsc::TryRecvError::Disconnected)));
+    assert!(matches!(
+        old_report.try_recv(),
+        Err(mpsc::TryRecvError::Disconnected)
+    ));
     let (new_report, new_attempt, first) = session_end.begin();
     assert!(first);
     assert_ne!(old_attempt, new_attempt);
     session_end.finish(old_attempt);
-    assert!(matches!(new_report.try_recv(), Err(mpsc::TryRecvError::Empty)));
+    assert!(matches!(
+        new_report.try_recv(),
+        Err(mpsc::TryRecvError::Empty)
+    ));
     session_end.finish(new_attempt);
     assert!(new_report.try_recv().is_ok());
 }
@@ -251,7 +309,10 @@ fn cancellation_after_a_completed_save_allows_a_fresh_shutdown() {
     assert!(session_end.ending());
     assert_ne!(old_attempt, new_attempt);
     session_end.finish(old_attempt);
-    assert!(matches!(new_report.try_recv(), Err(mpsc::TryRecvError::Empty)));
+    assert!(matches!(
+        new_report.try_recv(),
+        Err(mpsc::TryRecvError::Empty)
+    ));
     session_end.finish(new_attempt);
     assert!(new_report.try_recv().is_ok());
 }

@@ -267,13 +267,20 @@ pub const SNAPSHOT_PAGE_SIZE: std::ops::RangeInclusive<u32> = 5..=200;
 // setting outside its accepted values; a set it leaves out is at its built-in.
 fn check_number_settings(sets: &serde_json::Map<String, JsonValue>) -> Result<(), String> {
     for (path, min, max, whole) in NUMBER_SETTINGS {
-        let Some(set) = sets.get(path[0]) else { continue };
-        let value = path[1..].iter().try_fold(set, |value, member| value.get(member));
+        let Some(set) = sets.get(path[0]) else {
+            continue;
+        };
+        let value = path[1..]
+            .iter()
+            .try_fold(set, |value, member| value.get(member));
         let accepted = value.and_then(JsonValue::as_f64).is_some_and(|number| {
             (*min..=*max).contains(&number) && (!whole || number.fract() == 0.0)
         });
         if !accepted {
-            return Err(format!("config setting {} is not an accepted value", path.join(".")));
+            return Err(format!(
+                "config setting {} is not an accepted value",
+                path.join(".")
+            ));
         }
     }
     Ok(())
@@ -329,7 +336,11 @@ fn save_state_in(data_dir: &Path, state: JsonValue) -> Result<bool, String> {
     // not recorded: state.json is pure view/session state (active pane, zoom, the
     // Records list width) — volatile state, kept out of the backup history
     // (data-backup conventions).
-    atomic_write_json_unrecorded(&data_dir.join(STATE_FILE_NAME), &state, format_version::STATE)
+    atomic_write_json_unrecorded(
+        &data_dir.join(STATE_FILE_NAME),
+        &state,
+        format_version::STATE,
+    )
 }
 
 pub fn records_list_width(app: &AppHandle) -> Result<Option<f64>, String> {
@@ -538,7 +549,9 @@ fn list_snapshots_with_connection(
         .collect::<Vec<_>>();
 
     if !SNAPSHOT_PAGE_SIZE.contains(&limit) {
-        return Err(format!("snapshot page size {limit} is not an accepted value"));
+        return Err(format!(
+            "snapshot page size {limit} is not an accepted value"
+        ));
     }
     let fetch_limit = limit + 1;
     let mut sql = String::from(
@@ -1148,7 +1161,7 @@ fn open_snapshot_store(data_dir: &Path) -> Result<SnapshotStore, String> {
     match format_version::check_sqlite(&conn, SNAPSHOTS_DB_FILE_NAME, format_version::SNAPSHOTS)? {
         SqliteFormat::Newer(recorded) => return Ok(SnapshotStore::Newer(recorded)),
         SqliteFormat::New => init_schema(&conn)?,
-        SqliteFormat::Readable => {},
+        SqliteFormat::Readable => {}
     }
     Ok(SnapshotStore::Ready(conn))
 }

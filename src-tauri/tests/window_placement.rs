@@ -62,7 +62,10 @@ fn only_windows_reopens_a_saved_maximized_window_maximized() {
             maximized: false,
         }
     );
-    let normal = Placement { maximized: false, ..saved };
+    let normal = Placement {
+        maximized: false,
+        ..saved
+    };
     assert_eq!(restored_placement(normal, true), normal);
     assert_eq!(REMEMBERS_MAXIMIZED, cfg!(target_os = "windows"));
 }
@@ -157,12 +160,13 @@ mod restore_usability {
     use super::rectangle;
     use quickdeck_lib::window_placement::usable_on;
 
-    const SCREEN: [quickdeck_lib::window_placement::NormalRectangle; 1] = [quickdeck_lib::window_placement::NormalRectangle {
-        x: 0,
-        y: 25,
-        width: 1440,
-        height: 875,
-    }];
+    const SCREEN: [quickdeck_lib::window_placement::NormalRectangle; 1] =
+        [quickdeck_lib::window_placement::NormalRectangle {
+            x: 0,
+            y: 25,
+            width: 1440,
+            height: 875,
+        }];
 
     #[test]
     fn a_window_inside_the_work_area_is_restored() {
@@ -191,7 +195,12 @@ mod restore_usability {
     fn a_second_monitor_at_negative_coordinates_counts() {
         let screens = [
             SCREEN[0],
-            quickdeck_lib::window_placement::NormalRectangle { x: -1920, y: 0, width: 1920, height: 1040 },
+            quickdeck_lib::window_placement::NormalRectangle {
+                x: -1920,
+                y: 0,
+                width: 1920,
+                height: 1040,
+            },
         ];
         assert!(usable_on(rectangle(-1800, 50, 800, 600), &screens));
         assert!(!usable_on(rectangle(-1800, 50, 800, 600), &SCREEN));

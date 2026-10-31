@@ -205,7 +205,11 @@ fn pending_work_keeps_every_version_in_save_order() {
         .collect();
     assert_eq!(
         pending,
-        [(config.clone(), b"1".to_vec()), (panes, b"1".to_vec()), (config, b"2".to_vec())]
+        [
+            (config.clone(), b"1".to_vec()),
+            (panes, b"1".to_vec()),
+            (config, b"2".to_vec())
+        ]
     );
 }
 
@@ -217,10 +221,13 @@ fn a_blocked_store_holds_up_neither_a_save_nor_the_next_save_of_that_file() {
     let path = dir.path().join("panes.json");
     let (entered, entry) = mpsc::channel();
     let (release, released) = mpsc::channel();
-    let writer = Writer::start_inner(&store, Some(Box::new(move || {
-        entered.send(()).unwrap();
-        released.recv().unwrap();
-    })));
+    let writer = Writer::start_inner(
+        &store,
+        Some(Box::new(move || {
+            entered.send(()).unwrap();
+            released.recv().unwrap();
+        })),
+    );
     let shared = writer.shared.clone();
     *lock(&WRITER) = Some(writer);
     record(&store, &path, b"v1");
@@ -239,15 +246,26 @@ fn a_blocked_store_holds_up_neither_a_save_nor_the_next_save_of_that_file() {
     acknowledgement.recv().unwrap();
     let (writing, pending) = {
         let queue = lock(&shared.0);
-        (queue.writing, queue.pending.iter().map(|version| {
-            (version.path.clone(), version.bytes.clone())
-        }).collect::<Vec<_>>())
+        (
+            queue.writing,
+            queue
+                .pending
+                .iter()
+                .map(|version| (version.path.clone(), version.bytes.clone()))
+                .collect::<Vec<_>>(),
+        )
     };
     release.send(()).unwrap();
     caller.join().unwrap();
     close_backup_store();
     assert!(writing, "the writer's admitted batch was still blocked");
-    assert_eq!(pending, [(path.clone(), b"v2".to_vec()), (path.clone(), b"v3".to_vec())]);
+    assert_eq!(
+        pending,
+        [
+            (path.clone(), b"v2".to_vec()),
+            (path.clone(), b"v3".to_vec())
+        ]
+    );
     assert_eq!(contents(&store, &path), [b"v3".to_vec()]);
 }
 
@@ -284,10 +302,7 @@ fn record_is_best_effort_when_the_store_cannot_be_opened() {
 
     record(&store, &target, b"content");
     record(&store, &target, b"content 2");
-    assert!(
-        drain(Duration::MAX),
-        "a disabled store still drains"
-    );
+    assert!(drain(Duration::MAX), "a disabled store still drains");
     close_backup_store();
     assert!(!store.exists(), "no store file should have been created");
 

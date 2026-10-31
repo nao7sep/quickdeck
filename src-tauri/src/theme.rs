@@ -74,14 +74,22 @@ pub fn os_theme() -> Theme {
 /// AppleInterfaceStyle "Dark"; light has no value.
 #[cfg(any(target_os = "macos", test))]
 fn mac_theme(style: Option<&str>) -> Theme {
-    if style == Some("Dark") { Theme::Dark } else { Theme::Light }
+    if style == Some("Dark") {
+        Theme::Dark
+    } else {
+        Theme::Light
+    }
 }
 
 /// Windows records the apps' appearance as AppsUseLightTheme, 0 for dark; a
 /// missing value is light, Windows' default.
 #[cfg(any(windows, test))]
 fn windows_theme(apps_use_light_theme: Option<u32>) -> Theme {
-    if apps_use_light_theme == Some(0) { Theme::Dark } else { Theme::Light }
+    if apps_use_light_theme == Some(0) {
+        Theme::Dark
+    } else {
+        Theme::Light
+    }
 }
 
 #[cfg(windows)]

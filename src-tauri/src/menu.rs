@@ -76,19 +76,29 @@ struct SubmenuLayout {
 #[cfg(any(target_os = "macos", target_os = "windows", test))]
 fn layout(mac: bool) -> Vec<SubmenuLayout> {
     use Entry::*;
-    let submenu = |title, id, entries| SubmenuLayout { title: Title::Text(title), id, entries };
+    let submenu = |title, id, entries| SubmenuLayout {
+        title: Title::Text(title),
+        id,
+        entries,
+    };
     let mut menus = Vec::new();
     if mac {
         menus.push(SubmenuLayout {
             title: Title::AppName,
             id: None,
-            entries: vec![About, Separator, Services, Separator, Hide, HideOthers, Separator, Quit],
+            entries: vec![
+                About, Separator, Services, Separator, Hide, HideOthers, Separator, Quit,
+            ],
         });
     }
     menus.push(submenu(
         "nativeMenu.file",
         None,
-        if mac { vec![CloseWindow] } else { vec![CloseWindow, Quit] },
+        if mac {
+            vec![CloseWindow]
+        } else {
+            vec![CloseWindow, Quit]
+        },
     ));
     menus.push(submenu(
         "nativeMenu.edit",

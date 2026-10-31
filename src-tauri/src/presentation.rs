@@ -34,7 +34,11 @@ impl PresentationState {
     fn from_locales(config: Option<&Value>, locales: &[String]) -> Self {
         let system_language = i18n::system_language(locales.iter().map(String::as_str));
         let system_locale = locales.first().cloned();
-        let field = |name| config.and_then(|value| value.get(name)).and_then(Value::as_str);
+        let field = |name| {
+            config
+                .and_then(|value| value.get(name))
+                .and_then(Value::as_str)
+        };
         Self {
             system_language,
             system_locale: system_locale.clone(),
@@ -48,21 +52,33 @@ impl PresentationState {
     }
 
     pub fn snapshot(&self) -> PresentationSnapshot {
-        self.current.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).clone()
+        self.current
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone()
     }
 
     pub fn current(&self) -> &'static str {
-        self.current.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).language
+        self.current
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .language
     }
 
     pub fn set_language(&self, language: &'static str) -> PresentationSnapshot {
-        let mut current = self.current.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let mut current = self
+            .current
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         current.language = language;
         current.clone()
     }
 
     pub fn set_display_preferences(&self, zone: String, font: String) -> PresentationSnapshot {
-        let mut current = self.current.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let mut current = self
+            .current
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         current.display_zone = zone;
         current.ui_font_family = font;
         current.clone()

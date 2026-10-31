@@ -13,7 +13,11 @@ fn each_change_keeps_its_sibling_fields() {
 
 #[test]
 fn startup_choices_share_one_parse_outcome() {
-    for text in ["{broken", r#"{"language":"de"}"#, r#"{"formatVersion":2,"language":"de","theme":"dark","displayZone":"UTC","uiFontFamily":"Example"}"#] {
+    for text in [
+        "{broken",
+        r#"{"language":"de"}"#,
+        r#"{"formatVersion":2,"language":"de","theme":"dark","displayZone":"UTC","uiFontFamily":"Example"}"#,
+    ] {
         let config = crate::storage::launch_config(text);
         let state = PresentationState::from_locales(config.as_ref(), &["ja-JP".into()]);
         let snapshot = state.snapshot();
@@ -22,17 +26,24 @@ fn startup_choices_share_one_parse_outcome() {
         assert_eq!(snapshot.ui_font_family, "");
         assert_eq!(crate::theme::saved_window_theme(config.as_ref()), None);
     }
-    let config = crate::storage::launch_config(r#"{"formatVersion":1,"language":"de","theme":"dark","displayZone":"UTC","uiFontFamily":"Example"}"#);
+    let config = crate::storage::launch_config(
+        r#"{"formatVersion":1,"language":"de","theme":"dark","displayZone":"UTC","uiFontFamily":"Example"}"#,
+    );
     let state = PresentationState::from_locales(config.as_ref(), &["ja-JP".into()]);
     assert_eq!(state.snapshot().language, "de");
     assert_eq!(state.snapshot().display_zone, "UTC");
     assert_eq!(state.snapshot().ui_font_family, "Example");
-    assert_eq!(crate::theme::saved_window_theme(config.as_ref()), Some(tauri::Theme::Dark));
+    assert_eq!(
+        crate::theme::saved_window_theme(config.as_ref()),
+        Some(tauri::Theme::Dark)
+    );
 }
 
 #[test]
 fn invalid_current_fields_fall_back_independently() {
-    let config = crate::storage::launch_config(r#"{"formatVersion":1,"language":7,"theme":false,"displayZone":false,"uiFontFamily":7}"#);
+    let config = crate::storage::launch_config(
+        r#"{"formatVersion":1,"language":7,"theme":false,"displayZone":false,"uiFontFamily":7}"#,
+    );
     let state = PresentationState::from_locales(config.as_ref(), &["ja-JP".into()]);
     assert_eq!(state.snapshot().language, "ja");
     assert_eq!(state.snapshot().display_zone, "system");

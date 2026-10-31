@@ -546,7 +546,10 @@ fn search_pagination_is_stable_across_same_second_rows() {
     assert_eq!(paged.len(), 8);
     paged.sort();
     paged.dedup();
-    assert_eq!(paged, vec!["id0", "id1", "id2", "id3", "id4", "id5", "id6", "id7"]);
+    assert_eq!(
+        paged,
+        vec!["id0", "id1", "id2", "id3", "id4", "id5", "id6", "id7"]
+    );
     // The id tiebreaker fixes the order to newest-id-first.
     let order: Vec<_> = page1
         .rows
@@ -554,17 +557,26 @@ fn search_pagination_is_stable_across_same_second_rows() {
         .chain(page2.rows.iter())
         .map(|r| r.id.as_str())
         .collect();
-    assert_eq!(order, vec!["id7", "id6", "id5", "id4", "id3", "id2", "id1", "id0"]);
+    assert_eq!(
+        order,
+        vec!["id7", "id6", "id5", "id4", "id3", "id2", "id1", "id0"]
+    );
 }
 
 #[test]
 fn a_page_size_outside_the_settings_range_is_refused_not_corrected() {
     let conn = mem_db();
     for limit in [0, 4, 201] {
-        assert!(list_snapshots_with_connection(&conn, "", limit, 0).is_err(), "{limit}");
+        assert!(
+            list_snapshots_with_connection(&conn, "", limit, 0).is_err(),
+            "{limit}"
+        );
     }
     for limit in [5, 200] {
-        assert!(list_snapshots_with_connection(&conn, "", limit, 0).is_ok(), "{limit}");
+        assert!(
+            list_snapshots_with_connection(&conn, "", limit, 0).is_ok(),
+            "{limit}"
+        );
     }
 }
 
@@ -1716,7 +1728,10 @@ fn a_config_write_with_a_number_setting_outside_its_accepted_values_is_refused()
         serde_json::json!({"snapshotPageSize": 201}),
         serde_json::json!({"snapshotPageSize": "20"}),
     ] {
-        assert!(config_to_write(root.path(), sets.clone()).is_err(), "{sets}");
+        assert!(
+            config_to_write(root.path(), sets.clone()).is_err(),
+            "{sets}"
+        );
     }
     assert!(!root.path().join(CONFIG_FILE_NAME).exists());
     for sets in [
@@ -1792,9 +1807,25 @@ fn the_records_list_width_is_absent_until_a_drag_saves_one() {
 #[test]
 fn snapshot_search_uses_the_same_unicode_lowercase_on_both_sides() {
     let conn = mem_db();
-    insert_row(&conn, "match", "pane", "2026-01-01T00:00:00.000Z", "ÉCOLE ПРИВЕТ 50%_off");
+    insert_row(
+        &conn,
+        "match",
+        "pane",
+        "2026-01-01T00:00:00.000Z",
+        "ÉCOLE ПРИВЕТ 50%_off",
+    );
     for query in ["ÉCOLE", "école", "ПрИвЕт", "50%_off", "école привет"] {
-        assert_eq!(list_snapshots_with_connection(&conn, query, 5, 0).unwrap().rows.len(), 1, "{query}");
+        assert_eq!(
+            list_snapshots_with_connection(&conn, query, 5, 0)
+                .unwrap()
+                .rows
+                .len(),
+            1,
+            "{query}"
+        );
     }
-    assert!(list_snapshots_with_connection(&conn, "50%Xoff", 5, 0).unwrap().rows.is_empty());
+    assert!(list_snapshots_with_connection(&conn, "50%Xoff", 5, 0)
+        .unwrap()
+        .rows
+        .is_empty());
 }

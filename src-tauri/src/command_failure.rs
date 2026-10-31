@@ -20,7 +20,8 @@ impl CommandFailure {
 
     pub(crate) fn with_config_set_aside(mut self, path: Option<String>) -> Self {
         if let Some(path) = path {
-            self.fields.insert("configQuarantinedTo".into(), Value::String(path));
+            self.fields
+                .insert("configQuarantinedTo".into(), Value::String(path));
         }
         self
     }

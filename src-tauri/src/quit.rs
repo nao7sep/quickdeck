@@ -15,7 +15,9 @@ use std::{
 
 use serde_json::json;
 use tauri::{AppHandle, Emitter, Manager, Runtime, State};
-use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind, MessageDialogResult};
+use tauri_plugin_dialog::{
+    DialogExt, MessageDialogButtons, MessageDialogKind, MessageDialogResult,
+};
 
 use crate::logging;
 
@@ -204,7 +206,9 @@ impl SessionEnd {
 
     fn finish(&self, attempt: u32) {
         let mut pending = self.pending.lock().unwrap_or_else(PoisonError::into_inner);
-        if !pending.active || pending.id != attempt { return; }
+        if !pending.active || pending.id != attempt {
+            return;
+        }
         for saved in pending.reports.drain(..) {
             let _ = saved.try_send(());
         }
@@ -236,7 +240,8 @@ fn begin_session_end<R: Runtime>(app: &AppHandle<R>) -> Option<(mpsc::Receiver<(
         app.emit_to("main", SESSION_ENDING_EVENT, attempt)
     });
     if let Some((_, true)) = begun {
-        app.state::<ExitDeadline>().set(Some(Instant::now() + EXIT_DEADLINE));
+        app.state::<ExitDeadline>()
+            .set(Some(Instant::now() + EXIT_DEADLINE));
     }
     begun
 }
@@ -249,7 +254,9 @@ fn ask_for_session_save<E: std::fmt::Display>(
     ask_window: impl FnOnce(u32) -> Result<(), E>,
 ) -> Option<(mpsc::Receiver<()>, bool)> {
     let (saved, attempt, first) = session_end.begin();
-    if !first { return Some((saved, false)); }
+    if !first {
+        return Some((saved, false));
+    }
     match ask_window(attempt) {
         Ok(()) => Some((saved, true)),
         Err(error) => {

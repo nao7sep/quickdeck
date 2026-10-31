@@ -1,6 +1,5 @@
 use quickdeck_lib::records::{
-    read_detail, read_page, read_sessions, Cursor, LevelFilter, RecordsQuery,
-    PAGE_SIZE, SCHEMA,
+    read_detail, read_page, read_sessions, Cursor, LevelFilter, RecordsQuery, PAGE_SIZE, SCHEMA,
 };
 use rusqlite::{params, Connection};
 

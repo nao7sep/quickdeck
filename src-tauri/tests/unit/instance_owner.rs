@@ -94,7 +94,10 @@ fn a_connection_that_sends_something_else_is_not_an_activation() {
     let listener = TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0)).unwrap();
     let address = listener.local_addr().unwrap();
     let sender = std::thread::spawn(move || {
-        TcpStream::connect(address).unwrap().write_all(b"hello").unwrap();
+        TcpStream::connect(address)
+            .unwrap()
+            .write_all(b"hello")
+            .unwrap();
     });
     let (mut accepted, _) = listener.accept().unwrap();
     sender.join().unwrap();
@@ -121,8 +124,17 @@ fn an_incomplete_client_does_not_occupy_the_listener_indefinitely() {
 fn each_claim_publishes_its_endpoint() {
     let dir = tempfile::tempdir().unwrap();
     for _ in 0..3 {
-        let Claim::Primary { lock: _lock, listener } = claim(dir.path()).unwrap() else { panic!() };
+        let Claim::Primary {
+            lock: _lock,
+            listener,
+        } = claim(dir.path()).unwrap()
+        else {
+            panic!()
+        };
         let published = std::fs::read_to_string(dir.path().join(ENDPOINT_FILE_NAME)).unwrap();
-        assert_eq!(published.trim().parse::<u16>().unwrap(), listener.local_addr().unwrap().port());
+        assert_eq!(
+            published.trim().parse::<u16>().unwrap(),
+            listener.local_addr().unwrap().port()
+        );
     }
 }

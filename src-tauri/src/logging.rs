@@ -97,16 +97,34 @@ struct Logger {
 impl Logger {
     fn channel(session: Session, debug_enabled: bool) -> (Self, mpsc::Receiver<Message>) {
         let (writer, lines) = mpsc::channel();
-        (Self { session, writer, debug_enabled }, lines)
+        (
+            Self {
+                session,
+                writer,
+                debug_enabled,
+            },
+            lines,
+        )
     }
 
-    fn write_event(&self, level: Level, message: &str, time: String, fields: Map<String, Value>) -> bool {
+    fn write_event(
+        &self,
+        level: Level,
+        message: &str,
+        time: String,
+        fields: Map<String, Value>,
+    ) -> bool {
         if level == Level::Debug && !self.debug_enabled {
             return false;
         }
         // A writer that never started was reported once to stderr; its lines
         // are dropped rather than written on the caller's thread.
-        let line = Message::Line { level, message: message.to_string(), time, fields };
+        let line = Message::Line {
+            level,
+            message: message.to_string(),
+            time,
+            fields,
+        };
         self.writer.send(line).is_ok()
     }
 
@@ -116,7 +134,10 @@ impl Logger {
             return;
         }
         if written.recv_timeout(bound).is_err() {
-            to_stderr(format_args!("log flush gave up after {} ms", bound.as_millis()));
+            to_stderr(format_args!(
+                "log flush gave up after {} ms",
+                bound.as_millis()
+            ));
         }
     }
 }
@@ -218,7 +239,14 @@ fn run_writer(
                 time,
                 fields,
             } => {
-                if write_record(records.as_ref().ok(), &session, level, &message, &time, &fields) {
+                if write_record(
+                    records.as_ref().ok(),
+                    &session,
+                    level,
+                    &message,
+                    &time,
+                    &fields,
+                ) {
                     stored();
                 }
             }
@@ -319,7 +347,9 @@ pub fn log_shutdown() {
 pub fn read<T: Send + 'static>(
     read: impl FnOnce(&Connection) -> rusqlite::Result<T> + Send + 'static,
 ) -> Result<T, String> {
-    let logger = LOGGER.get().ok_or_else(|| "the records database is not open".to_string())?;
+    let logger = LOGGER
+        .get()
+        .ok_or_else(|| "the records database is not open".to_string())?;
     let (answer, answered) = mpsc::sync_channel(1);
     let job: Read = Box::new(move |records| {
         let _ = answer.send(
@@ -332,7 +362,9 @@ pub fn read<T: Send + 'static>(
         .writer
         .send(Message::Read(job))
         .map_err(|_| "the records writer is not running".to_string())?;
-    answered.recv().map_err(|_| "the records writer stopped".to_string())?
+    answered
+        .recv()
+        .map_err(|_| "the records writer stopped".to_string())?
 }
 
 // This launch's session, as every row of it carries.
@@ -460,7 +492,9 @@ fn write_record(
         None => Err("data directory unavailable".to_string()),
     };
     if let Err(error) = appended {
-        to_stderr(format_args!("log record not written ({reason}; fallback: {error}): {line}"));
+        to_stderr(format_args!(
+            "log record not written ({reason}; fallback: {error}): {line}"
+        ));
     }
     false
 }

@@ -1,5 +1,5 @@
-use std::path::Path;
 use super::*;
+use std::path::Path;
 
 #[test]
 fn system_language_takes_the_first_supported_preferred_locale() {
@@ -99,13 +99,21 @@ fn appkit_takes_the_interface_language_from_a_volatile_override() {
     let languages = || {
         defaults
             .stringArrayForKey(&NSString::from_str("AppleLanguages"))
-            .map(|languages| languages.iter().map(|language| language.to_string()).collect::<Vec<_>>())
+            .map(|languages| {
+                languages
+                    .iter()
+                    .map(|language| language.to_string())
+                    .collect::<Vec<_>>()
+            })
     };
     align_appkit("ja");
     assert_eq!(languages(), Some(vec!["ja".to_string()]));
     align_appkit("de");
     assert_eq!(languages(), Some(vec!["de".to_string()]));
-    assert!(defaults.volatileDomainForName(domain_name).objectForKey(&marker).is_some());
+    assert!(defaults
+        .volatileDomainForName(domain_name)
+        .objectForKey(&marker)
+        .is_some());
 
     // SAFETY: as above; restores the domain this test found.
     unsafe { defaults.setVolatileDomain_forName(&before, domain_name) };
