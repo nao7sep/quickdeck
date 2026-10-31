@@ -344,14 +344,27 @@ fn write_record_says_whether_the_row_reached_the_database() {
 }
 
 #[test]
-fn a_new_records_database_records_its_format_version() {
+fn a_new_records_database_records_its_file_header() {
     let dir = tempfile::tempdir().unwrap();
     let conn = open_records(&dir.path().join("records.sqlite3")).unwrap();
     let version: i64 = conn
         .pragma_query_value(None, "user_version", |row| row.get(0))
         .unwrap();
-    assert_eq!(version, i64::from(format_version::RECORDS));
+    assert_eq!(version, i64::from(file_header::RECORDS.version));
+    let kind: String = conn
+        .query_row(
+            "select value from file_header where key = 'format.kind'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(kind, "records");
 }
+
+// A records database a newer build made: its header, recorded in version 2.
+const NEWER_RECORDS: &str = "create table file_header (key text primary key, value text not null);
+             insert into file_header values ('format.owner', 'quickdeck'), ('format.kind', 'records');
+             pragma user_version = 2;";
 
 #[test]
 fn a_records_database_from_a_newer_build_is_left_untouched() {
@@ -359,17 +372,18 @@ fn a_records_database_from_a_newer_build_is_left_untouched() {
     let file = dir.path().join("records.sqlite3");
     Connection::open(&file)
         .unwrap()
-        .execute_batch("pragma user_version = 2;")
+        .execute_batch(NEWER_RECORDS)
         .unwrap();
     let before = fs::read(&file).unwrap();
 
     let refused = open_records(&file).err().unwrap();
     assert!(refused.contains("records.sqlite3"), "{refused}");
+    assert!(refused.contains("newer"), "{refused}");
     assert_eq!(fs::read(&file).unwrap(), before);
 }
 
 #[test]
-fn a_records_database_without_its_marker_is_left_untouched() {
+fn a_records_database_without_its_header_is_left_untouched() {
     let dir = tempfile::tempdir().unwrap();
     let file = dir.path().join("records.sqlite3");
     Connection::open(&file)
@@ -431,7 +445,7 @@ fn a_read_of_a_records_database_from_a_newer_build_answers_its_error() {
     let file = dir.path().join("records.sqlite3");
     Connection::open(&file)
         .unwrap()
-        .execute_batch("pragma user_version = 2;")
+        .execute_batch(NEWER_RECORDS)
         .unwrap();
     let (logger, lines) = Logger::channel(session(Some(dir.path())), true);
     let answered = queue_count(&logger);

@@ -22,7 +22,7 @@ use serde_json::{json, Map, Value};
 use tauri::{AppHandle, Manager};
 
 use crate::{
-    format_version::{self, SqliteFormat},
+    file_header::{self, SqliteOpen},
     records,
     storage::RECORDS_DB_FILE_NAME,
 };
@@ -275,25 +275,18 @@ pub fn flush(bound: Duration) {
 }
 
 // not recorded: records.sqlite3 is written only here, never through the
-// managed-text atomic path (data-backup and data-lifecycle conventions). A store in a newer format, or without its format marker, is left
+// managed-text atomic path (data-backup and data-lifecycle conventions). A store in a newer format, or without its file header, is left
 // untouched, and every line takes the fallback.
 fn open_records(file: &Path) -> Result<Connection, String> {
     let to_string = |error: rusqlite::Error| error.to_string();
     let conn = Connection::open(file).map_err(to_string)?;
-    match format_version::check_sqlite(&conn, RECORDS_DB_FILE_NAME, format_version::RECORDS)? {
-        SqliteFormat::Newer(recorded) => {
-            return Err(format_version::newer_message(
-                RECORDS_DB_FILE_NAME,
-                recorded,
-            ))
-        }
-        SqliteFormat::New => conn
-            .pragma_update(None, "journal_mode", "WAL")
-            .and_then(|_| {
-                format_version::create_sqlite(&conn, records::SCHEMA, format_version::RECORDS)
-            })
-            .map_err(to_string)?,
-        SqliteFormat::Readable => {}
+    if let SqliteOpen::Newer(recorded) = file_header::prepare_sqlite(
+        &conn,
+        RECORDS_DB_FILE_NAME,
+        file_header::RECORDS,
+        records::SCHEMA,
+    )? {
+        return Err(file_header::newer_message(RECORDS_DB_FILE_NAME, recorded));
     }
     // Each row commits on its own; NORMAL under WAL keeps that from syncing the
     // disk every time, and a crashed process still loses nothing.

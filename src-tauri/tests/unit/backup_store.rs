@@ -315,7 +315,7 @@ fn record_is_best_effort_when_the_store_cannot_be_opened() {
 
 #[test]
 #[serial(backup_store)]
-fn a_new_store_records_its_format_version() {
+fn a_new_store_records_its_file_header() {
     let dir = tempfile::tempdir().unwrap();
     let store = fresh_store(dir.path());
     record(&store, &dir.path().join("config.json"), b"{}");
@@ -324,7 +324,7 @@ fn a_new_store_records_its_format_version() {
         .unwrap()
         .pragma_query_value(None, "user_version", |row| row.get(0))
         .unwrap();
-    assert_eq!(version, i64::from(format_version::BACKUPS));
+    assert_eq!(version, i64::from(file_header::BACKUPS.version));
 }
 
 #[test]
@@ -351,7 +351,11 @@ fn a_store_from_a_newer_build_is_left_untouched() {
     let store = fresh_store(dir.path());
     Connection::open(&store)
         .unwrap()
-        .execute_batch("pragma user_version = 2;")
+        .execute_batch(
+            "create table file_header (key text primary key, value text not null);
+             insert into file_header values ('format.owner', 'quickdeck'), ('format.kind', 'backups');
+             pragma user_version = 2;",
+        )
         .unwrap();
     let before = std::fs::read(&store).unwrap();
 
@@ -363,7 +367,7 @@ fn a_store_from_a_newer_build_is_left_untouched() {
 
 #[test]
 #[serial(backup_store)]
-fn a_store_without_its_marker_is_left_untouched() {
+fn a_store_without_its_header_is_left_untouched() {
     let dir = tempfile::tempdir().unwrap();
     let store = fresh_store(dir.path());
     Connection::open(&store)

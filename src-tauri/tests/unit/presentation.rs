@@ -16,7 +16,7 @@ fn startup_choices_share_one_parse_outcome() {
     for text in [
         "{broken",
         r#"{"language":"de"}"#,
-        r#"{"formatVersion":2,"language":"de","theme":"dark","displayZone":"UTC","uiFontFamily":"Example"}"#,
+        r#"{"format":{"owner":"quickdeck","kind":"config","version":2},"writer":{"name":"quickdeck","version":"1.0.0"},"language":"de","theme":"dark","displayZone":"UTC","uiFontFamily":"Example"}"#,
     ] {
         let config = crate::storage::launch_config(text);
         let state = PresentationState::from_locales(config.as_ref(), &["ja-JP".into()]);
@@ -27,7 +27,7 @@ fn startup_choices_share_one_parse_outcome() {
         assert_eq!(crate::theme::saved_window_theme(config.as_ref()), None);
     }
     let config = crate::storage::launch_config(
-        r#"{"formatVersion":1,"language":"de","theme":"dark","displayZone":"UTC","uiFontFamily":"Example"}"#,
+        r#"{"format":{"owner":"quickdeck","kind":"config","version":1},"writer":{"name":"quickdeck","version":"1.0.0"},"language":"de","theme":"dark","displayZone":"UTC","uiFontFamily":"Example"}"#,
     );
     let state = PresentationState::from_locales(config.as_ref(), &["ja-JP".into()]);
     assert_eq!(state.snapshot().language, "de");
@@ -42,7 +42,7 @@ fn startup_choices_share_one_parse_outcome() {
 #[test]
 fn invalid_current_fields_fall_back_independently() {
     let config = crate::storage::launch_config(
-        r#"{"formatVersion":1,"language":7,"theme":false,"displayZone":false,"uiFontFamily":7}"#,
+        r#"{"format":{"owner":"quickdeck","kind":"config","version":1},"writer":{"name":"quickdeck","version":"1.0.0"},"language":7,"theme":false,"displayZone":false,"uiFontFamily":7}"#,
     );
     let state = PresentationState::from_locales(config.as_ref(), &["ja-JP".into()]);
     assert_eq!(state.snapshot().language, "ja");

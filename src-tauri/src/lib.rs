@@ -1,7 +1,7 @@
 pub mod backup_store;
 mod command_failure;
 use command_failure::CommandFailure;
-pub mod format_version;
+pub mod file_header;
 mod i18n;
 mod instance_owner;
 mod logging;

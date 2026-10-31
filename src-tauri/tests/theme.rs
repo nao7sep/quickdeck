@@ -20,7 +20,7 @@ fn saved_theme_comes_from_the_config_theme_field() {
     assert_eq!(
         saved_window_theme(
             quickdeck_lib::storage::launch_config(
-                r#"{"formatVersion":1,"theme":"dark","zen":false}"#
+                r#"{"format":{"owner":"quickdeck","kind":"config","version":1},"writer":{"name":"quickdeck","version":"1.0.0"},"theme":"dark","zen":false}"#
             )
             .as_ref()
         ),
@@ -28,14 +28,14 @@ fn saved_theme_comes_from_the_config_theme_field() {
     );
     assert_eq!(
         saved_window_theme(
-            quickdeck_lib::storage::launch_config(r#"{"formatVersion":1,"theme":"light"}"#)
+            quickdeck_lib::storage::launch_config(r#"{"format":{"owner":"quickdeck","kind":"config","version":1},"writer":{"name":"quickdeck","version":"1.0.0"},"theme":"light"}"#)
                 .as_ref()
         ),
         Some(Theme::Light)
     );
     assert_eq!(
         saved_window_theme(
-            quickdeck_lib::storage::launch_config(r#"{"formatVersion":1,"theme":"system"}"#)
+            quickdeck_lib::storage::launch_config(r#"{"format":{"owner":"quickdeck","kind":"config","version":1},"writer":{"name":"quickdeck","version":"1.0.0"},"theme":"system"}"#)
                 .as_ref()
         ),
         None
@@ -50,7 +50,7 @@ fn a_missing_retired_or_corrupt_config_follows_the_os() {
     );
     assert_eq!(
         saved_window_theme(
-            quickdeck_lib::storage::launch_config(r#"{"formatVersion":1,"theme":true}"#).as_ref()
+            quickdeck_lib::storage::launch_config(r#"{"format":{"owner":"quickdeck","kind":"config","version":1},"writer":{"name":"quickdeck","version":"1.0.0"},"theme":true}"#).as_ref()
         ),
         None
     );
@@ -77,20 +77,20 @@ fn each_theme_has_its_own_window_background() {
 }
 
 #[test]
-fn a_config_from_a_newer_build_or_without_its_marker_follows_the_os() {
+fn a_config_from_a_newer_build_or_without_its_header_follows_the_os() {
     assert_eq!(
         saved_window_theme(quickdeck_lib::storage::launch_config(r#"{"theme":"dark"}"#).as_ref()),
         None
     );
     assert_eq!(
         saved_window_theme(
-            quickdeck_lib::storage::launch_config(r#"{"formatVersion":1,"theme":"dark"}"#).as_ref()
+            quickdeck_lib::storage::launch_config(r#"{"format":{"owner":"quickdeck","kind":"config","version":1},"writer":{"name":"quickdeck","version":"1.0.0"},"theme":"dark"}"#).as_ref()
         ),
         Some(Theme::Dark)
     );
     assert_eq!(
         saved_window_theme(
-            quickdeck_lib::storage::launch_config(r#"{"formatVersion":2,"theme":"dark"}"#).as_ref()
+            quickdeck_lib::storage::launch_config(r#"{"format":{"owner":"quickdeck","kind":"config","version":2},"writer":{"name":"quickdeck","version":"1.0.0"},"theme":"dark"}"#).as_ref()
         ),
         None
     );

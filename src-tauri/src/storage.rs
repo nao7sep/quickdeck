@@ -15,7 +15,7 @@ use serde_json::Value as JsonValue;
 use sha2::{Digest, Sha256};
 use tauri::{AppHandle, Manager};
 
-use crate::format_version::{self, JsonFormat, SqliteFormat};
+use crate::file_header::{self, Format, JsonFormat, SqliteOpen};
 use crate::paths::app_data_dir;
 
 // The managed files the data directory holds, each named in exactly one place so
@@ -183,30 +183,29 @@ fn load_app_data_in(
     // work product and halts — its error rides in the result so the other
     // stores still load and the halt surface can offer a reset.
     let config_path = data_dir.join(CONFIG_FILE_NAME);
-    let config = read_rebuildable_store(&config_path, format_version::CONFIG)
+    let config = read_rebuildable_store(&config_path, file_header::CONFIG)
         .map_err(LoadFailure::at(&config_path, None))?;
     // state.json holds the active pane, zoom and Records list width. Preserve
     // and log corrupt bytes, or a newer format, but do not surface a dialog for
     // disposable view state.
     let state_path = data_dir.join(STATE_FILE_NAME);
-    let state = read_rebuildable_store(&state_path, format_version::STATE).map_err(
+    let state = read_rebuildable_store(&state_path, file_header::STATE).map_err(
         LoadFailure::at(&state_path, config.quarantined_to.as_deref()),
     )?;
     let panes_path = data_dir.join(PANES_FILE_NAME);
-    let (panes, panes_error, panes_newer) =
-        match read_json_store(&panes_path, format_version::PANES) {
-            Ok(JsonRead::Absent) => (None, None, None),
-            Ok(JsonRead::Readable(fields)) if valid_panes_shape(&fields) => {
-                (Some(JsonValue::Object(fields)), None, None)
-            }
-            Ok(JsonRead::Readable(_)) => (
-                None,
-                Some("panes.json contains invalid pane data".to_string()),
-                None,
-            ),
-            Ok(JsonRead::Newer(recorded)) => (None, None, Some(recorded)),
-            Ok(JsonRead::Corrupt(message)) | Err(message) => (None, Some(message), None),
-        };
+    let (panes, panes_error, panes_newer) = match read_json_store(&panes_path, file_header::PANES) {
+        Ok(JsonRead::Absent) => (None, None, None),
+        Ok(JsonRead::Readable(fields)) if valid_panes_shape(&fields) => {
+            (Some(JsonValue::Object(fields)), None, None)
+        }
+        Ok(JsonRead::Readable(_)) => (
+            None,
+            Some("panes.json contains invalid pane data".to_string()),
+            None,
+        ),
+        Ok(JsonRead::Newer(recorded)) => (None, None, Some(recorded)),
+        Ok(JsonRead::Corrupt(message)) | Err(message) => (None, Some(message), None),
+    };
     let snapshots_path = data_dir.join(SNAPSHOTS_DB_FILE_NAME);
     let snapshots_newer = snapshots.open(data_dir).map_err(LoadFailure::at(
         &snapshots_path,
@@ -289,7 +288,7 @@ fn check_number_settings(sets: &serde_json::Map<String, JsonValue>) -> Result<()
 // The file content for the given sets — every set that differs from its
 // built-in, which the frontend decides — keeping only known keys, or None when
 // that equals the file, so an absent file stays absent and a file whose sets are
-// all back at their built-ins keeps only its format marker.
+// all back at their built-ins keeps only its header.
 pub fn config_to_write(data_dir: &Path, sets: JsonValue) -> Result<ConfigToWrite, String> {
     const KEYS: &[&str] = &[
         "language",
@@ -307,7 +306,7 @@ pub fn config_to_write(data_dir: &Path, sets: JsonValue) -> Result<ConfigToWrite
         .ok_or("config sets are not an object")?
         .clone();
     check_number_settings(&stored)?;
-    let current = read_rebuildable_store(&data_dir.join(CONFIG_FILE_NAME), format_version::CONFIG)?;
+    let current = read_rebuildable_store(&data_dir.join(CONFIG_FILE_NAME), file_header::CONFIG)?;
     stored.retain(|key, _| KEYS.contains(&key.as_str()));
     Ok(ConfigToWrite {
         content: (current.value.unwrap_or_default() != stored).then_some(JsonValue::Object(stored)),
@@ -322,7 +321,7 @@ pub fn write_config(data_dir: &Path, config: &JsonValue) -> Result<(), String> {
         data_dir,
         &data_dir.join(CONFIG_FILE_NAME),
         config,
-        format_version::CONFIG,
+        file_header::CONFIG,
     )
     .map(|_| ())
 }
@@ -336,11 +335,7 @@ fn save_state_in(data_dir: &Path, state: JsonValue) -> Result<bool, String> {
     // not recorded: state.json is pure view/session state (active pane, zoom, the
     // Records list width) — volatile state, kept out of the backup history
     // (data-backup conventions).
-    atomic_write_json_unrecorded(
-        &data_dir.join(STATE_FILE_NAME),
-        &state,
-        format_version::STATE,
-    )
+    atomic_write_json_unrecorded(&data_dir.join(STATE_FILE_NAME), &state, file_header::STATE)
 }
 
 pub fn records_list_width(app: &AppHandle) -> Result<Option<f64>, String> {
@@ -360,7 +355,7 @@ fn records_list_width_in(data_dir: &Path) -> Result<Option<f64>, String> {
 // state.json as an object, or None when it is missing, unreadable or newer; its
 // recovery stays with the launch's load path.
 fn read_state_object(path: &Path) -> Option<serde_json::Map<String, JsonValue>> {
-    match read_json_store(path, format_version::STATE) {
+    match read_json_store(path, file_header::STATE) {
         Ok(JsonRead::Readable(fields)) => Some(fields),
         _ => None,
     }
@@ -368,7 +363,7 @@ fn read_state_object(path: &Path) -> Option<serde_json::Map<String, JsonValue>> 
 
 pub(crate) fn load_window_state_in(root: &Path) -> Result<Option<JsonValue>, String> {
     let path = root.join(WINDOW_FILE_NAME);
-    let loaded = read_rebuildable_store(&path, format_version::WINDOW)?;
+    let loaded = read_rebuildable_store(&path, file_header::WINDOW)?;
     if let Some(recorded) = loaded.newer {
         report_newer(&path, recorded);
     }
@@ -381,7 +376,7 @@ pub fn save_window_state(data_dir: &Path, state: JsonValue) -> Result<(), String
     atomic_write_json_unrecorded(
         &data_dir.join(WINDOW_FILE_NAME),
         &state,
-        format_version::WINDOW,
+        file_header::WINDOW,
     )
     .map(|_| ())
 }
@@ -418,17 +413,18 @@ pub fn save_panes(app: &AppHandle, panes: JsonValue) -> Result<bool, SaveFailure
 fn save_panes_in(data_dir: &Path, panes: &JsonValue) -> Result<bool, SaveFailure> {
     // records: panes.json is the user's text — protected (data-backup conventions).
     let path = data_dir.join(PANES_FILE_NAME);
-    let outcome = write_json_atomically(&path, panes, format_version::PANES, Some(data_dir))
-        .map_err(|message| SaveFailure {
+    let outcome = write_json_atomically(&path, panes, file_header::PANES, Some(data_dir)).map_err(
+        |message| SaveFailure {
             path: Some(path.to_string_lossy().into_owned()),
             newer: None,
             message,
-        })?;
+        },
+    )?;
     match outcome {
         JsonWrite::Newer(recorded) => Err(SaveFailure {
             path: Some(path.to_string_lossy().into_owned()),
             newer: Some(recorded),
-            message: format_version::newer_message(PANES_FILE_NAME, recorded),
+            message: file_header::newer_message(PANES_FILE_NAME, recorded),
         }),
         JsonWrite::Written => Ok(true),
         JsonWrite::Unchanged => Ok(false),
@@ -447,7 +443,7 @@ pub fn quarantine_corrupt_panes(app: &AppHandle) -> Result<Option<String>, Strin
 
 fn quarantine_corrupt_panes_in(data_dir: &Path) -> Result<Option<String>, String> {
     let path = data_dir.join(PANES_FILE_NAME);
-    match read_json_store(&path, format_version::PANES)? {
+    match read_json_store(&path, file_header::PANES)? {
         JsonRead::Absent | JsonRead::Newer(_) => return Ok(None),
         JsonRead::Readable(fields) if valid_panes_shape(&fields) => return Ok(None),
         _ => {}
@@ -735,7 +731,7 @@ fn delete_all_snapshots_with_connection(conn: &Connection) -> Result<u64, String
     Ok(removed as u64)
 }
 
-// What a JSON store's file holds, its format marker checked and removed.
+// What a JSON store's file holds, its header checked and removed.
 #[derive(Debug, PartialEq)]
 enum JsonRead {
     Absent,
@@ -743,14 +739,14 @@ enum JsonRead {
     // Recorded in this newer format: intact data this build cannot read, which
     // is reported and left exactly in place (store-recovery conventions).
     Newer(u32),
-    // Bytes that do not parse, or a format marker that is missing or not a
-    // positive integer.
+    // Bytes that do not parse, or a header that is missing, malformed or names
+    // another owner or kind.
     Corrupt(String),
 }
 
 // The one reader every JSON store loads through. Absence is not an error; a
 // failure to read the bytes at all is, and the caller's branch decides the rest.
-fn read_json_store(path: &Path, version: u32) -> Result<JsonRead, String> {
+fn read_json_store(path: &Path, format: Format) -> Result<JsonRead, String> {
     let bytes = match fs::read(path) {
         Ok(bytes) => bytes,
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(JsonRead::Absent),
@@ -760,7 +756,7 @@ fn read_json_store(path: &Path, version: u32) -> Result<JsonRead, String> {
         Ok(value) => value,
         Err(parse_err) => return Ok(JsonRead::Corrupt(parse_err.to_string())),
     };
-    Ok(match format_version::read_json(value, version) {
+    Ok(match file_header::read_json(value, format) {
         Ok(JsonFormat::Readable(value)) => JsonRead::Readable(value),
         Ok(JsonFormat::Newer(recorded)) => JsonRead::Newer(recorded),
         Err(reason) => JsonRead::Corrupt(reason),
@@ -774,7 +770,7 @@ fn report_newer(path: &Path, recorded: u32) {
         "store from a newer build left in place",
         serde_json::json!({
             "file": path.to_string_lossy(),
-            "error": { "message": format_version::newer_message(&file, recorded) },
+            "error": { "message": file_header::newer_message(&file, recorded) },
         }),
     );
 }
@@ -816,16 +812,16 @@ struct Rebuildable {
 // Reads a REBUILDABLE store (config, view state): missing → nothing; readable →
 // its value; newer → left in place and reported as newer, so launch proceeds
 // with built-ins; present-but-corrupt (unreadable bytes, unparseable JSON — a
-// bytes parse, so UTF-8 garbage counts — or a missing or bad format marker,
-// which every non-object lacks) → quarantine
+// bytes parse, so UTF-8 garbage counts — or a missing, malformed or foreign
+// header, which every non-object lacks) → quarantine
 // aside and return the `.invalid` path so the caller reports it, then built-ins.
 // The quarantine rename runs OUTSIDE the parse-failure
 // handling: its own failure propagates as a load error rather than falling
 // through to a default write over the preserved bytes (storage-path
 // conventions). panes.json never takes this path — it holds the user's text
 // and halts instead.
-fn read_rebuildable_store(path: &Path, version: u32) -> Result<Rebuildable, String> {
-    Ok(match read_json_store(path, version)? {
+fn read_rebuildable_store(path: &Path, format: Format) -> Result<Rebuildable, String> {
+    Ok(match read_json_store(path, format)? {
         JsonRead::Absent => Rebuildable::default(),
         JsonRead::Readable(fields) => Rebuildable {
             value: Some(fields),
@@ -835,7 +831,7 @@ fn read_rebuildable_store(path: &Path, version: u32) -> Result<Rebuildable, Stri
             newer: Some(recorded),
             ..Rebuildable::default()
         },
-        JsonRead::Corrupt(_) => quarantine_rebuildable_store(path, version)?,
+        JsonRead::Corrupt(_) => quarantine_rebuildable_store(path, format)?,
     })
 }
 
@@ -844,16 +840,16 @@ fn read_rebuildable_store(path: &Path, version: u32) -> Result<Rebuildable, Stri
 /// is in a newer format, as the load path will report it.
 pub fn launch_config(text: &str) -> Option<JsonValue> {
     let value = serde_json::from_str(text).ok()?;
-    match format_version::read_json(value, format_version::CONFIG).ok()? {
+    match file_header::read_json(value, file_header::CONFIG).ok()? {
         JsonFormat::Readable(fields) => Some(JsonValue::Object(fields)),
         JsonFormat::Newer(_) => None,
     }
 }
 
-fn quarantine_rebuildable_store(path: &Path, version: u32) -> Result<Rebuildable, String> {
+fn quarantine_rebuildable_store(path: &Path, format: Format) -> Result<Rebuildable, String> {
     // Classification is fresh at the destructive boundary. Repaired and newer
     // targets are never set aside.
-    let reason = match read_json_store(path, version)? {
+    let reason = match read_json_store(path, format)? {
         JsonRead::Absent => return Ok(Rebuildable::default()),
         JsonRead::Readable(fields) => {
             return Ok(Rebuildable {
@@ -921,9 +917,9 @@ fn atomic_write_json(
     data_dir: &Path,
     path: &Path,
     value: &JsonValue,
-    version: u32,
+    format: Format,
 ) -> Result<bool, String> {
-    write_json_atomically(path, value, version, Some(data_dir))
+    write_json_atomically(path, value, format, Some(data_dir))
         .map(|outcome| matches!(outcome, JsonWrite::Written))
 }
 
@@ -932,9 +928,9 @@ fn atomic_write_json(
 fn atomic_write_json_unrecorded(
     path: &Path,
     value: &JsonValue,
-    version: u32,
+    format: Format,
 ) -> Result<bool, String> {
-    write_json_atomically(path, value, version, None)
+    write_json_atomically(path, value, format, None)
         .map(|outcome| matches!(outcome, JsonWrite::Written))
 }
 
@@ -950,7 +946,7 @@ enum JsonWrite {
 fn write_json_atomically(
     path: &Path,
     value: &JsonValue,
-    version: u32,
+    format: Format,
     backups_in: Option<&Path>,
 ) -> Result<JsonWrite, String> {
     let parent = path
@@ -959,8 +955,7 @@ fn write_json_atomically(
 
     // Pane content may have changed on disk since loading. Check it again at
     // publication before replacing authored text.
-    // The filename identifies the store; JSON stores share version numbers.
-    let is_panes = path.file_name().is_some_and(|name| name == PANES_FILE_NAME);
+    let is_panes = format == file_header::PANES;
     if is_panes && !value.as_object().is_some_and(valid_panes_shape) {
         return Err("panes.json contains invalid pane data".to_string());
     }
@@ -968,7 +963,7 @@ fn write_json_atomically(
     // The exact bytes that land on disk: pretty JSON plus the single trailing
     // newline. Building the whole buffer once (rather than two write_all calls)
     // is what lets the backup record a blob byte-identical to the file.
-    let stamped = format_version::stamp_json(value, version)?;
+    let stamped = file_header::stamp_json(value, format)?;
     let mut bytes = serde_json::to_vec_pretty(&stamped).map_err(to_string_error)?;
     bytes.push(b'\n');
     // Rebuildable stores may replace unreadable bytes; panes must preserve them.
@@ -976,7 +971,7 @@ fn write_json_atomically(
         Ok(current) => {
             let parsed = serde_json::from_slice(&current)
                 .map_err(to_string_error)
-                .and_then(|current| format_version::read_json(current, version));
+                .and_then(|current| file_header::read_json(current, format));
             match parsed {
                 Ok(JsonFormat::Newer(recorded)) => return Ok(JsonWrite::Newer(recorded)),
                 Ok(JsonFormat::Readable(fields)) if is_panes && !valid_panes_shape(&fields) => {
@@ -1143,7 +1138,7 @@ impl SnapshotConnection {
     ) -> Result<T, String> {
         self.run(move |slot| match slot {
             SnapshotSlot::Ready(conn) => work(conn),
-            SnapshotSlot::Newer(recorded) => Err(format_version::newer_message(
+            SnapshotSlot::Newer(recorded) => Err(file_header::newer_message(
                 SNAPSHOTS_DB_FILE_NAME,
                 *recorded,
             )),
@@ -1158,10 +1153,14 @@ fn open_snapshot_store(data_dir: &Path) -> Result<SnapshotStore, String> {
     // (data-backup conventions).
     fs::create_dir_all(data_dir).map_err(to_string_error)?;
     let conn = Connection::open(data_dir.join(SNAPSHOTS_DB_FILE_NAME)).map_err(to_string_error)?;
-    match format_version::check_sqlite(&conn, SNAPSHOTS_DB_FILE_NAME, format_version::SNAPSHOTS)? {
-        SqliteFormat::Newer(recorded) => return Ok(SnapshotStore::Newer(recorded)),
-        SqliteFormat::New => init_schema(&conn)?,
-        SqliteFormat::Readable => {}
+    match file_header::prepare_sqlite(
+        &conn,
+        SNAPSHOTS_DB_FILE_NAME,
+        file_header::SNAPSHOTS,
+        SCHEMA,
+    )? {
+        SqliteOpen::Newer(recorded) => return Ok(SnapshotStore::Newer(recorded)),
+        SqliteOpen::Ready => {}
     }
     Ok(SnapshotStore::Ready(conn))
 }
@@ -1175,12 +1174,6 @@ fn open_snapshot_store(data_dir: &Path) -> Result<SnapshotStore, String> {
 // and Delete all are one action each, so forgetting stays the reader's to decide.
 // Repeating a copy of a pane's latest text writes nothing, so only text the pane
 // did not just hold adds a row.
-fn init_schema(conn: &Connection) -> Result<(), String> {
-    conn.pragma_update(None, "journal_mode", "WAL")
-        .and_then(|_| format_version::create_sqlite(conn, SCHEMA, format_version::SNAPSHOTS))
-        .map_err(to_string_error)
-}
-
 const SCHEMA: &str = "
         create table if not exists snapshots (
           id text primary key,

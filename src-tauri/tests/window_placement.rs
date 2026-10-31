@@ -1,4 +1,4 @@
-use quickdeck_lib::format_version::{self, JsonFormat};
+use quickdeck_lib::file_header::{self, JsonFormat};
 use quickdeck_lib::window_placement::{
     new_state, placement_after_close, placements_from, restored_placement, save, ClosingState,
     NormalRectangle, Placement, REMEMBERS_MAXIMIZED,
@@ -146,9 +146,11 @@ fn the_exit_save_writes_window_json_into_the_launch_root() {
 
     let written: serde_json::Value =
         serde_json::from_slice(&std::fs::read(root.path().join("window.json")).unwrap()).unwrap();
-    assert_eq!(written["formatVersion"], format_version::WINDOW);
-    let Ok(JsonFormat::Readable(written)) =
-        format_version::read_json(written, format_version::WINDOW)
+    assert_eq!(
+        written["format"],
+        serde_json::json!({"owner": "quickdeck", "kind": "window", "version": 1})
+    );
+    let Ok(JsonFormat::Readable(written)) = file_header::read_json(written, file_header::WINDOW)
     else {
         panic!("window.json reads in this build's format");
     };

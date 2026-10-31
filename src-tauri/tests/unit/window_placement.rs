@@ -2,7 +2,7 @@ use super::{
     capture_event, capture_from, new_state, placements_from, save, ClosingState, NormalRectangle,
     Placement, DURABLE_WINDOWS, REMEMBERS_MAXIMIZED,
 };
-use crate::format_version::{self, JsonFormat};
+use crate::file_header::{self, JsonFormat};
 use tauri::{PhysicalPosition, PhysicalSize, WindowEvent};
 
 const LAUNCH: NormalRectangle = NormalRectangle {
@@ -51,8 +51,7 @@ fn normal_change_then_maximized_exit(event: WindowEvent) {
     save(root.path(), &state);
     let written =
         serde_json::from_slice(&std::fs::read(root.path().join("window.json")).unwrap()).unwrap();
-    let Ok(JsonFormat::Readable(written)) =
-        format_version::read_json(written, format_version::WINDOW)
+    let Ok(JsonFormat::Readable(written)) = file_header::read_json(written, file_header::WINDOW)
     else {
         panic!("the saved placement must be readable on relaunch");
     };

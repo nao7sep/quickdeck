@@ -34,7 +34,7 @@ use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::json;
 use sha2::{Digest, Sha256};
 
-use crate::format_version::{self, SqliteFormat};
+use crate::file_header::{self, SqliteOpen};
 
 /// The store file's basename, under the resolved storage root. The full path is
 /// composed by the caller, which already holds the resolved data dir, so this
@@ -298,20 +298,14 @@ fn open_store(file: &Path) -> Result<Connection, ()> {
     opened.map_err(|reason| warn_unavailable(file, &reason))
 }
 
-/// The format check, before anything that writes. A new store gets WAL, its
-/// schema and its format marker; unsupported stores are left untouched.
+/// The header check, before anything that writes. A new store gets WAL, its
+/// schema and its header; unsupported stores are left untouched.
 fn prepare_store(conn: &Connection) -> Result<(), String> {
-    let to_string = |error: rusqlite::Error| error.to_string();
-    match format_version::check_sqlite(conn, BACKUPS_DB_FILE_NAME, format_version::BACKUPS)? {
-        SqliteFormat::Newer(recorded) => Err(format_version::newer_message(
-            BACKUPS_DB_FILE_NAME,
-            recorded,
-        )),
-        SqliteFormat::New => conn
-            .pragma_update(None, "journal_mode", "WAL")
-            .and_then(|_| format_version::create_sqlite(conn, SCHEMA, format_version::BACKUPS))
-            .map_err(to_string),
-        SqliteFormat::Readable => Ok(()),
+    match file_header::prepare_sqlite(conn, BACKUPS_DB_FILE_NAME, file_header::BACKUPS, SCHEMA)? {
+        SqliteOpen::Newer(recorded) => {
+            Err(file_header::newer_message(BACKUPS_DB_FILE_NAME, recorded))
+        }
+        SqliteOpen::Ready => Ok(()),
     }
 }
 
