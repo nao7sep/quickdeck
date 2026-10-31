@@ -1,7 +1,7 @@
 {
   "name": "quickdeck",
   "private": true,
-  "version": "0.1.0",
+  "version": "1.0.0",
   "packageManager": "npm@12.2.0",
   "description": "Write in several plain-text panes side by side, and bring back earlier text from automatic snapshots.",
   "author": "Yoshinao Inoguchi <yoshinao@inoguchi.com>",

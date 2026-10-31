@@ -42,12 +42,8 @@ fn a_json_store_without_its_marker_is_unreadable() {
 #[test]
 fn a_json_store_from_a_newer_build_reads_as_newer() {
     assert_eq!(
-        read_json(json!({ "formatVersion": 3, "zen": true }), 2).unwrap(),
-        JsonFormat::Newer(3)
-    );
-    assert_eq!(
-        read_json(json!({ "formatVersion": 2 }), 2).unwrap(),
-        JsonFormat::Readable(Map::new())
+        read_json(json!({ "formatVersion": 2, "zen": true }), 1).unwrap(),
+        JsonFormat::Newer(2)
     );
 }
 
@@ -115,9 +111,5 @@ fn a_sqlite_store_from_a_newer_build_reads_as_newer_even_read_only() {
     assert_eq!(
         check_sqlite(&read_only, "store.sqlite3", 1).unwrap(),
         SqliteFormat::Newer(2)
-    );
-    assert_eq!(
-        check_sqlite(&read_only, "store.sqlite3", 2).unwrap(),
-        SqliteFormat::Readable
     );
 }

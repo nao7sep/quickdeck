@@ -346,70 +346,12 @@ fn current_backup_rows_require_a_session_id() {
 
 #[test]
 #[serial(backup_store)]
-fn an_older_store_is_refused_without_changing_its_bytes_or_schema() {
-    let dir = tempfile::tempdir().unwrap();
-    let store = fresh_store(dir.path());
-    let path = dir.path().join("panes.json");
-    {
-        let conn = Connection::open(&store).unwrap();
-        conn.execute_batch(
-            "CREATE TABLE backups (
-               id INTEGER PRIMARY KEY, path TEXT NOT NULL, content BLOB NOT NULL,
-               content_sha256 TEXT NOT NULL, byte_size INTEGER NOT NULL,
-               written_at_utc TEXT NOT NULL);
-             CREATE INDEX idx_backups_path_id ON backups (path, id);
-             PRAGMA user_version = 1;",
-        )
-        .unwrap();
-        for content in [b"old 1", b"old 2"] {
-            conn.execute(
-                "INSERT INTO backups (path, content, content_sha256, byte_size, written_at_utc)
-                 VALUES (?1, ?2, ?3, 5, '2026-07-06T04:05:12.345Z')",
-                params![
-                    path.to_string_lossy(),
-                    content.to_vec(),
-                    sha256_hex(content)
-                ],
-            )
-            .unwrap();
-        }
-    }
-
-    let before = std::fs::read(&store).unwrap();
-    let conn = Connection::open(&store).unwrap();
-    let error = prepare_store(&conn).unwrap_err();
-    assert!(error.contains("unsupported format 1"), "{error}");
-    drop(conn);
-    record(&store, &path, b"new");
-    close_backup_store();
-    assert_eq!(std::fs::read(&store).unwrap(), before);
-    let conn = Connection::open(&store).unwrap();
-    let version: i64 = conn
-        .pragma_query_value(None, "user_version", |row| row.get(0))
-        .unwrap();
-    assert_eq!(version, 1);
-    let columns: Vec<String> = conn
-        .prepare("PRAGMA table_info(backups)")
-        .unwrap()
-        .query_map([], |row| row.get(1))
-        .unwrap()
-        .collect::<Result<_, _>>()
-        .unwrap();
-    assert!(!columns.iter().any(|name| name == "session_id"));
-    let count: i64 = conn
-        .query_row("SELECT count(*) FROM backups", [], |row| row.get(0))
-        .unwrap();
-    assert_eq!(count, 2);
-}
-
-#[test]
-#[serial(backup_store)]
 fn a_store_from_a_newer_build_is_left_untouched() {
     let dir = tempfile::tempdir().unwrap();
     let store = fresh_store(dir.path());
     Connection::open(&store)
         .unwrap()
-        .execute_batch("pragma user_version = 3;")
+        .execute_batch("pragma user_version = 2;")
         .unwrap();
     let before = std::fs::read(&store).unwrap();
 

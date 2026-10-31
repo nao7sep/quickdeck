@@ -13,7 +13,7 @@ pub const STATE: u32 = 1;
 pub const WINDOW: u32 = 1;
 pub const PANES: u32 = 1;
 pub const SNAPSHOTS: u32 = 1;
-pub const BACKUPS: u32 = 2;
+pub const BACKUPS: u32 = 1;
 pub const RECORDS: u32 = 1;
 
 pub const JSON_KEY: &str = "formatVersion";

@@ -311,15 +311,7 @@ fn prepare_store(conn: &Connection) -> Result<(), String> {
             .pragma_update(None, "journal_mode", "WAL")
             .and_then(|_| format_version::create_sqlite(conn, SCHEMA, format_version::BACKUPS))
             .map_err(to_string),
-        SqliteFormat::Readable => {
-            let recorded: i64 = conn
-                .pragma_query_value(None, "user_version", |row| row.get(0))
-                .map_err(to_string)?;
-            if recorded != i64::from(format_version::BACKUPS) {
-                return Err(format!("{BACKUPS_DB_FILE_NAME} uses unsupported format {recorded} and is left in place"));
-            }
-            Ok(())
-        }
+        SqliteFormat::Readable => Ok(()),
     }
 }
 
