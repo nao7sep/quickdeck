@@ -43,7 +43,7 @@ export type AppSettings = {
   editorItalic: boolean;
   editorUnderline: boolean;
   autosaveDelaySeconds: number;
-  snapshotSearchPageSize: number;
+  snapshotPageSize: number;
 };
 
 export type ToastKind = "info" | "warning" | "error";

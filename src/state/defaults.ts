@@ -21,7 +21,7 @@ export const defaultSettings: AppSettings = {
   editorItalic: false,
   editorUnderline: false,
   autosaveDelaySeconds: 3,
-  snapshotSearchPageSize: 25,
+  snapshotPageSize: 25,
 };
 
 // `title` is the localized default name for a new pane; once created it is the

@@ -89,7 +89,7 @@ export function SnapshotsModal({ onClose }: SnapshotsModalProps) {
       try {
         const result = await listSnapshots(
           searchQuery.trim(),
-          settings.snapshotSearchPageSize,
+          settings.snapshotPageSize,
           nextOffset,
         );
         if (version !== listVersionRef.current) return;
@@ -116,7 +116,7 @@ export function SnapshotsModal({ onClose }: SnapshotsModalProps) {
         setLoaded(true);
       }
     },
-    [settings.snapshotSearchPageSize],
+    [settings.snapshotPageSize],
   );
 
   // A search starts a fresh list and supersedes earlier ones; a further page

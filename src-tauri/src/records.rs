@@ -37,12 +37,12 @@ const OP: &str = "CASE WHEN json_valid(fields) AND json_type(fields, '$.op') = '
 // The columns a search looks through: everything a line holds as text.
 const SEARCHED: [&str; 4] = ["message", "pane_id", "snapshot_id", "fields"];
 
-/// What the level filter offers: a line's own level, or `attention`, every line
+/// What the level filter offers: a line's own level, or `warningsAndErrors`, every line
 /// at `warn` or `error`.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "camelCase")]
 pub enum LevelFilter {
-    Attention,
+    WarningsAndErrors,
     Error,
     Warn,
     Info,
@@ -106,7 +106,7 @@ pub struct RecordSources {
 
 fn level_name(level: LevelFilter) -> Option<&'static str> {
     match level {
-        LevelFilter::Attention => None,
+        LevelFilter::WarningsAndErrors => None,
         LevelFilter::Error => Some("error"),
         LevelFilter::Warn => Some("warn"),
         LevelFilter::Info => Some("info"),

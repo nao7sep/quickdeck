@@ -118,7 +118,7 @@
   "records.thisLaunch": "{time} (dieser Start)",
   "records.level": "Stufe",
   "records.allLevels": "Alle Stufen",
-  "records.levelAttention": "Benötigt Aufmerksamkeit",
+  "records.levelWarningsAndErrors": "Warnungen und Fehler",
   "records.levelError": "Fehler",
   "records.levelWarn": "Warnung",
   "records.levelInfo": "Info",

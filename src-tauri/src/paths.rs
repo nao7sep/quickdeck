@@ -43,7 +43,7 @@ pub fn app_data_dir(app: &AppHandle) -> Result<PathBuf, String> {
 // POSIX, rather than creating it under the default umask and relying solely
 // on `secure_root` to tighten it afterward — that sequence leaves a window
 // where a freshly created dir is briefly world-readable. `secure_root` still
-// runs after this to tighten a dir an earlier build left broader than 0700;
+// runs after this to tighten an existing dir that is broader than 0700;
 // this only narrows the mode a *new* dir is born with.
 #[cfg(unix)]
 fn create_data_dir(dir: &Path) -> std::io::Result<()> {

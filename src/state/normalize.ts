@@ -22,7 +22,7 @@ export const SETTINGS_BOUNDS = {
   editorLineHeight: { min: 1, max: 3, whole: false },
   editorPadding: { min: 0, max: 64, whole: true },
   autosaveDelaySeconds: { min: 1, max: 60, whole: true },
-  snapshotSearchPageSize: { min: 5, max: 200, whole: true },
+  snapshotPageSize: { min: 5, max: 200, whole: true },
 } as const;
 
 export type NumberSettingKey = keyof typeof SETTINGS_BOUNDS;
@@ -79,7 +79,7 @@ export function normalizeSettings(settings: AppSettings): AppSettings {
     editorItalic: settings.editorItalic,
     editorUnderline: settings.editorUnderline,
     autosaveDelaySeconds: settings.autosaveDelaySeconds,
-    snapshotSearchPageSize: settings.snapshotSearchPageSize,
+    snapshotPageSize: settings.snapshotPageSize,
   };
 }
 

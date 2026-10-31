@@ -256,7 +256,7 @@ const NUMBER_SETTINGS: &[(&[&str], f64, f64, bool)] = &[
     (&["editorFont", "lineHeight"], 1.0, 3.0, false),
     (&["editorFont", "padding"], 0.0, 64.0, true),
     (&["autosaveDelaySeconds"], 1.0, 60.0, true),
-    (&["snapshotSearchPageSize"], 5.0, 200.0, true),
+    (&["snapshotPageSize"], 5.0, 200.0, true),
 ];
 
 /// The snapshot page sizes a list read accepts: the Snapshots per page setting's
@@ -292,7 +292,7 @@ pub fn config_to_write(data_dir: &Path, sets: JsonValue) -> Result<ConfigToWrite
         "uiFontFamily",
         "displayZone",
         "autosaveDelaySeconds",
-        "snapshotSearchPageSize",
+        "snapshotPageSize",
         "editorFont",
     ];
     let mut stored = sets

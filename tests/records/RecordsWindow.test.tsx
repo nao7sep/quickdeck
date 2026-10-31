@@ -278,11 +278,11 @@ describe("RecordsWindow", () => {
     expect(lastQuery().search).toBe("ろぐ");
   });
 
-  it("offers Needs attention first among the levels", async () => {
+  it("offers Warnings and errors first among the levels", async () => {
     await mount();
     const level = document.querySelectorAll("select")[1]!;
     expect(Array.from(level.options).map((option) => option.textContent)).toEqual([
-      "All levels", "Needs attention", "Error", "Warning", "Info", "Debug",
+      "All levels", "Warnings and errors", "Error", "Warning", "Info", "Debug",
     ]);
     expect(level.value).toBe("");
   });
@@ -307,7 +307,7 @@ describe("RecordsWindow", () => {
     expect(document.body.textContent).toContain("No records match these filters.");
     expect(options()).toHaveLength(0);
 
-    await choose(document.querySelectorAll("select")[1]!, "attention");
+    await choose(document.querySelectorAll("select")[1]!, "warningsAndErrors");
     expect(options()).toHaveLength(2);
     expect(document.body.textContent).not.toContain("No records match these filters.");
   });
@@ -631,7 +631,7 @@ describe("RecordsWindow", () => {
     expect(options()).toHaveLength(2);
 
     // A read the reader starts succeeds, and the window follows new records again.
-    await choose(document.querySelectorAll("select")[1]!, "attention");
+    await choose(document.querySelectorAll("select")[1]!, "warningsAndErrors");
     expect(mocks.readRecordsPage).toHaveBeenCalledTimes(3);
     await signal();
     await act(async () => vi.advanceTimersByTime(1000));
@@ -673,7 +673,7 @@ describe("RecordsWindow", () => {
     expect(document.body.textContent).toContain("Live updates paused.");
     await act(async () => initial.resolve({ records: [failure, warning], more: false }));
     expect(document.body.textContent).toContain("Live updates paused.");
-    await choose(document.querySelectorAll("select")[1]!, "attention");
+    await choose(document.querySelectorAll("select")[1]!, "warningsAndErrors");
     expect(document.body.textContent).toContain("Live updates paused.");
     vi.useFakeTimers();
     await signal();

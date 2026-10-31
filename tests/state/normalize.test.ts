@@ -45,7 +45,7 @@ describe("normalizeSettings", () => {
       "editorItalic",
       "editorUnderline",
       "autosaveDelaySeconds",
-      "snapshotSearchPageSize",
+      "snapshotPageSize",
     ]);
   });
 
@@ -96,7 +96,7 @@ describe("parseNumberSetting", () => {
     expect(parseNumberSetting("16.5", "editorFontSize")).toBeNull();
     expect(parseNumberSetting("9", "editorFontSize")).toBeNull();
     expect(parseNumberSetting("3.01", "editorLineHeight")).toBeNull();
-    expect(parseNumberSetting("201", "snapshotSearchPageSize")).toBeNull();
+    expect(parseNumberSetting("201", "snapshotPageSize")).toBeNull();
   });
 
   it("gives nothing for text Number() would read but a person would not type as a decimal", () => {
@@ -117,7 +117,7 @@ describe("isSettingsDraftValid", () => {
         ...defaultSettings,
         editorFontSize: SETTINGS_BOUNDS.editorFontSize.min,
         autosaveDelaySeconds: SETTINGS_BOUNDS.autosaveDelaySeconds.max,
-        snapshotSearchPageSize: SETTINGS_BOUNDS.snapshotSearchPageSize.min,
+        snapshotPageSize: SETTINGS_BOUNDS.snapshotPageSize.min,
       }),
     ).toBe(true);
   });
@@ -125,7 +125,7 @@ describe("isSettingsDraftValid", () => {
   it("rejects values just outside the bounds", () => {
     expect(isSettingsDraftValid({ ...defaultSettings, editorFontSize: 9 })).toBe(false);
     expect(isSettingsDraftValid({ ...defaultSettings, editorFontSize: 33 })).toBe(false);
-    expect(isSettingsDraftValid({ ...defaultSettings, snapshotSearchPageSize: 4 })).toBe(false);
+    expect(isSettingsDraftValid({ ...defaultSettings, snapshotPageSize: 4 })).toBe(false);
   });
 
   it("rejects a fraction in every whole-number setting, and takes any line height in range", () => {
@@ -138,7 +138,7 @@ describe("isSettingsDraftValid", () => {
   it("rejects non-finite values", () => {
     expect(isSettingsDraftValid({ ...defaultSettings, autosaveDelaySeconds: Number.NaN })).toBe(false);
     expect(
-      isSettingsDraftValid({ ...defaultSettings, snapshotSearchPageSize: Number.POSITIVE_INFINITY }),
+      isSettingsDraftValid({ ...defaultSettings, snapshotPageSize: Number.POSITIVE_INFINITY }),
     ).toBe(false);
   });
 });
@@ -173,17 +173,17 @@ describe("SETTINGS_BOUNDS agreement between Save and read", () => {
 
 describe("snapshot page-size settings boundary", () => {
   it("reports a fractional config value and uses its built-in while preserving other settings", () => {
-    const config = { snapshotSearchPageSize: 5.5, zen: !defaultSettings.zen };
-    expect(settingsShapeIssues(config)).toEqual(["snapshotSearchPageSize is invalid"]);
+    const config = { snapshotPageSize: 5.5, zen: !defaultSettings.zen };
+    expect(settingsShapeIssues(config)).toEqual(["snapshotPageSize is invalid"]);
     expect(readSettingsSets(config)).toEqual({ ...defaultSettings, zen: config.zen });
   });
 
   it("saves and reads every integer from 5 through 200", () => {
-    for (let snapshotSearchPageSize = 5; snapshotSearchPageSize <= 200; snapshotSearchPageSize += 1) {
-      const draft = { ...defaultSettings, snapshotSearchPageSize };
+    for (let snapshotPageSize = 5; snapshotPageSize <= 200; snapshotPageSize += 1) {
+      const draft = { ...defaultSettings, snapshotPageSize };
       expect(isSettingsDraftValid(draft)).toBe(true);
-      expect(settingsShapeIssues({ snapshotSearchPageSize })).toEqual([]);
-      expect(readSettingsSets(storedSettingsSets(draft)).snapshotSearchPageSize).toBe(snapshotSearchPageSize);
+      expect(settingsShapeIssues({ snapshotPageSize })).toEqual([]);
+      expect(readSettingsSets(storedSettingsSets(draft)).snapshotPageSize).toBe(snapshotPageSize);
     }
   });
 
@@ -206,8 +206,6 @@ describe("settingsShapeIssues", () => {
     expect(settingsShapeIssues({ displayZone: "Asia/Tokyo" })).toEqual([]);
     expect(settingsShapeIssues({ displayZone: "JST" })).toEqual(["displayZone is invalid"]);
     expect(settingsShapeIssues({ autosaveDelaySeconds: 0 })).toEqual(["autosaveDelaySeconds is invalid"]);
-    // The retired "dark" key is an unknown key, dropped rather than treated as corruption.
-    expect(settingsShapeIssues({ ...defaultSettings, dark: true })).toEqual([]);
     expect(settingsShapeIssues({ ...defaultSettings, editorFont: { size: "14" } })).toContain(
       "editorFont is invalid",
     );

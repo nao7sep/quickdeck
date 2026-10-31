@@ -118,7 +118,7 @@
   "records.thisLaunch": "{time} (этот запуск)",
   "records.level": "Уровень",
   "records.allLevels": "Все уровни",
-  "records.levelAttention": "Требует внимания",
+  "records.levelWarningsAndErrors": "Предупреждения и ошибки",
   "records.levelError": "Ошибка",
   "records.levelWarn": "Предупреждение",
   "records.levelInfo": "Информация",

@@ -1713,8 +1713,8 @@ fn a_config_write_with_a_number_setting_outside_its_accepted_values_is_refused()
         serde_json::json!({"editorFont": {"size": 16}}),
         serde_json::json!({"autosaveDelaySeconds": 0}),
         serde_json::json!({"autosaveDelaySeconds": 1.5}),
-        serde_json::json!({"snapshotSearchPageSize": 201}),
-        serde_json::json!({"snapshotSearchPageSize": "20"}),
+        serde_json::json!({"snapshotPageSize": 201}),
+        serde_json::json!({"snapshotPageSize": "20"}),
     ] {
         assert!(config_to_write(root.path(), sets.clone()).is_err(), "{sets}");
     }
@@ -1722,7 +1722,7 @@ fn a_config_write_with_a_number_setting_outside_its_accepted_values_is_refused()
     for sets in [
         font(10.into(), 1.37.into(), 0.into()),
         font(32.into(), 3.into(), 64.into()),
-        serde_json::json!({"autosaveDelaySeconds": 60, "snapshotSearchPageSize": 5}),
+        serde_json::json!({"autosaveDelaySeconds": 60, "snapshotPageSize": 5}),
     ] {
         assert!(config_to_write(root.path(), sets.clone()).is_ok(), "{sets}");
     }

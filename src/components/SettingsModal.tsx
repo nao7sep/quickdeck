@@ -236,7 +236,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
             <span>{t("settings.editorUnderline")}</span>
           </label>
           {numberField("autosaveDelaySeconds", t("settings.autosaveDelay"))}
-          {numberField("snapshotSearchPageSize", t("settings.snapshotPageSize"))}
+          {numberField("snapshotPageSize", t("settings.snapshotPageSize"))}
         </div>
       </ModalBase>
       {confirmingClose ? (

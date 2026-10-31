@@ -142,7 +142,7 @@ function createAppState() {
       editorItalic: false,
       editorUnderline: false,
       autosaveDelaySeconds: 1,
-      snapshotSearchPageSize: 20,
+      snapshotPageSize: 20,
     },
     zoomLevel: 1,
     setZoomLevel: noop,

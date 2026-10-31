@@ -176,7 +176,7 @@ fn pages_follow_the_cursor_without_skipping_or_repeating_a_line() {
 }
 
 #[test]
-fn the_level_filter_reads_one_level_or_everything_that_needs_attention() {
+fn the_level_filter_reads_one_level_or_everything_that_is_a_warning_or_error() {
     let conn = database();
     for level in ["debug", "info", "warn", "error"] {
         insert(
@@ -198,11 +198,25 @@ fn the_level_filter_reads_one_level_or_everything_that_needs_attention() {
         )
     };
 
-    assert_eq!(with(LevelFilter::Attention), ["error", "warn"]);
+    assert_eq!(with(LevelFilter::WarningsAndErrors), ["error", "warn"]);
     assert_eq!(with(LevelFilter::Error), ["error"]);
     assert_eq!(with(LevelFilter::Warn), ["warn"]);
     assert_eq!(with(LevelFilter::Info), ["info"]);
     assert_eq!(with(LevelFilter::Debug), ["debug"]);
+
+    // The Records window sends these names.
+    for (name, level) in [
+        ("warningsAndErrors", LevelFilter::WarningsAndErrors),
+        ("error", LevelFilter::Error),
+        ("warn", LevelFilter::Warn),
+        ("info", LevelFilter::Info),
+        ("debug", LevelFilter::Debug),
+    ] {
+        assert_eq!(
+            serde_json::from_value::<LevelFilter>(serde_json::json!(name)).unwrap(),
+            level
+        );
+    }
 }
 
 #[test]

@@ -24,7 +24,7 @@ vi.mock("../../src/services/logger", () => ({
 }));
 vi.mock("../../src/state/AppStateContext", () => ({
   useAppState: () => ({
-    settings: { snapshotSearchPageSize: 20 },
+    settings: { snapshotPageSize: 20 },
     panes: [{ id: "pane-1", title: "Notes", headerColor: "#c72323" }],
     refreshSnapshotCount: mocks.refreshCount,
   }),
