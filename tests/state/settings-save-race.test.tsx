@@ -18,15 +18,10 @@ vi.mock("@tauri-apps/api/core", () => ({
       case "load_app_data":
         return {
           config: null,
-          configQuarantinedTo: null,
-          configNewer: null,
           state: null,
           panes: null,
-          panesError: null,
-          panesNewer: null,
-          snapshotsNewer: null,
-          panesPath: "/private/tmp/quickdeck-test/panes.json",
-          snapshotsPath: "/private/tmp/quickdeck-test/snapshots.sqlite3",
+          refused: [],
+          off: [],
           dataDir: "/private/tmp/quickdeck-test",
 
           systemLanguage: "en",

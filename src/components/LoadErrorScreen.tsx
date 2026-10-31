@@ -2,31 +2,27 @@ import { isTauri } from "@tauri-apps/api/core";
 import { DATA_DIR_ENV_VAR, DATA_DIR_NAME } from "../utils/dataFolder";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useI18n } from "../i18n/I18nContext";
-import type { Message } from "../i18n/translate";
+import { message, type Message } from "../i18n/translate";
 import { logWarn, serializeError } from "../services/logger";
+import type { RefusedFile } from "../services/persistence";
 
-// Non-dismissible halt shown when persisted state could not be prepared.
-//
-// Corrupt config.json and state.json are quarantined and reset before the
-// editor opens. Unreadable pane text or a failure to prepare the stores halts
-// loading so autosave cannot overwrite work with defaults. A corrupt-panes
-// halt offers an explicit set-aside reset; other failures can be repaired
-// after quitting.
+// Non-dismissible stop shown when the launch cannot open its saved data, so
+// nothing is written over it. It names every file the launch refused — newer,
+// or unreadable — and what the user can do; the only action is Quit
+// (store-recovery conventions, What a refused file does). A failure that
+// reached no named file names the data folder instead.
 
 type LoadErrorScreenProps = {
-  error: Message;
-  recovery?: Message[];
-  // The file the halt names; null when the load stopped before reaching a
+  error: Message | null;
+  // The file a failure names; null when the load stopped before reaching a
   // store, and the hint then names the data folder instead.
   path: string | null;
-  // Present only for the corrupt-panes halt: the user-commanded reset that
-  // sets the unreadable file aside (preserving its bytes) and starts fresh —
-  // a halting store must be clearable from the surface that reported the
-  // failure (storage-path conventions).
-  onSetAsideAndReset?: () => void;
+  // Every file the launch refused. When any is listed, the screen names them
+  // in place of the error and its hint.
+  refused?: RefusedFile[];
 };
 
-export function LoadErrorScreen({ error, path, recovery = [], onSetAsideAndReset }: LoadErrorScreenProps) {
+export function LoadErrorScreen({ error, path, refused = [] }: LoadErrorScreenProps) {
   const { t, rich, text } = useI18n();
   function quit() {
     if (isTauri()) {
@@ -47,22 +43,34 @@ export function LoadErrorScreen({ error, path, recovery = [], onSetAsideAndReset
     <main className="loadErrorShell">
       <div className="loadErrorPanel">
         <h1 className="loadErrorTitle">{t("load.title")}</h1>
-        <p className="loadErrorMessage">{text(error)}</p>
-        {recovery.map((fact, index) => <p key={index} role="status">{text(fact)}</p>)}
-        <p className="loadErrorHint">
-          {path !== null
-            ? rich("load.hint", { path: <code>{path}</code> })
-            : rich("load.hintDataFolder", {
-                folder: <code>{DATA_DIR_NAME}</code>,
-                envVar: <code>{DATA_DIR_ENV_VAR}</code>,
-              })}
-        </p>
+        {refused.length > 0 ? (
+          <>
+            <p className="loadErrorMessage">{t("load.refused")}</p>
+            <ul className="loadErrorFiles">
+              {refused.map((file) => (
+                <li key={file.path}>
+                  {file.newer !== null
+                    ? rich("load.fileNewer", { path: <code>{file.path}</code>, version: file.newer })
+                    : rich("load.fileUnreadable", { path: <code>{file.path}</code> })}
+                </li>
+              ))}
+            </ul>
+            <p className="loadErrorHint">{t("load.refusedHint")}</p>
+          </>
+        ) : (
+          <>
+            <p className="loadErrorMessage">{text(error ?? message("load.unknown"))}</p>
+            <p className="loadErrorHint">
+              {path !== null
+                ? rich("load.hint", { path: <code>{path}</code> })
+                : rich("load.hintDataFolder", {
+                    folder: <code>{DATA_DIR_NAME}</code>,
+                    envVar: <code>{DATA_DIR_ENV_VAR}</code>,
+                  })}
+            </p>
+          </>
+        )}
         <div className="loadErrorActions">
-          {onSetAsideAndReset && (
-            <button type="button" className="secondaryButton" onClick={onSetAsideAndReset}>
-              {t("load.setAside")}
-            </button>
-          )}
           <button type="button" className="primaryButton" onClick={quit}>
             {t("load.quit")}
           </button>

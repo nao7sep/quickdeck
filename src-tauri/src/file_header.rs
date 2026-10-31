@@ -12,7 +12,9 @@
 //! and leaves it exactly in place. `writer` is written on every save and never
 //! read: nothing here parses, checks or reports it.
 
-use rusqlite::Connection;
+use std::path::Path;
+
+use rusqlite::{Connection, OpenFlags};
 use serde_json::{Map, Value as JsonValue};
 
 /// The product every QuickDeck file belongs to.
@@ -269,4 +271,54 @@ fn in_transaction(
 /// The diagnostic a store in a newer format is reported with.
 pub fn newer_message(file: &str, recorded: u32) -> String {
     format!("{file} was written by a newer QuickDeck (format {recorded}) and is left in place")
+}
+
+/// Why a store was left untouched: a newer version wrote it, or it could not be
+/// read. `message` is diagnostic only.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Refusal {
+    pub newer: Option<u32>,
+    pub message: String,
+}
+
+impl Refusal {
+    pub fn newer(file: &str, recorded: u32) -> Self {
+        Self {
+            newer: Some(recorded),
+            message: newer_message(file, recorded),
+        }
+    }
+
+    pub fn unreadable(message: impl Into<String>) -> Self {
+        Self {
+            newer: None,
+            message: message.into(),
+        }
+    }
+}
+
+impl std::fmt::Display for Refusal {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.message)
+    }
+}
+
+/// Checks a SQLite store's header without opening it for writing, so a launch
+/// can learn every refused store before anything is written. None when the file
+/// does not exist; a new, empty database and a readable one pass.
+pub fn check_sqlite_file(path: &Path, ours: Format) -> Option<Refusal> {
+    let file = path.file_name().unwrap_or_default().to_string_lossy();
+    match path.try_exists() {
+        Ok(false) => return None,
+        Ok(true) => {}
+        Err(error) => return Some(Refusal::unreadable(format!("{file}: {error}"))),
+    }
+    let checked = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)
+        .map_err(|error| format!("{file}: {error}"))
+        .and_then(|conn| check_sqlite(&conn, &file, ours));
+    match checked {
+        Ok(SqliteFormat::Newer(recorded)) => Some(Refusal::newer(&file, recorded)),
+        Ok(SqliteFormat::New | SqliteFormat::Readable) => None,
+        Err(message) => Some(Refusal::unreadable(message)),
+    }
 }

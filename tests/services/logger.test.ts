@@ -112,8 +112,7 @@ describe("buildConsoleObject", () => {
 
 describe("native failure ownership", () => {
   it("preserves native recovery fields without flattening the rejection", () => {
-    const failure = { message: "publication failed", logged: true, path: "/panes.json", newer: 9,
-      configQuarantinedTo: "/config.invalid" };
+    const failure = { message: "publication failed", logged: true, path: "/panes.json", newer: 9 };
     expect(serializeError(failure)).toEqual(failure);
   });
 });

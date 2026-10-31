@@ -17,14 +17,6 @@ impl CommandFailure {
         failure.fields.insert("logged".into(), Value::Bool(true));
         failure
     }
-
-    pub(crate) fn with_config_set_aside(mut self, path: Option<String>) -> Self {
-        if let Some(path) = path {
-            self.fields
-                .insert("configQuarantinedTo".into(), Value::String(path));
-        }
-        self
-    }
 }
 
 impl From<String> for CommandFailure {

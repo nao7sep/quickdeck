@@ -46,7 +46,7 @@ describe("createTranslator", () => {
 
   it("renders a message descriptor", () => {
     const t = createTranslator("en");
-    expect(t.text({ key: "load.panesNewer", values: { version: 2 } })).toContain("(format 2)");
+    expect(t.text({ key: "load.fileNewer", values: { path: "/p", version: 2 } })).toContain("(format 2)");
   });
 
   it("speaks English for a key the language's catalogue lacks", async () => {

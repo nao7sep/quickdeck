@@ -15,7 +15,7 @@ use serde_json::Value as JsonValue;
 use sha2::{Digest, Sha256};
 use tauri::{AppHandle, Manager};
 
-use crate::file_header::{self, Format, JsonFormat, SqliteOpen};
+use crate::file_header::{self, Format, JsonFormat, Refusal, SqliteOpen};
 use crate::paths::app_data_dir;
 
 // The managed files the data directory holds, each named in exactly one place so
@@ -53,34 +53,23 @@ pub const RECORDS_DB_FILE_NAME: &str = "records.sqlite3";
 // (window conventions); the Records window reads it back when it opens.
 pub const RECORDS_LIST_WIDTH_KEY: &str = "recordsListWidth";
 // Each JSON file has one writer that sends its commands one at a time: the
-// main window's per-file save queue, whose panes queue also carries the
-// corrupt-panes reset, and the launch load, which finishes before any save.
+// main window's per-file save queue, and the launch load, which finishes before
+// any save.
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LoadedAppData {
     pub config: Option<JsonValue>,
-    // Where a corrupt config.json was set aside, so the frontend can report it
-    // (an unreported quarantine is a silent reset — storage-path conventions).
-    pub config_quarantined_to: Option<String>,
-    // The format a config.json from a newer build records. The file is left
-    // exactly in place and the app runs on built-in settings without saving
-    // them, so the frontend tells the user.
-    pub config_newer: Option<u32>,
     pub state: Option<JsonValue>,
     pub panes: Option<JsonValue>,
-    // Set when panes.json is present but unreadable: the user's text halts the
-    // pane surface (file left exactly in place) while config and state still
-    // load — per-store failure isolation.
-    pub panes_error: Option<String>,
-    // The formats a panes.json or snapshots.sqlite3 from a newer build records:
-    // each halts the app with the file left exactly in place, and offers no reset.
-    pub panes_newer: Option<u32>,
-    pub snapshots_newer: Option<u32>,
-    // Where panes.json and snapshots.sqlite3 live, so a halt on either names
-    // the file (store-recovery conventions).
-    pub panes_path: String,
-    pub snapshots_path: String,
+    // Every file the launch stops on (store-recovery conventions, What a
+    // refused file does). When any is listed the app opens nothing, writes
+    // nothing and only shows them; `config` is still given when it could be
+    // read, so the stop speaks the saved language.
+    pub refused: Vec<RefusedFile>,
+    // Unreadable side stores (records, backups), left untouched and off for
+    // this session, which the app reports and runs without.
+    pub off: Vec<RefusedFile>,
     pub data_dir: String,
     // The computer's language and regional locale, read at launch. Set by the
     // command layer from presentation::PresentationState; storage leaves them empty.
@@ -125,24 +114,39 @@ pub struct SnapshotListResult {
     pub has_more: bool,
 }
 
+/// A file the app leaves exactly as it is: `newer` is the version a newer build
+/// recorded, or None when the file could not be read. `message` is diagnostic.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RefusedFile {
+    pub path: String,
+    pub newer: Option<u32>,
+    pub message: String,
+}
+
+impl RefusedFile {
+    fn at(path: &Path, refusal: Refusal) -> Self {
+        Self {
+            path: path.to_string_lossy().into_owned(),
+            newer: refusal.newer,
+            message: refusal.message,
+        }
+    }
+}
+
 // A load that stopped, with the store it stopped at when it was one, so the
 // halt can name the file (store-recovery conventions). The message is
 // diagnostic only.
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LoadFailure {
-    pub config_quarantined_to: Option<String>,
     pub path: Option<String>,
     pub message: String,
 }
 
 impl LoadFailure {
-    fn at<'a>(
-        path: &'a Path,
-        config_quarantined_to: Option<&'a str>,
-    ) -> impl FnOnce(String) -> Self + 'a {
+    fn at(path: &Path) -> impl FnOnce(String) -> Self + '_ {
         move |message| Self {
-            config_quarantined_to: config_quarantined_to.map(str::to_owned),
             path: Some(path.to_string_lossy().into_owned()),
             message,
         }
@@ -152,7 +156,6 @@ impl LoadFailure {
 impl From<String> for LoadFailure {
     fn from(message: String) -> Self {
         Self {
-            config_quarantined_to: None,
             path: None,
             message,
         }
@@ -169,82 +172,185 @@ impl std::fmt::Display for LoadFailure {
 }
 
 pub fn load_app_data(app: &AppHandle) -> Result<LoadedAppData, LoadFailure> {
-    load_app_data_in(&app_data_dir(app)?, &app.state::<SnapshotConnection>())
+    load_app_data_in(
+        &app_data_dir(app)?,
+        &app.state::<SnapshotConnection>(),
+        crate::logging::records_refusal(),
+    )
+}
+
+// The data folders whose launch stopped on a refused file: nothing is written
+// into them for the rest of the session (store-recovery conventions, A refused
+// file is never changed), checked at the write itself.
+static STOPPED: std::sync::Mutex<Vec<PathBuf>> = std::sync::Mutex::new(Vec::new());
+
+fn stop_writes_in(data_dir: &Path) {
+    let mut stopped = STOPPED
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    if !stopped.iter().any(|dir| dir == data_dir) {
+        stopped.push(data_dir.to_path_buf());
+    }
+}
+
+pub(crate) fn writes_stopped_in(data_dir: &Path) -> bool {
+    STOPPED
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .iter()
+        .any(|dir| dir == data_dir)
 }
 
 fn load_app_data_in(
     data_dir: &Path,
     snapshots: &SnapshotConnection,
+    records: Option<Refusal>,
 ) -> Result<LoadedAppData, LoadFailure> {
-    // Per-store failure isolation (persisted-store-separation, Independent
-    // recovery): each store takes its own branch, so a corrupt settings file
-    // can never make the panes' text unreachable. Config and state are
-    // rebuildable and quarantine-then-reset; panes.json carries the user's
-    // work product and halts — its error rides in the result so the other
-    // stores still load and the halt surface can offer a reset.
+    // Every file is checked before anything is opened for writing, so a stop
+    // names every refused file and writes nothing (store-recovery conventions,
+    // What a refused file does). Settings and the panes' text are valuable: newer
+    // or unreadable stops the launch. View state and window placement are
+    // disposable: newer stops, unreadable takes defaults and the next save
+    // replaces it. The snapshot store stops either way; the records and backup
+    // databases stop when newer and are switched off when unreadable.
+    let mut refused = Vec::new();
+    let mut off = Vec::new();
+
     let config_path = data_dir.join(CONFIG_FILE_NAME);
-    let config = read_rebuildable_store(&config_path, file_header::CONFIG)
-        .map_err(LoadFailure::at(&config_path, None))?;
-    // state.json holds the active pane, zoom and Records list width. Preserve
-    // and log corrupt bytes, or a newer format, but do not surface a dialog for
-    // disposable view state.
-    let state_path = data_dir.join(STATE_FILE_NAME);
-    let state = read_rebuildable_store(&state_path, file_header::STATE).map_err(
-        LoadFailure::at(&state_path, config.quarantined_to.as_deref()),
-    )?;
-    let panes_path = data_dir.join(PANES_FILE_NAME);
-    let (panes, panes_error, panes_newer) = match read_json_store(&panes_path, file_header::PANES) {
-        Ok(JsonRead::Absent) => (None, None, None),
-        Ok(JsonRead::Readable(fields)) if valid_panes_shape(&fields) => {
-            (Some(JsonValue::Object(fields)), None, None)
+    let config = match read_json_store(&config_path, file_header::CONFIG) {
+        Ok(JsonRead::Absent) => None,
+        Ok(JsonRead::Readable(fields)) => Some(fields),
+        Ok(JsonRead::Newer(recorded)) => {
+            refused.push(RefusedFile::at(
+                &config_path,
+                Refusal::newer(CONFIG_FILE_NAME, recorded),
+            ));
+            None
         }
-        Ok(JsonRead::Readable(_)) => (
-            None,
-            Some("panes.json contains invalid pane data".to_string()),
-            None,
-        ),
-        Ok(JsonRead::Newer(recorded)) => (None, None, Some(recorded)),
-        Ok(JsonRead::Corrupt(message)) | Err(message) => (None, Some(message), None),
+        Ok(JsonRead::Corrupt(message)) | Err(message) => {
+            refused.push(RefusedFile::at(&config_path, Refusal::unreadable(message)));
+            None
+        }
     };
+
+    let state_path = data_dir.join(STATE_FILE_NAME);
+    let state = read_disposable_store(&state_path, file_header::STATE, &mut refused);
+    let window_path = data_dir.join(WINDOW_FILE_NAME);
+    read_disposable_store(&window_path, file_header::WINDOW, &mut refused);
+
+    let panes_path = data_dir.join(PANES_FILE_NAME);
+    let panes = match read_json_store(&panes_path, file_header::PANES) {
+        Ok(JsonRead::Absent) => None,
+        Ok(JsonRead::Readable(fields)) if valid_panes_shape(&fields) => Some(fields),
+        Ok(JsonRead::Readable(_)) => {
+            refused.push(RefusedFile::at(
+                &panes_path,
+                Refusal::unreadable("panes.json contains invalid pane data"),
+            ));
+            None
+        }
+        Ok(JsonRead::Newer(recorded)) => {
+            refused.push(RefusedFile::at(
+                &panes_path,
+                Refusal::newer(PANES_FILE_NAME, recorded),
+            ));
+            None
+        }
+        Ok(JsonRead::Corrupt(message)) | Err(message) => {
+            refused.push(RefusedFile::at(&panes_path, Refusal::unreadable(message)));
+            None
+        }
+    };
+
     let snapshots_path = data_dir.join(SNAPSHOTS_DB_FILE_NAME);
-    let snapshots_newer = snapshots.open(data_dir).map_err(LoadFailure::at(
-        &snapshots_path,
-        config.quarantined_to.as_deref(),
-    ))?;
-    for (path, newer) in [
-        (&config_path, config.newer),
-        (&state_path, state.newer),
-        (&panes_path, panes_newer),
-        (&snapshots_path, snapshots_newer),
-    ] {
-        if let Some(recorded) = newer {
-            report_newer(path, recorded);
+    if let Some(refusal) = file_header::check_sqlite_file(&snapshots_path, file_header::SNAPSHOTS) {
+        refused.push(RefusedFile::at(&snapshots_path, refusal));
+    }
+    let backups_path = data_dir.join(crate::backup_store::BACKUPS_DB_FILE_NAME);
+    let side_stores = [
+        (
+            backups_path.clone(),
+            file_header::check_sqlite_file(&backups_path, file_header::BACKUPS),
+        ),
+        (data_dir.join(RECORDS_DB_FILE_NAME), records),
+    ];
+    for (path, refusal) in side_stores {
+        match refusal {
+            Some(refusal) if refusal.newer.is_some() => {
+                refused.push(RefusedFile::at(&path, refusal))
+            }
+            Some(refusal) => off.push(RefusedFile::at(&path, refusal)),
+            None => {}
         }
     }
 
+    for file in refused.iter().chain(&off) {
+        crate::logging::warn(
+            "store refused and left in place",
+            serde_json::json!({
+                "file": file.path,
+                "newer": file.newer,
+                "error": { "message": file.message },
+            }),
+        );
+    }
+    if !refused.is_empty() {
+        stop_writes_in(data_dir);
+    } else if let Some(recorded) = snapshots
+        .open(data_dir)
+        .map_err(LoadFailure::at(&snapshots_path))?
+    {
+        // Written by a newer build between the check and the open.
+        stop_writes_in(data_dir);
+        refused.push(RefusedFile::at(
+            &snapshots_path,
+            Refusal::newer(SNAPSHOTS_DB_FILE_NAME, recorded),
+        ));
+    }
+    let stopped = !refused.is_empty();
+
     Ok(LoadedAppData {
-        config: config.value.map(JsonValue::Object),
-        config_quarantined_to: config.quarantined_to,
-        config_newer: config.newer,
-        state: state.value.map(JsonValue::Object),
-        panes,
-        panes_error,
-        panes_newer,
-        snapshots_newer,
-        panes_path: panes_path.to_string_lossy().into_owned(),
-        snapshots_path: snapshots_path.to_string_lossy().into_owned(),
+        config: config.map(JsonValue::Object),
+        state: state.filter(|_| !stopped).map(JsonValue::Object),
+        panes: panes.filter(|_| !stopped).map(JsonValue::Object),
+        refused,
+        off,
         data_dir: data_dir.to_string_lossy().into_owned(),
         system_language: String::new(),
         system_locale: None,
     })
 }
 
-// What a config save writes, and where an unreadable config.json found on the
-// way was set aside, so the frontend can report it (store-recovery conventions).
+// Reads disposable view state: its value when readable; nothing when absent or
+// unreadable, the next save replacing it; a newer one joins the files the
+// launch stops on.
+fn read_disposable_store(
+    path: &Path,
+    format: Format,
+    refused: &mut Vec<RefusedFile>,
+) -> Option<serde_json::Map<String, JsonValue>> {
+    match read_json_store(path, format) {
+        Ok(JsonRead::Readable(fields)) => Some(fields),
+        Ok(JsonRead::Newer(recorded)) => {
+            let file = path.file_name().unwrap_or_default().to_string_lossy();
+            refused.push(RefusedFile::at(path, Refusal::newer(&file, recorded)));
+            None
+        }
+        Ok(JsonRead::Absent) => None,
+        Ok(JsonRead::Corrupt(message)) | Err(message) => {
+            crate::logging::warn(
+                "view state unreadable; using defaults",
+                serde_json::json!({ "file": path.to_string_lossy(), "error": { "message": message } }),
+            );
+            None
+        }
+    }
+}
+
+// What a config save writes: the content, or None when it equals the file.
 #[derive(Debug, PartialEq)]
 pub struct ConfigToWrite {
     pub content: Option<JsonValue>,
-    pub quarantined_to: Option<String>,
 }
 
 // The numeric settings' accepted values, as the Settings form and the read of
@@ -262,13 +368,20 @@ const NUMBER_SETTINGS: &[(&[&str], f64, f64, bool)] = &[
 /// range.
 pub const SNAPSHOT_PAGE_SIZE: std::ops::RangeInclusive<u32> = 5..=200;
 
-// A save is refused, never corrected, when a set it holds carries a numeric
-// setting outside its accepted values; a set it leaves out is at its built-in.
-fn check_number_settings(sets: &serde_json::Map<String, JsonValue>) -> Result<(), String> {
+// A save is refused, never corrected, when a set it changes carries a numeric
+// setting outside its accepted values; a set it leaves out is at its built-in,
+// and one equal to the file's is kept as it is (config-sets conventions).
+fn check_number_settings(
+    sets: &serde_json::Map<String, JsonValue>,
+    current: &serde_json::Map<String, JsonValue>,
+) -> Result<(), String> {
     for (path, min, max, whole) in NUMBER_SETTINGS {
         let Some(set) = sets.get(path[0]) else {
             continue;
         };
+        if current.get(path[0]) == Some(set) {
+            continue;
+        }
         let value = path[1..]
             .iter()
             .try_fold(set, |value, member| value.get(member));
@@ -286,9 +399,11 @@ fn check_number_settings(sets: &serde_json::Map<String, JsonValue>) -> Result<()
 }
 
 // The file content for the given sets — every set that differs from its
-// built-in, which the frontend decides — keeping only known keys, or None when
-// that equals the file, so an absent file stays absent and a file whose sets are
-// all back at their built-ins keeps only its header.
+// built-in, which the frontend decides, including a set it could not read and
+// kept as it was — plus every key this build does not know, kept from the file
+// (config-sets conventions), or None when that equals the file, so an absent
+// file stays absent and a file whose sets are all back at their built-ins keeps
+// only its header. A newer or unreadable config.json is never saved over.
 pub fn config_to_write(data_dir: &Path, sets: JsonValue) -> Result<ConfigToWrite, String> {
     const KEYS: &[&str] = &[
         "language",
@@ -305,12 +420,27 @@ pub fn config_to_write(data_dir: &Path, sets: JsonValue) -> Result<ConfigToWrite
         .as_object()
         .ok_or("config sets are not an object")?
         .clone();
-    check_number_settings(&stored)?;
-    let current = read_rebuildable_store(&data_dir.join(CONFIG_FILE_NAME), file_header::CONFIG)?;
     stored.retain(|key, _| KEYS.contains(&key.as_str()));
+    let current = match read_json_store(&data_dir.join(CONFIG_FILE_NAME), file_header::CONFIG)? {
+        JsonRead::Absent => serde_json::Map::new(),
+        JsonRead::Readable(fields) => fields,
+        JsonRead::Newer(recorded) => {
+            return Err(file_header::newer_message(CONFIG_FILE_NAME, recorded))
+        }
+        JsonRead::Corrupt(message) => {
+            return Err(format!(
+                "{CONFIG_FILE_NAME} cannot be read and is left in place: {message}"
+            ))
+        }
+    };
+    check_number_settings(&stored, &current)?;
+    for (key, value) in &current {
+        if !KEYS.contains(&key.as_str()) {
+            stored.insert(key.clone(), value.clone());
+        }
+    }
     Ok(ConfigToWrite {
-        content: (current.value.unwrap_or_default() != stored).then_some(JsonValue::Object(stored)),
-        quarantined_to: current.quarantined_to,
+        content: (current != stored).then_some(JsonValue::Object(stored)),
     })
 }
 
@@ -361,13 +491,16 @@ fn read_state_object(path: &Path) -> Option<serde_json::Map<String, JsonValue>> 
     }
 }
 
+// window.json before the windows exist: its value, or None when it is absent,
+// unreadable or newer. The launch's load reports a newer one and stops; an
+// unreadable one is disposable and the next save replaces it.
 pub(crate) fn load_window_state_in(root: &Path) -> Result<Option<JsonValue>, String> {
-    let path = root.join(WINDOW_FILE_NAME);
-    let loaded = read_rebuildable_store(&path, file_header::WINDOW)?;
-    if let Some(recorded) = loaded.newer {
-        report_newer(&path, recorded);
-    }
-    Ok(loaded.value.map(JsonValue::Object))
+    Ok(
+        match read_json_store(&root.join(WINDOW_FILE_NAME), file_header::WINDOW)? {
+            JsonRead::Readable(fields) => Some(JsonValue::Object(fields)),
+            JsonRead::Absent | JsonRead::Newer(_) | JsonRead::Corrupt(_) => None,
+        },
+    )
 }
 
 pub fn save_window_state(data_dir: &Path, state: JsonValue) -> Result<(), String> {
@@ -431,32 +564,7 @@ fn save_panes_in(data_dir: &Path, panes: &JsonValue) -> Result<bool, SaveFailure
     }
 }
 
-// The user-commanded reset behind the panes halt surface: sets the corrupt
-// panes.json aside to its `.invalid` name (the same quarantine every
-// rebuildable store performs automatically) and returns where it went, so the
-// report can name it. The rename either lands or its failure propagates —
-// never a silent fall-through to defaults over the preserved bytes
-// (storage-path conventions: halting requires exactly this reset offer).
-pub fn quarantine_corrupt_panes(app: &AppHandle) -> Result<Option<String>, String> {
-    quarantine_corrupt_panes_in(&app_data_dir(app)?)
-}
-
-fn quarantine_corrupt_panes_in(data_dir: &Path) -> Result<Option<String>, String> {
-    let path = data_dir.join(PANES_FILE_NAME);
-    match read_json_store(&path, file_header::PANES)? {
-        JsonRead::Absent | JsonRead::Newer(_) => return Ok(None),
-        JsonRead::Readable(fields) if valid_panes_shape(&fields) => return Ok(None),
-        _ => {}
-    }
-    let quarantined = set_aside(&path)?;
-    crate::logging::warn(
-        "corrupt panes.json set aside on user command",
-        serde_json::json!({ "file": path.to_string_lossy(), "quarantinedTo": quarantined.to_string_lossy() }),
-    );
-    Ok(Some(quarantined.to_string_lossy().into_owned()))
-}
-
-// Loading, saving and reset share the current pane shape consumed by the editor.
+// Loading and saving share the current pane shape consumed by the editor.
 fn valid_panes_shape(fields: &serde_json::Map<String, JsonValue>) -> bool {
     let Some(panes) = fields.get("panes").and_then(JsonValue::as_array) else {
         return false;
@@ -763,78 +871,6 @@ fn read_json_store(path: &Path, format: Format) -> Result<JsonRead, String> {
     })
 }
 
-// Logs a store found in a newer format, by name, at the load that found it.
-fn report_newer(path: &Path, recorded: u32) {
-    let file = path.file_name().unwrap_or_default().to_string_lossy();
-    crate::logging::warn(
-        "store from a newer build left in place",
-        serde_json::json!({
-            "file": path.to_string_lossy(),
-            "error": { "message": file_header::newer_message(&file, recorded) },
-        }),
-    );
-}
-
-// `<stem>-<yyyymmdd-hhmmss-utc>.invalid` beside the source — the
-// derived-filename grammar with a moment discriminator (storage-path
-// conventions' quarantine name), stamped by the one shared formatter.
-fn quarantine_name(path: &Path) -> PathBuf {
-    let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("store");
-    path.with_file_name(format!(
-        "{stem}-{}.invalid",
-        crate::logging::session_stamp(Utc::now())
-    ))
-}
-
-// Moves `path` to its `.invalid` name and returns where it went. A copy set aside
-// earlier in the same second is never replaced (on Unix a rename would replace it
-// silently): the set-aside fails instead and takes its caller's error path. The
-// file's one writer runs it, so nothing of the app's appears between the check
-// and the rename.
-fn set_aside(path: &Path) -> Result<PathBuf, String> {
-    let quarantined = quarantine_name(path);
-    if quarantined.try_exists().map_err(to_string_error)? {
-        return Err(format!("{} already exists", quarantined.display()));
-    }
-    fs::rename(path, &quarantined).map_err(to_string_error)?;
-    Ok(quarantined)
-}
-
-// A rebuildable store's load: its value, where a corrupt file was set aside, or
-// the newer format a file was left in place at. At most one is set.
-#[derive(Debug, Default, PartialEq)]
-struct Rebuildable {
-    value: Option<serde_json::Map<String, JsonValue>>,
-    quarantined_to: Option<String>,
-    newer: Option<u32>,
-}
-
-// Reads a REBUILDABLE store (config, view state): missing → nothing; readable →
-// its value; newer → left in place and reported as newer, so launch proceeds
-// with built-ins; present-but-corrupt (unreadable bytes, unparseable JSON — a
-// bytes parse, so UTF-8 garbage counts — or a missing, malformed or foreign
-// header, which every non-object lacks) → quarantine
-// aside and return the `.invalid` path so the caller reports it, then built-ins.
-// The quarantine rename runs OUTSIDE the parse-failure
-// handling: its own failure propagates as a load error rather than falling
-// through to a default write over the preserved bytes (storage-path
-// conventions). panes.json never takes this path — it holds the user's text
-// and halts instead.
-fn read_rebuildable_store(path: &Path, format: Format) -> Result<Rebuildable, String> {
-    Ok(match read_json_store(path, format)? {
-        JsonRead::Absent => Rebuildable::default(),
-        JsonRead::Readable(fields) => Rebuildable {
-            value: Some(fields),
-            ..Rebuildable::default()
-        },
-        JsonRead::Newer(recorded) => Rebuildable {
-            newer: Some(recorded),
-            ..Rebuildable::default()
-        },
-        JsonRead::Corrupt(_) => quarantine_rebuildable_store(path, format)?,
-    })
-}
-
 /// config.json's settings for the reads made before the load path runs (the
 /// menu language, the window theme): None for a file that does not parse or
 /// is in a newer format, as the load path will report it.
@@ -844,45 +880,6 @@ pub fn launch_config(text: &str) -> Option<JsonValue> {
         JsonFormat::Readable(fields) => Some(JsonValue::Object(fields)),
         JsonFormat::Newer(_) => None,
     }
-}
-
-fn quarantine_rebuildable_store(path: &Path, format: Format) -> Result<Rebuildable, String> {
-    // Classification is fresh at the destructive boundary. Repaired and newer
-    // targets are never set aside.
-    let reason = match read_json_store(path, format)? {
-        JsonRead::Absent => return Ok(Rebuildable::default()),
-        JsonRead::Readable(fields) => {
-            return Ok(Rebuildable {
-                value: Some(fields),
-                ..Rebuildable::default()
-            })
-        }
-        JsonRead::Newer(recorded) => {
-            return Ok(Rebuildable {
-                newer: Some(recorded),
-                ..Rebuildable::default()
-            })
-        }
-        JsonRead::Corrupt(reason) => reason,
-    };
-    let quarantined = set_aside(path).map_err(|rename_err| {
-        format!(
-            "could not quarantine corrupt {}: {rename_err} ({reason})",
-            path.display()
-        )
-    })?;
-    crate::logging::warn(
-        "corrupt store quarantined; continuing with defaults",
-        serde_json::json!({
-            "file": path.to_string_lossy(),
-            "quarantinedTo": quarantined.to_string_lossy(),
-            "error": { "message": reason },
-        }),
-    );
-    Ok(Rebuildable {
-        quarantined_to: Some(quarantined.to_string_lossy().into_owned()),
-        ..Rebuildable::default()
-    })
 }
 
 // The atomic-write temp name for `path`: `<stem>-<discriminator>.tmp`, in the
@@ -920,7 +917,7 @@ fn atomic_write_json(
     format: Format,
 ) -> Result<bool, String> {
     write_json_atomically(path, value, format, Some(data_dir))
-        .map(|outcome| matches!(outcome, JsonWrite::Written))
+        .and_then(|outcome| written(path, outcome))
 }
 
 // The same atomic write without the backup record, for volatile state (state.json,
@@ -930,8 +927,20 @@ fn atomic_write_json_unrecorded(
     value: &JsonValue,
     format: Format,
 ) -> Result<bool, String> {
-    write_json_atomically(path, value, format, None)
-        .map(|outcome| matches!(outcome, JsonWrite::Written))
+    write_json_atomically(path, value, format, None).and_then(|outcome| written(path, outcome))
+}
+
+// Whether a write wrote; a newer file it left in place fails the save, so it is
+// never reported as saved.
+fn written(path: &Path, outcome: JsonWrite) -> Result<bool, String> {
+    match outcome {
+        JsonWrite::Written => Ok(true),
+        JsonWrite::Unchanged => Ok(false),
+        JsonWrite::Newer(recorded) => Err(file_header::newer_message(
+            &path.file_name().unwrap_or_default().to_string_lossy(),
+            recorded,
+        )),
+    }
 }
 
 enum JsonWrite {
@@ -952,10 +961,19 @@ fn write_json_atomically(
     let parent = path
         .parent()
         .ok_or_else(|| format!("missing parent directory for {}", path.display()))?;
+    if writes_stopped_in(parent) {
+        return Err(format!(
+            "{} is not written: the launch stopped on a refused file",
+            path.display()
+        ));
+    }
 
     // Pane content may have changed on disk since loading. Check it again at
     // publication before replacing authored text.
     let is_panes = format == file_header::PANES;
+    // Only disposable view state may replace a file it cannot read; settings
+    // and the panes' text are left in place (store-recovery conventions).
+    let keeps_unreadable = format == file_header::CONFIG || is_panes;
     if is_panes && !value.as_object().is_some_and(valid_panes_shape) {
         return Err("panes.json contains invalid pane data".to_string());
     }
@@ -966,7 +984,6 @@ fn write_json_atomically(
     let stamped = file_header::stamp_json(value, format)?;
     let mut bytes = serde_json::to_vec_pretty(&stamped).map_err(to_string_error)?;
     bytes.push(b'\n');
-    // Rebuildable stores may replace unreadable bytes; panes must preserve them.
     match fs::read(path) {
         Ok(current) => {
             let parsed = serde_json::from_slice(&current)
@@ -979,14 +996,19 @@ fn write_json_atomically(
                         "panes.json contains invalid pane data and is left in place".to_string()
                     )
                 }
-                Err(message) if is_panes => return Err(message),
+                Err(message) if keeps_unreadable => {
+                    return Err(format!(
+                        "{} cannot be read and is left in place: {message}",
+                        path.display()
+                    ))
+                }
                 _ => {}
             }
             if current == bytes {
                 return Ok(JsonWrite::Unchanged);
             }
         }
-        Err(error) if is_panes && error.kind() != std::io::ErrorKind::NotFound => {
+        Err(error) if keeps_unreadable && error.kind() != std::io::ErrorKind::NotFound => {
             return Err(to_string_error(error))
         }
         Err(_) => {}

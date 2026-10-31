@@ -3,8 +3,9 @@ import type { ConfigSets } from "../state/normalize";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import type { Pane, SnapshotTrigger } from "../types";
 
-// Pure view/session state — its own store (state.json), quarantined-then-reset
-// on corruption because every field is rebuildable by use. The Rust core records
+// Pure view/session state — its own store (state.json), whose unreadable copy
+// takes defaults and is replaced by the next save, because every field is
+// rebuildable by use. The Rust core records
 // and checks every store's format version, so no file type here carries one.
 export type StateFile = {
   activePaneId: string;
@@ -17,32 +18,28 @@ export type StateFile = {
 };
 
 // The panes' text and identity — the user's work product, its own store
-// (panes.json) that HALTS on corruption rather than quarantining.
+// (panes.json) whose unreadable copy stops the launch and is left in place.
 export type PanesFile = {
   panes: Pane[];
 };
 
+// A file the Rust core left exactly as it is: `newer` is the version a newer
+// build recorded, or null when the file could not be read.
+export type RefusedFile = {
+  path: string;
+  newer: number | null;
+};
+
 export type LoadedAppData = {
   config: Record<string, unknown> | null;
-  // Where a corrupt config.json was set aside, which the settings report names.
-  configQuarantinedTo: string | null;
-  // The format a config.json from a newer build records: the file is left in
-  // place and the app runs on built-in settings, which the core never saves
-  // over it.
-  configNewer: number | null;
   state: StateFile | null;
   panes: PanesFile | null;
-  // Set when panes.json is present but unreadable: the pane surface halts
-  // (file left in place) while config and state still load.
-  panesError: string | null;
-  // The formats a panes.json or snapshots.sqlite3 from a newer build records:
-  // each halts with the file left in place, offering no reset.
-  panesNewer: number | null;
-  snapshotsNewer: number | null;
-  // Where panes.json and snapshots.sqlite3 live, resolved by the Rust core, so
-  // a halt on either names the file.
-  panesPath: string;
-  snapshotsPath: string;
+  // Every file the launch stops on. When any is listed, the app shows them and
+  // nothing else; `config` is still given when it could be read, so the stop
+  // speaks the saved language.
+  refused: RefusedFile[];
+  // Unreadable records or backup databases, off for this session.
+  off: RefusedFile[];
   dataDir: string;
   // Whether developer-only debug logging is on (resolved by the Rust core).
   // The computer's language resolved to a supported tag, and its regional
@@ -102,15 +99,10 @@ export async function loadAppData(): Promise<LoadedAppData> {
   if (!isTauri()) {
     return {
       config: null,
-      configQuarantinedTo: null,
-      configNewer: null,
       state: null,
       panes: null,
-      panesError: null,
-      panesNewer: null,
-      snapshotsNewer: null,
-      panesPath: "",
-      snapshotsPath: "",
+      refused: [],
+      off: [],
       dataDir: "Browser preview",
       systemLanguage: "en",
       systemLocale: null,
@@ -140,12 +132,6 @@ export function loadFailurePath(error: unknown): string | null {
     return null;
   }
   return typeof error.path === "string" ? error.path : null;
-}
-
-export function loadFailureRecovery(error: unknown): Message[] {
-  if (typeof error !== "object" || error === null || !("configQuarantinedTo" in error)) return [];
-  return typeof error.configQuarantinedTo === "string"
-    ? [message("load.settingsSetAside", { path: error.configQuarantinedTo })] : [];
 }
 
 // Named native refusal; diagnostic text is never presented as product copy.
@@ -256,13 +242,14 @@ const enqueuePanesWrite = makeReplacementWriteQueue();
 // order; letting them overtake changes latest-text dedup or repopulates deletion.
 const enqueueSnapshotMutation = makeWriteQueue();
 
-// Resolves to where an unreadable config.json found on the way was set aside.
-export async function saveConfig(config: Partial<ConfigSets>): Promise<string | null> {
+// Sends every set config.json should hold: those that differ from their
+// built-ins, and any the load could not read, as they were.
+export async function saveConfig(config: Partial<ConfigSets> & Record<string, unknown>): Promise<void> {
   if (!isTauri()) {
-    return null;
+    return;
   }
 
-  return enqueueConfigWrite<string | null>("save_config", { config });
+  await enqueueConfigWrite<void>("save_config", { config });
 }
 
 export async function saveState(state: StateFile): Promise<void> {
@@ -279,13 +266,6 @@ export async function savePanes(panes: PanesFile): Promise<void> {
   }
 
   await enqueuePanesWrite<void>("save_panes", { panes });
-}
-
-// The user-commanded reset behind the corrupt-panes halt: the Rust core sets
-// panes.json aside to its `.invalid` name and returns where it went. It takes
-// its turn in the panes file's queue, so the file has one ordered writer.
-export async function quarantineCorruptPanes(): Promise<string | null> {
-  return enqueuePanesWrite<string | null>("quarantine_corrupt_panes");
 }
 
 export async function createSnapshot(input: SnapshotWriteInput): Promise<SnapshotWriteResult> {

@@ -36,10 +36,9 @@ vi.mock("@tauri-apps/api/core", () => ({
 
 function loaded(): LoadedAppData {
   return {
-    config: null, configQuarantinedTo: null, configNewer: null, state: null,
+    config: null, state: null,
     panes: { panes: [{ id: "p1", title: "Test", content: "beta", headerColor: "#112233", backgroundColor: "#ffffff" }] },
-    panesError: null, panesNewer: null, snapshotsNewer: null,
-    panesPath: "/disposable/panes.json", snapshotsPath: "/disposable/snapshots.sqlite3",
+    refused: [], off: [],
     dataDir: "/disposable", systemLanguage: "en", systemLocale: null,
   };
 }

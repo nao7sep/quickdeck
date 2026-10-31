@@ -376,7 +376,7 @@ fn a_records_database_from_a_newer_build_is_left_untouched() {
         .unwrap();
     let before = fs::read(&file).unwrap();
 
-    let refused = open_records(&file).err().unwrap();
+    let refused = open_records(&file).err().unwrap().to_string();
     assert!(refused.contains("records.sqlite3"), "{refused}");
     assert!(refused.contains("newer"), "{refused}");
     assert_eq!(fs::read(&file).unwrap(), before);
@@ -392,7 +392,7 @@ fn a_records_database_without_its_header_is_left_untouched() {
         .unwrap();
     let before = fs::read(&file).unwrap();
 
-    let refused = open_records(&file).err().unwrap();
+    let refused = open_records(&file).err().unwrap().to_string();
     assert!(refused.contains("records.sqlite3"), "{refused}");
     assert_eq!(fs::read(&file).unwrap(), before);
 }

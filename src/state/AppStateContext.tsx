@@ -13,8 +13,10 @@ import { createDefaultPane, defaultSettings } from "./defaults";
 import {
   readSettingsSets,
   normalizeZoomLevel,
+  settingsBySet,
   settingsShapeIssues,
   storedSettingsSets,
+  unreadSets,
 } from "./normalize";
 import { ZOOM_DEFAULT } from "../utils/zoom";
 import { toastLifetimeMs } from "../utils/toastPolicy";
@@ -29,13 +31,12 @@ import {
   createSnapshots,
   loadAppData,
   loadFailurePath,
-  loadFailureRecovery,
   launchLanguage,
-  quarantineCorruptPanes,
   saveConfig,
   savePanes,
   saveFailureMessage,
   saveState as persistState,
+  type RefusedFile,
 } from "../services/persistence";
 import { onRecordsListWidth } from "../services/records";
 import { isTauri } from "@tauri-apps/api/core";
@@ -82,8 +83,8 @@ type AppStateContextValue = {
   // The file a halt names, resolved by the Rust core; null when the load
   // stopped before reaching a store.
   loadErrorPath: string | null;
-  loadRecovery: Message[];
-  loadErrorIsCorruptPanes: boolean;
+  // Every file the launch stopped on, which the stop screen lists.
+  loadRefused: RefusedFile[];
   snapshotCount: number;
   snapshotJustSavedAt: number | null;
   refreshSnapshotCount: () => void;
@@ -96,10 +97,6 @@ type AppStateContextValue = {
   movePane: (paneId: string, direction: -1 | 1) => void;
   updateSettings: (settings: AppSettings) => void;
   setZoomLevel: (zoomLevel: number) => void;
-  // The user-commanded reset behind the corrupt-panes halt screen: sets
-  // panes.json aside and reloads (storage-path conventions — a halting store
-  // is clearable from the surface that reported the failure).
-  resetCorruptPanes: () => Promise<void>;
   saveNow: () => Promise<boolean>;
   recordSnapshot: (paneId: string, trigger: SnapshotTrigger, content: string) => void;
   snapshotAllPanes: (trigger: SnapshotTrigger) => Promise<void>;
@@ -130,10 +127,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const [loadStatus, setLoadStatus] = useState<LoadStatus>("loading");
   const [loadError, setLoadError] = useState<Message | null>(null);
   const [loadErrorPath, setLoadErrorPath] = useState<string | null>(null);
-  const [loadRecovery, setLoadRecovery] = useState<Message[]>([]);
-  // True when the failure is specifically a corrupt panes.json — the one halt
-  // whose screen offers the explicit set-aside reset.
-  const [loadErrorIsCorruptPanes, setLoadErrorIsCorruptPanes] = useState(false);
+  const [loadRefused, setLoadRefused] = useState<RefusedFile[]>([]);
   const [snapshotCount, setSnapshotCount] = useState(0);
   const snapshotCountRequestRef = useRef(0);
   const [snapshotJustSavedAt, setSnapshotJustSavedAt] = useState<number | null>(null);
@@ -149,11 +143,18 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   // start of a save and only flips back to "saved" when the counter has not
   // moved during the save — keeps an edit from being lost in a save race.
   const dirtyCounterRef = useRef(0);
-  const reportedSetAsideRef = useRef<string | null>(null);
+  // The sets config.json held that this build could not read, saved back as
+  // they were until the user changes that setting.
+  const unreadSetsRef = useRef<Record<string, unknown>>({});
+  const settingsRef = useRef(settings);
 
   useEffect(() => {
     panesRef.current = panes;
   }, [panes]);
+
+  useEffect(() => {
+    settingsRef.current = settings;
+  }, [settings]);
 
   const markUnsaved = useCallback(() => {
     dirtyCounterRef.current += 1;
@@ -195,14 +196,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const canceledRef = useRef(false);
-  // A newer load supersedes an older one: its result, and any file it set
-  // aside, are the ones reported.
+  // A newer load supersedes an older one: its result is the one reported.
   const loadGenerationRef = useRef(0);
-
-  // The files this launch's loads set aside, which a halt screen lists.
-  const retainRecovery = useCallback((fact: Message) => {
-    setLoadRecovery((prior) => [...prior, fact]);
-  }, []);
 
   // Mutations refresh the authoritative count; older reads cannot replace a
   // later read issued after another committed mutation.
@@ -217,14 +212,12 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       .catch((error) => logWarn("snapshot count not read", { error: serializeError(error) }));
   }, []);
 
-  const loadPersistedState = useCallback(async (panesSetAsideTo: string | null = null): Promise<{ emptyPanes: boolean } | null> => {
+  const loadPersistedState = useCallback(async () => {
     const generation = ++loadGenerationRef.current;
     const current = () => !canceledRef.current && generation === loadGenerationRef.current;
-    if (panesSetAsideTo !== null) retainRecovery(message("load.panesSetAside", { path: panesSetAsideTo }));
     try {
       const data = await loadAppData();
-      if (!current()) return null;
-      if (data.configQuarantinedTo !== null) retainRecovery(message("load.settingsSetAside", { path: data.configQuarantinedTo }));
+      if (!current()) return;
 
       // The language is settled before anything renders, including a halt
       // screen: the saved choice if config.json could be read, else System.
@@ -232,52 +225,31 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       const loadedSettings = readSettingsSets(data.config);
       const loadedLanguage = effectiveLanguage(loadedSettings.language, loadedSystemLanguage);
       await loadCatalogue(loadedLanguage);
-      if (!current()) {
-        return null;
-      }
+      if (!current()) return;
       setSystemLanguage(loadedSystemLanguage);
       setSystemLocale(data.systemLocale);
       setSettings(loadedSettings);
       setLanguage(loadedLanguage);
       const loadTranslator = createTranslator(loadedLanguage);
 
-      // panes.json carries the user's text: present-but-unreadable HALTS the
-      // app (the file is left exactly in place; the error screen offers the
-      // explicit set-aside reset) while config and state still loaded — each
-      // store fails on its own branch (persisted-store-separation).
-      if (data.panesError !== null) {
-        logError("panes load failed", { error: data.panesError });
-        setLoadErrorIsCorruptPanes(true);
-        setLoadError(message("load.panesUnreadable"));
-        setLoadErrorPath(data.panesPath);
+      // A newer or unreadable file the launch needs stops it: every one is
+      // named, left exactly as it is, and nothing is written (store-recovery
+      // conventions, What a refused file does).
+      if (data.refused.length > 0) {
+        logError("launch stopped on refused files", { files: data.refused });
+        setLoadRefused(data.refused);
+        setLoadError(null);
+        setLoadErrorPath(null);
         setLoadStatus("failed");
-        return null;
+        return;
       }
-
-      // A store from a newer build is intact data this build cannot read: the
-      // core left it in place and logged it, and it is never offered the
-      // corrupt-file reset (store-recovery conventions).
-      const newer = data.panesNewer !== null
-        ? { error: message("load.panesNewer", { version: data.panesNewer }), path: data.panesPath }
-        : data.snapshotsNewer !== null
-          ? { error: message("load.snapshotsNewer", { version: data.snapshotsNewer }), path: data.snapshotsPath }
-          : null;
-      if (newer !== null) {
-        setLoadErrorIsCorruptPanes(false);
-        setLoadError(newer.error);
-        setLoadErrorPath(newer.path);
-        setLoadStatus("failed");
-        return null;
-      }
-
 
       for (const issue of data.config === null ? [] : settingsShapeIssues(data.config)) {
         logWarn("config set read as its built-in", { issue });
       }
 
       const effectiveSettings = loadedSettings;
-      // The first explicit config save also retires invalid or unknown keys;
-      // native persistence skips publication when its bytes are unchanged.
+      unreadSetsRef.current = unreadSets(data.config);
       // Startup baseline: record the key effective configuration.
       logInfo("config loaded", {
         settings: effectiveSettings,
@@ -286,14 +258,17 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         dataDir: data.dataDir,
       });
 
-      if (data.configQuarantinedTo !== null) {
+      // An unreadable records or backup database is left untouched and off for
+      // the session; the app runs and says so once.
+      if (data.off.length > 0) {
         showBlockingError(
-          message("settingsReset.title"),
-          message("settingsReset.body", { path: data.configQuarantinedTo }),
+          message("storeOff.title"),
+          message("storeOff.body"),
+          data.off.map((file) => message(
+            file.path.endsWith("records.sqlite3") ? "storeOff.records" : "storeOff.backups",
+            { path: file.path },
+          )),
         );
-      }
-      if (data.configNewer !== null) {
-        showBlockingError(message("settingsNewer.title"), message("settingsNewer.body"));
       }
 
       let countLate = false;
@@ -310,7 +285,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         countLate = true;
       }
 
-      if (!current()) return null;
+      if (!current()) return;
       setZoomLevelState(normalizeZoomLevel(data.state?.zoomLevel));
       setRecordsListWidth(typeof data.state?.recordsListWidth === "number" ? data.state.recordsListWidth : null);
 
@@ -329,9 +304,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       setSaveState("saved");
       setLoadStatus("ready");
       if (countLate) refreshSnapshotCount();
-      return { emptyPanes: loadedPanes.length === 0 };
     } catch (error) {
-      if (current()) for (const fact of loadFailureRecovery(error)) retainRecovery(fact);
       // The halt screen speaks the language the native menu does, as on every
       // other halt; English stays when even that cannot be had.
       if (current()) {
@@ -356,14 +329,12 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         // so the user's existing files on disk are never overwritten by the
         // default in-memory state.
         logError("load failed", { error: serializeError(error) });
-        setLoadErrorIsCorruptPanes(false);
         setLoadError(message("load.failed"));
         setLoadErrorPath(loadFailurePath(error));
         setLoadStatus("failed");
       }
-      return null;
     }
-  }, [firstPane, refreshSnapshotCount, retainRecovery, showBlockingError]);
+  }, [firstPane, refreshSnapshotCount, showBlockingError]);
 
   useEffect(() => {
     if (chosenLanguage === language) return undefined;
@@ -387,35 +358,6 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       loadGenerationRef.current += 1;
     };
   }, [loadPersistedState]);
-
-  // Reset rechecks the named target; a repaired or newer file is reloaded in
-  // place. Completed set-aside facts survive a later required-load failure.
-  // The halt screen and its reset button give way to loading at once, so the
-  // reset runs once; the set-aside itself takes its turn in the panes queue.
-  const resetCorruptPanes = useCallback(async () => {
-    const earlier = loadRecovery;
-    setLoadErrorIsCorruptPanes(false);
-    setLoadError(null);
-    setLoadErrorPath(null);
-    setLoadStatus("loading");
-    try {
-      const quarantinedTo = await quarantineCorruptPanes();
-      if (canceledRef.current) return;
-      if (quarantinedTo !== null) logInfo("corrupt panes.json set aside on user command", { quarantinedTo });
-      const recovery = await loadPersistedState(quarantinedTo);
-      if (quarantinedTo !== null && recovery !== null) {
-        const paneMove = message(recovery.emptyPanes ? "panesSetAside.body" : "load.panesSetAside", { path: quarantinedTo });
-        setBlockingError((prior) => prior === null
-          ? { title: message("panesSetAside.title"), message: paneMove, ...(earlier.length > 0 ? { details: earlier } : {}) }
-          : { ...prior, details: [...(prior.details ?? []), paneMove] });
-      }
-    } catch (error) {
-      if (canceledRef.current) return;
-      logError("panes reset failed", { error: serializeError(error) });
-      setLoadError(message("load.setAsideFailed"));
-      setLoadStatus("failed");
-    }
-  }, [loadPersistedState, loadRecovery]);
 
   const updatePaneTitle = useCallback(
     (paneId: string, title: string) => {
@@ -576,6 +518,12 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   );
 
   const updateSettings = useCallback((nextSettings: AppSettings) => {
+    // A setting the user changes replaces the unread set it ran on.
+    const before = settingsBySet(settingsRef.current);
+    const after = settingsBySet(nextSettings);
+    for (const key of Object.keys(after) as (keyof typeof after)[]) {
+      if (JSON.stringify(before[key]) !== JSON.stringify(after[key])) delete unreadSetsRef.current[key];
+    }
     setSettings(nextSettings);
     dirtyCounterRef.current += 1;
     setSaveState("unsaved");
@@ -603,26 +551,6 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     });
   }, [markUnsaved]);
 
-  const reportSetAside = useCallback((path: string | null) => {
-    if (path === null || reportedSetAsideRef.current === path) return;
-    reportedSetAsideRef.current = path;
-    const fact = message("settingsSetAside.body", { path });
-    setBlockingError((prior) => prior === null
-      ? { title: message("settingsSetAside.title"), message: fact }
-      : { ...prior, details: [...(prior.details ?? []), fact] });
-  }, []);
-
-  const configSaved = useCallback((path: string | null) => {
-    reportSetAside(path);
-    return path;
-  }, [reportSetAside]);
-
-  const configFailed = useCallback((error: unknown): never => {
-    if (typeof error === "object" && error !== null && "configQuarantinedTo" in error
-        && typeof error.configQuarantinedTo === "string") reportSetAside(error.configQuarantinedTo);
-    throw error;
-  }, [reportSetAside]);
-
   // Rejects on failure. Each caller decides whether to surface a modal and/or
   // change control flow, since autosave and the close path want different
   // policies. No-ops unless load succeeded — see the LoadStatus comment in
@@ -640,7 +568,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       // Every save sends every stored set; the write queue keeps only the newest
       // pending payload per file, and the core writes nothing when it equals the file.
       await Promise.all([
-        saveConfig(storedSettingsSets(settings)).then(configSaved, configFailed),
+        saveConfig({ ...unreadSetsRef.current, ...storedSettingsSets(settings) }),
         savePanes(buildPanesFile(panes)),
       ]);
       // View state is optional: admit it after required writes, and retain its
@@ -655,7 +583,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       setSaveState("error");
       throw error;
     }
-  }, [activePaneId, configFailed, configSaved, loadStatus, panes, recordsListWidth, savedInputRevision, settings, zoomLevel]);
+  }, [activePaneId, loadStatus, panes, recordsListWidth, savedInputRevision, settings, zoomLevel]);
 
   useEffect(() => {
     if (loadStatus !== "ready" || saveState !== "unsaved") {
@@ -687,8 +615,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       loadStatus,
       loadError,
       loadErrorPath,
-      loadRecovery,
-      loadErrorIsCorruptPanes,
+      loadRefused,
       snapshotCount,
       snapshotJustSavedAt,
       refreshSnapshotCount,
@@ -701,7 +628,6 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       movePane,
       updateSettings,
       setZoomLevel,
-      resetCorruptPanes,
       saveNow,
       recordSnapshot,
       snapshotAllPanes,
@@ -723,15 +649,13 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       dismissToast,
       loadError,
       loadErrorPath,
-      loadRecovery,
-      loadErrorIsCorruptPanes,
+      loadRefused,
       loadStatus,
       movePane,
       language,
       systemLanguage,
       panes,
       recordSnapshot,
-      resetCorruptPanes,
       saveNow,
       saveState,
       setZoomLevel,

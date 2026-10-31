@@ -8,7 +8,6 @@ import type { LoadedAppData } from "../../src/services/persistence";
 
 const persistence = vi.hoisted(() => ({
   loadAppData: vi.fn(),
-  quarantineCorruptPanes: vi.fn(),
   saveConfig: vi.fn(),
   countSnapshots: vi.fn(),
   saveState: vi.fn(),
@@ -23,7 +22,6 @@ vi.mock("../../src/services/persistence", async (importOriginal) => {
   return {
     ...original,
     loadAppData: persistence.loadAppData,
-    quarantineCorruptPanes: persistence.quarantineCorruptPanes,
     saveConfig: persistence.saveConfig,
     saveState: persistence.saveState,
     savePanes: persistence.savePanes,
@@ -35,15 +33,10 @@ vi.mock("../../src/services/persistence", async (importOriginal) => {
 function loadedAppData(overrides: Partial<LoadedAppData> = {}): LoadedAppData {
   return {
     config: null,
-    configQuarantinedTo: null,
-    configNewer: null,
     state: null,
     panes: null,
-    panesError: null,
-    panesNewer: null,
-    snapshotsNewer: null,
-    panesPath: "/private/tmp/quickdeck-test/panes.json",
-    snapshotsPath: "/private/tmp/quickdeck-test/snapshots.sqlite3",
+    refused: [],
+    off: [],
     dataDir: "/private/tmp/quickdeck-test",
     systemLanguage: "en",
     systemLocale: null,
@@ -62,10 +55,8 @@ function StartupState() {
       <span data-testid="load-status">{state.loadStatus}</span>
       <span data-testid="save-state">{state.saveState}</span>
       <span data-testid="load-error">{state.loadError ? text(state.loadError) : null}</span>
-      <span data-testid="load-recovery">{state.loadRecovery.map(text).join(" ")}</span>
       <span data-testid="pane-content">{state.panes[0].content}</span>
       <span data-testid="load-error-path">{state.loadErrorPath}</span>
-      <span data-testid="corrupt-panes">{String(state.loadErrorIsCorruptPanes)}</span>
       <span data-testid="blocking-error">
         {state.blockingError ? [state.blockingError.message, ...(state.blockingError.details ?? [])].map(text).join(" ") : null}
       </span>
@@ -78,7 +69,7 @@ let root: Root | null = null;
 
 beforeEach(() => {
   persistence.loadAppData.mockResolvedValue(loadedAppData());
-  persistence.saveConfig.mockResolvedValue(null);
+  persistence.saveConfig.mockResolvedValue(undefined);
   persistence.saveState.mockResolvedValue(undefined);
   persistence.savePanes.mockResolvedValue(undefined);
   persistence.countSnapshots.mockResolvedValue(0);
@@ -115,120 +106,63 @@ describe("first-run settings", () => {
   });
 });
 
-describe("persistence failure presentation", () => {
-  it("keeps a raw panes read diagnostic in the log and out of recovery copy", async () => {
-    persistence.loadAppData.mockResolvedValueOnce(
-      loadedAppData({ panesError: "TypeError EACCES /private/tmp/HOSTILE-SENTINEL" }),
-    );
+describe("refused files", () => {
+  it("stops on every refused file it is given, opens nothing and saves nothing", async () => {
+    const refused = [
+      { path: "/data/config.json", newer: 2 },
+      { path: "/data/panes.json", newer: null },
+    ];
+    persistence.loadAppData.mockResolvedValueOnce(loadedAppData({
+      refused,
+      panes: { panes: [{ id: "p", title: "", content: "must not open", headerColor: "#112233", backgroundColor: "#ffffff" }] },
+    }));
 
     const host = await renderStartupState();
 
-    expect(host.querySelector('[data-testid="load-status"]')?.textContent).toBe("failed");
-    const message = host.querySelector('[data-testid="load-error"]')?.textContent ?? "";
-    expect(message).toContain("pane text file");
-    expect(message).not.toContain("EACCES");
-    expect(message).not.toContain("HOSTILE-SENTINEL");
-    expect(message).not.toContain("TypeError");
+    expect(latestStartup!.loadStatus).toBe("failed");
+    expect(latestStartup!.loadRefused).toEqual(refused);
+    expect(latestStartup!.loadError).toBeNull();
+    expect(host.querySelector('[data-testid="pane-content"]')?.textContent).not.toBe("must not open");
+    await act(async () => {
+      await latestStartup!.saveNow();
+    });
+    expect(persistence.saveConfig).not.toHaveBeenCalled();
+    expect(persistence.savePanes).not.toHaveBeenCalled();
+    expect(persistence.saveState).not.toHaveBeenCalled();
   });
 
-  it("keeps pane shape diagnostics in the log and out of recovery copy", async () => {
-    persistence.loadAppData.mockResolvedValueOnce(
-      loadedAppData({
-        panesError: "invalid pane shape: HOSTILE-SENTINEL non-string content",
-      }),
-    );
+  it("speaks the saved language on the stop when settings could be read", async () => {
+    persistence.loadAppData.mockResolvedValueOnce(loadedAppData({
+      config: { language: "ja" },
+      refused: [{ path: "/data/state.json", newer: 2 }],
+    }));
+
+    await renderStartupState();
+    await act(() => vi.dynamicImportSettled());
+
+    expect(latestStartup!.loadStatus).toBe("failed");
+    expect(latestStartup!.language).toBe("ja");
+  });
+
+  it("runs beside an unreadable records or backup database and says so once", async () => {
+    persistence.loadAppData.mockResolvedValueOnce(loadedAppData({
+      off: [
+        { path: "/data/records.sqlite3", newer: null },
+        { path: "/data/backups.sqlite3", newer: null },
+      ],
+    }));
 
     const host = await renderStartupState();
-
-    expect(host.querySelector('[data-testid="load-status"]')?.textContent).toBe("failed");
-    const message = host.querySelector('[data-testid="load-error"]')?.textContent ?? "";
-    expect(message).toContain("pane text file");
-    expect(message).not.toContain("HOSTILE-SENTINEL");
-    expect(message).not.toContain("non-string content");
-  });
-
-  it("names where an unreadable settings file was moved", async () => {
-    persistence.loadAppData.mockResolvedValueOnce(
-      loadedAppData({
-        configQuarantinedTo: "/private/tmp/quickdeck-test/config-20261006-010203-004-utc.invalid",
-      }),
-    );
-
-    const host = await renderStartupState();
-
-    const message = host.querySelector('[data-testid="blocking-error"]')?.textContent ?? "";
-    expect(message).toContain(
-      "moved it to /private/tmp/quickdeck-test/config-20261006-010203-004-utc.invalid",
-    );
-    expect(message).toContain("default settings");
-  });
-
-  it("names a settings file set aside by a save", async () => {
-    persistence.saveConfig.mockResolvedValueOnce(
-      "/private/tmp/quickdeck-test/config-20261006-010203-004-utc.invalid",
-    );
-    let state: ReturnType<typeof useAppState> | undefined;
-    function SaveProbe() {
-      state = useAppState();
-      return null;
-    }
-    const host = document.createElement("div");
-    document.body.append(host);
-    root = createRoot(host);
-    await act(async () => {
-      root?.render(
-        <AppStateProvider>
-          <SaveProbe />
-          <StartupState />
-        </AppStateProvider>,
-      );
-    });
-
-    await act(async () => {
-      await state?.saveNow();
-    });
-
-    const message = host.querySelector('[data-testid="blocking-error"]')?.textContent ?? "";
-    expect(message).toContain(
-      "moved it to /private/tmp/quickdeck-test/config-20261006-010203-004-utc.invalid",
-    );
-    expect(message).toContain("current settings stay in use");
-  });
-
-  it("names the pane text file a halt left in place, and where the reset moved it", async () => {
-    persistence.loadAppData.mockResolvedValueOnce(loadedAppData({ panesError: "unreadable" }));
-    persistence.quarantineCorruptPanes.mockResolvedValueOnce(
-      "/private/tmp/quickdeck-test/panes-20261006-010203-004-utc.invalid",
-    );
-    let state: ReturnType<typeof useAppState> | undefined;
-    function ResetProbe() {
-      state = useAppState();
-      return null;
-    }
-    const host = document.createElement("div");
-    document.body.append(host);
-    root = createRoot(host);
-    await act(async () => {
-      root?.render(
-        <AppStateProvider>
-          <ResetProbe />
-          <StartupState />
-        </AppStateProvider>,
-      );
-    });
-    expect(host.querySelector('[data-testid="load-error-path"]')?.textContent).toBe(
-      "/private/tmp/quickdeck-test/panes.json",
-    );
-
-    await act(async () => {
-      await state?.resetCorruptPanes();
-    });
 
     expect(host.querySelector('[data-testid="load-status"]')?.textContent).toBe("ready");
-    const message = host.querySelector('[data-testid="blocking-error"]')?.textContent ?? "";
-    expect(message).toContain("moved to /private/tmp/quickdeck-test/panes-20261006-010203-004-utc.invalid");
+    const notice = host.querySelector('[data-testid="blocking-error"]')?.textContent ?? "";
+    expect(notice).toContain("Records: /data/records.sqlite3");
+    expect(notice).toContain("Backup history: /data/backups.sqlite3");
+    expect(notice).toContain("left them untouched");
   });
+});
 
+describe("persistence failure presentation", () => {
   it("names the store a failed load stopped at and keeps its diagnostic out of the copy", async () => {
     persistence.loadAppData.mockRejectedValueOnce({
       path: "/private/tmp/quickdeck-test/snapshots.sqlite3",
@@ -256,7 +190,7 @@ describe("persistence failure presentation", () => {
   });
 });
 
-describe("startup invocation and recovery truth", () => {
+describe("startup invocation", () => {
   it("does not let an old StrictMode load overwrite edits in the same provider", async () => {
     let settle!: () => void;
     persistence.loadAppData.mockImplementationOnce(() => new Promise<LoadedAppData>((resolve) => { settle = () => resolve(loadedAppData()); }));
@@ -268,99 +202,6 @@ describe("startup invocation and recovery truth", () => {
     } finally { await act(async () => settle()); }
     expect(latestStartup!.panes[0].content).toBe("live edit");
     expect(latestStartup!.saveState).toBe("unsaved");
-  });
-
-  it.each([null, 2])("reports actual authored panes after a move and preserves newer-settings notice (%s)", async (configNewer) => {
-    persistence.loadAppData.mockResolvedValueOnce(loadedAppData({ panesError: "bad" }));
-    persistence.quarantineCorruptPanes.mockResolvedValueOnce("/actual/panes.invalid");
-    await renderStartupState();
-    persistence.loadAppData.mockResolvedValueOnce(loadedAppData({ configNewer, panes: { panes: [{ id: "authored", title: "Authored", content: "restored by another writer", headerColor: "#112233", backgroundColor: "#ffffff" }] } }));
-    await act(async () => latestStartup!.resetCorruptPanes());
-    expect(latestStartup!.loadStatus).toBe("ready");
-    expect(latestStartup!.panes[0].content).toBe("restored by another writer");
-    const paneMove = { key: "load.panesSetAside", values: { path: "/actual/panes.invalid" } };
-    if (configNewer === null) expect(latestStartup!.blockingError?.message).toEqual(paneMove);
-    else {
-      expect(latestStartup!.blockingError?.message.key).toBe("settingsNewer.body");
-      expect(latestStartup!.blockingError?.details).toContainEqual(paneMove);
-    }
-  });
-
-  it("retains a completed settings move on a later native required-load failure", async () => {
-    persistence.loadAppData.mockRejectedValueOnce({ path: "/actual/snapshots.sqlite3", configQuarantinedTo: "/actual/config.invalid", message: "HOSTILE" });
-    const host = await renderStartupState();
-    expect(latestStartup!.loadStatus).toBe("failed");
-    expect(host.querySelector('[data-testid="load-recovery"]')?.textContent).toContain("moved to /actual/config.invalid");
-    expect(host.querySelector('[data-testid="load-recovery"]')?.textContent).not.toContain("default settings");
-    expect(host.textContent).not.toContain("HOSTILE");
-  });
-
-  it("reports the completed panes move when reset reload fails without claiming an empty editor", async () => {
-    persistence.loadAppData.mockResolvedValueOnce(loadedAppData({ panesError: "bad", configQuarantinedTo: "/actual/config.invalid" }));
-    persistence.quarantineCorruptPanes.mockResolvedValueOnce("/actual/panes.invalid");
-    await renderStartupState();
-    persistence.loadAppData.mockRejectedValueOnce({ path: "/actual/snapshots.sqlite3", message: "HOSTILE" });
-    await act(async () => latestStartup!.resetCorruptPanes());
-    expect(latestStartup!.loadStatus).toBe("failed");
-    expect(latestStartup!.loadErrorPath).toBe("/actual/snapshots.sqlite3");
-    expect(latestStartup!.loadRecovery).toEqual([
-      { key: "load.settingsSetAside", values: { path: "/actual/config.invalid" } },
-      { key: "load.panesSetAside", values: { path: "/actual/panes.invalid" } },
-    ]);
-    expect(latestStartup!.blockingError).toBeNull();
-  });
-
-  it.each([null, 2])("reloads a repaired/newer reset target without claiming a move (newer: %s)", async (newer) => {
-    persistence.loadAppData.mockResolvedValueOnce(loadedAppData({ panesError: "bad" }));
-    persistence.quarantineCorruptPanes.mockResolvedValueOnce(null);
-    await renderStartupState();
-    persistence.loadAppData.mockResolvedValueOnce(loadedAppData({ panesNewer: newer }));
-    await act(async () => latestStartup!.resetCorruptPanes());
-    expect(latestStartup!.loadStatus).toBe(newer === null ? "ready" : "failed");
-    expect(latestStartup!.loadErrorIsCorruptPanes).toBe(false);
-    expect(latestStartup!.loadRecovery).toEqual([]);
-    expect(latestStartup!.blockingError).toBeNull();
-  });
-});
-
-describe("stores from a newer build", () => {
-  it("halts on a newer panes.json, names it, and offers no reset", async () => {
-    persistence.loadAppData.mockResolvedValueOnce(loadedAppData({ panesNewer: 2 }));
-
-    const host = await renderStartupState();
-
-    expect(host.querySelector('[data-testid="load-status"]')?.textContent).toBe("failed");
-    const message = host.querySelector('[data-testid="load-error"]')?.textContent ?? "";
-    expect(message).toContain("panes.json");
-    expect(message).toContain("newer version");
-    expect(message).toContain("(format 2)");
-    expect(host.querySelector('[data-testid="corrupt-panes"]')?.textContent).toBe("false");
-  });
-
-  it("halts on a newer snapshots.sqlite3 and names it", async () => {
-    persistence.loadAppData.mockResolvedValueOnce(loadedAppData({ snapshotsNewer: 3 }));
-
-    const host = await renderStartupState();
-
-    expect(host.querySelector('[data-testid="load-status"]')?.textContent).toBe("failed");
-    const message = host.querySelector('[data-testid="load-error"]')?.textContent ?? "";
-    expect(message).toContain("snapshots.sqlite3");
-    expect(message).toContain("(format 3)");
-    expect(host.querySelector('[data-testid="load-error-path"]')?.textContent).toBe(
-      "/private/tmp/quickdeck-test/snapshots.sqlite3",
-    );
-    expect(host.querySelector('[data-testid="corrupt-panes"]')?.textContent).toBe("false");
-  });
-
-  it("runs on built-in settings beside a newer config.json and says so", async () => {
-    persistence.loadAppData.mockResolvedValueOnce(loadedAppData({ configNewer: 2 }));
-
-    const host = await renderStartupState();
-
-    expect(host.querySelector('[data-testid="load-status"]')?.textContent).toBe("ready");
-    const message = host.querySelector('[data-testid="blocking-error"]')?.textContent ?? "";
-    expect(message).toContain("config.json");
-    expect(message).toContain("default settings");
   });
 });
 
@@ -499,7 +340,7 @@ it("sends every set that differs from its built-in on each save", async () => {
   expect(persistence.saveConfig).toHaveBeenLastCalledWith({ zen: true });
 });
 
-it("reads an invalid set as its built-in and drops it from the file at the next save", async () => {
+it("reads an invalid set as its built-in and saves it back as it was until the user changes it", async () => {
   persistence.loadAppData.mockResolvedValue(
     loadedAppData({ config: { zen: "yes", autosaveDelaySeconds: 0, topmost: true } }),
   );
@@ -511,17 +352,8 @@ it("reads an invalid set as its built-in and drops it from the file at the next 
   expect(state!.settings).toEqual({ ...defaultSettings, topmost: true });
   expect(persistence.saveConfig).not.toHaveBeenCalled();
   await act(async () => { await state!.saveNow(); });
-  expect(persistence.saveConfig).toHaveBeenLastCalledWith({ topmost: true });
-});
-
-
-it("keeps a set-aside reported by a failed publication without presenting its raw diagnostic", async () => {
-  const host = await renderStartupState();
-  const failure = { logged: true, message: "SECRET_SENTINEL", configQuarantinedTo: "/disposable/config.invalid" };
-  persistence.saveConfig.mockRejectedValueOnce(failure);
-  await act(async () => {
-    await expect(latestStartup!.saveNow()).rejects.toEqual(failure);
-  });
-  expect(host.textContent).toContain("/disposable/config.invalid");
-  expect(host.textContent).not.toContain("SECRET_SENTINEL");
+  expect(persistence.saveConfig).toHaveBeenLastCalledWith({ zen: "yes", autosaveDelaySeconds: 0, topmost: true });
+  await act(async () => { state!.updateSettings({ ...state!.settings, autosaveDelaySeconds: 5 }); });
+  await act(async () => { await state!.saveNow(); });
+  expect(persistence.saveConfig).toHaveBeenLastCalledWith({ zen: "yes", autosaveDelaySeconds: 5, topmost: true });
 });

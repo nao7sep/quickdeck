@@ -52,7 +52,7 @@ describe("persistence write queues", () => {
 
       finalBridge.resolve("covering result");
       await allCovered;
-      expect(settled).toHaveBeenCalledWith(Array(20).fill(store === "config" ? "covering result" : undefined));
+      expect(settled).toHaveBeenCalledWith(Array(20).fill(undefined));
       expect(invokeMock).toHaveBeenCalledTimes(2);
     },
   );
@@ -70,7 +70,7 @@ describe("persistence write queues", () => {
     const error = new Error("disk full");
     finalBridge.reject(error);
     expect(await results).toEqual(Array(3).fill({ status: "rejected", reason: error }));
-    await expect(saveConfig({ zen: true })).resolves.toBeNull();
+    await expect(saveConfig({ zen: true })).resolves.toBeUndefined();
     expect(invokeMock).toHaveBeenCalledTimes(3);
   });
 

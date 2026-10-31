@@ -145,6 +145,18 @@ export function settingsShapeIssues(loaded: unknown): string[] {
     .map((key) => `${key} is invalid`);
 }
 
+// The sets config.json holds that could not be read, as they were. They run on
+// their built-ins and are saved back unchanged until the user changes that
+// setting, so a save never drops what this build does not accept (config-sets
+// conventions).
+export function unreadSets(loaded: unknown): Record<string, unknown> {
+  if (loaded === null || typeof loaded !== "object" || Array.isArray(loaded)) return {};
+  const source = loaded as Record<string, unknown>;
+  return Object.fromEntries((Object.keys(settingsBySet(defaultSettings)) as (keyof ConfigSets)[])
+    .filter((key) => key in source && !validSet(key, source[key]))
+    .map((key) => [key, source[key]]));
+}
+
 export function readSettingsSets(loaded: unknown): AppSettings {
   const source = loaded !== null && typeof loaded === "object" && !Array.isArray(loaded)
     ? loaded as Record<string, unknown> : {};

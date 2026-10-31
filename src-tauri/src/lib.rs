@@ -117,7 +117,8 @@ async fn load_app_data(app: AppHandle) -> Result<LoadedAppData, CommandFailure> 
                     "hasConfig": data.config.is_some(),
                     "hasState": data.state.is_some(),
                     "hasPanes": data.panes.is_some(),
-                    "panesError": data.panes_error,
+                    "refused": data.refused.len(),
+                    "off": data.off.len(),
                     "dataDir": data.data_dir,
                     "systemLanguage": data.system_language,
                     "systemLocale": data.system_locale,
@@ -257,25 +258,21 @@ fn apply_language(
 }
 
 // Sets equal to the file write nothing and log nothing, so every autosave can
-// send them; only an actual write crosses the logged boundary. Returns where an
-// unreadable config.json found on the way was set aside.
+// send them; only an actual write crosses the logged boundary.
 #[tauri::command]
-async fn save_config(app: AppHandle, config: JsonValue) -> Result<Option<String>, CommandFailure> {
+async fn save_config(app: AppHandle, config: JsonValue) -> Result<(), CommandFailure> {
     off_main_thread(move || {
         let data_dir = paths::app_data_dir(&app)?;
-        let write = storage::config_to_write(&data_dir, config)?;
-        if let Some(config) = write.content {
+        if let Some(config) = storage::config_to_write(&data_dir, config)?.content {
             logging::boundary(
                 "save_config",
                 json!({}),
                 || storage::write_config(&data_dir, &config),
                 |_| json!({}),
             )
-            .map_err(|error| {
-                CommandFailure::recorded(error).with_config_set_aside(write.quarantined_to.clone())
-            })?;
+            .map_err(CommandFailure::recorded)?;
         }
-        Ok(write.quarantined_to)
+        Ok(())
     })
     .await
 }
@@ -296,20 +293,6 @@ async fn save_panes(app: AppHandle, panes: JsonValue) -> Result<(), CommandFailu
     off_main_thread(move || {
         logging::write_boundary("save_panes", json!({}), || storage::save_panes(&app, panes))
             .map_err(CommandFailure::recorded)
-    })
-    .await
-}
-
-#[tauri::command]
-async fn quarantine_corrupt_panes(app: AppHandle) -> Result<Option<String>, CommandFailure> {
-    off_main_thread(move || {
-        logging::boundary(
-            "quarantine_corrupt_panes",
-            json!({}),
-            || storage::quarantine_corrupt_panes(&app),
-            |quarantined| json!({ "quarantinedTo": quarantined }),
-        )
-        .map_err(CommandFailure::recorded)
     })
     .await
 }
@@ -645,7 +628,6 @@ pub fn run() {
             save_config,
             save_state,
             save_panes,
-            quarantine_corrupt_panes,
             create_snapshot,
             create_snapshots,
             list_snapshots,

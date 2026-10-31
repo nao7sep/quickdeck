@@ -34,15 +34,10 @@ vi.mock("../../src/services/persistence", async (importOriginal) => {
 function loadedAppData(): LoadedAppData {
   return {
     config: null,
-    configQuarantinedTo: null,
-    configNewer: null,
     state: null,
     panes: null,
-    panesError: null,
-    panesNewer: null,
-    snapshotsNewer: null,
-    panesPath: "/private/tmp/quickdeck-toast-test/panes.json",
-    snapshotsPath: "/private/tmp/quickdeck-toast-test/snapshots.sqlite3",
+    refused: [],
+    off: [],
     dataDir: "/private/tmp/quickdeck-toast-test",
 
     systemLanguage: "en",

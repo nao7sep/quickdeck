@@ -22,7 +22,7 @@ use serde_json::{json, Map, Value};
 use tauri::{AppHandle, Manager};
 
 use crate::{
-    file_header::{self, SqliteOpen},
+    file_header::{self, Refusal, SqliteOpen},
     records,
     storage::RECORDS_DB_FILE_NAME,
 };
@@ -144,6 +144,10 @@ impl Logger {
 
 static LOGGER: OnceLock<Logger> = OnceLock::new();
 
+// Why the writer left records.sqlite3 untouched, set once when it opens the
+// database; unset while the database is in use.
+static REFUSED: OnceLock<Refusal> = OnceLock::new();
+
 // Called on the writer thread after each row the database stored; a line that
 // went to the fallback file is not in the database, so it calls nothing.
 type StoredListener = Box<dyn Fn() + Send + Sync>;
@@ -220,7 +224,13 @@ fn run_writer(
     lines: mpsc::Receiver<Message>,
     stored: impl Fn(),
 ) {
-    let records = file.and_then(|file| open_records(&file));
+    let records = file.and_then(|file| {
+        open_records(&file).map_err(|refusal| {
+            let message = refusal.message.clone();
+            let _ = REFUSED.set(refusal);
+            message
+        })
+    });
     if let Err(error) = &records {
         write_record(
             None,
@@ -274,32 +284,47 @@ pub fn flush(bound: Duration) {
     logger.flush(bound);
 }
 
+/// Why records.sqlite3 is off for this session, once the writer has opened
+/// it: the launch stops on a newer one and shows a notice for an unreadable one
+/// (store-recovery conventions). Waits for the writer's open, which comes before
+/// any line.
+pub fn records_refusal() -> Option<Refusal> {
+    let logger = LOGGER.get()?;
+    let (done, opened) = mpsc::sync_channel(1);
+    if logger.writer.send(Message::Flush(done)).is_ok() {
+        let _ = opened.recv();
+    }
+    REFUSED.get().cloned()
+}
+
 // not recorded: records.sqlite3 is written only here, never through the
 // managed-text atomic path (data-backup and data-lifecycle conventions). A store in a newer format, or without its file header, is left
 // untouched, and every line takes the fallback.
-fn open_records(file: &Path) -> Result<Connection, String> {
-    let to_string = |error: rusqlite::Error| error.to_string();
-    let conn = Connection::open(file).map_err(to_string)?;
-    if let SqliteOpen::Newer(recorded) = file_header::prepare_sqlite(
+fn open_records(file: &Path) -> Result<Connection, Refusal> {
+    let unreadable = |error: rusqlite::Error| Refusal::unreadable(error.to_string());
+    let conn = Connection::open(file).map_err(unreadable)?;
+    match file_header::prepare_sqlite(
         &conn,
         RECORDS_DB_FILE_NAME,
         file_header::RECORDS,
         records::SCHEMA,
-    )? {
-        return Err(file_header::newer_message(RECORDS_DB_FILE_NAME, recorded));
+    ) {
+        Ok(SqliteOpen::Ready) => {}
+        Ok(SqliteOpen::Newer(recorded)) => {
+            return Err(Refusal::newer(RECORDS_DB_FILE_NAME, recorded))
+        }
+        Err(message) => return Err(Refusal::unreadable(message)),
     }
     // Each row commits on its own; NORMAL under WAL keeps that from syncing the
     // disk every time, and a crashed process still loses nothing.
     conn.pragma_update(None, "synchronous", "NORMAL")
-        .map_err(to_string)?;
+        .map_err(unreadable)?;
     Ok(conn)
 }
 
 // Formats `now` as `yyyymmdd-hhmmss-utc` (timestamp-conventions): the fallback
-// file's name, and the moment discriminator for storage's set-aside
-// `<stem>-<stamp>.invalid`. Launches in one second share a fallback file, which
-// is appended to; a second set-aside in one second fails rather than replace the
-// first (storage.rs).
+// file's name. Launches in one second share a fallback file, which is appended
+// to.
 pub(crate) fn session_stamp(now: chrono::DateTime<Utc>) -> String {
     now.format("%Y%m%d-%H%M%S-utc").to_string()
 }

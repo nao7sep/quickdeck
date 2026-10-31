@@ -2219,6 +2219,22 @@ kbd {
   overflow-wrap: anywhere;
 }
 
+.loadErrorFiles {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.loadErrorFiles code {
+  padding: 1px 6px;
+  border-radius: 5px;
+  background: var(--surface-muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
 .loadErrorActions {
   display: flex;
   justify-content: flex-end;

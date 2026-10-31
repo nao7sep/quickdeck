@@ -34,14 +34,18 @@ it("names the data folder when the load stopped before reaching a file", async (
   expect(await render(null)).toEqual([DATA_DIR_NAME, DATA_DIR_ENV_VAR]);
 });
 
-it("presents completed recovery facts beside the terminal halt", async () => {
+it("names every refused file, says why, and offers only Quit", async () => {
   const container = document.createElement("div"); document.body.append(container); root = createRoot(container);
-  await act(async () => root?.render(<LoadErrorScreen error={message("load.failed")} path="/actual/snapshots.sqlite3" recovery={[
-    message("load.settingsSetAside", { path: "/actual/config.invalid" }),
-    message("load.panesSetAside", { path: "/actual/panes.invalid" }),
+  await act(async () => root?.render(<LoadErrorScreen error={null} path={null} refused={[
+    { path: "/data/config.json", newer: 2 },
+    { path: "/data/panes.json", newer: null },
   ]} />));
-  expect(container.textContent).toContain("moved to /actual/config.invalid");
-  expect(container.textContent).toContain("moved to /actual/panes.invalid");
-  expect(container.textContent).toContain("/actual/snapshots.sqlite3");
-  expect(container.textContent).not.toContain("started with");
+  const files = [...container.querySelectorAll(".loadErrorFiles li")].map((item) => item.textContent);
+  expect(files).toEqual([
+    "/data/config.json was written by a newer version of QuickDeck (format 2).",
+    "/data/panes.json could not be read.",
+  ]);
+  expect(container.textContent).toContain("nothing was changed");
+  expect(container.textContent).toContain("move each file away");
+  expect([...container.querySelectorAll("button")].map((button) => button.textContent)).toEqual(["Quit"]);
 });

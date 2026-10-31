@@ -8,14 +8,10 @@ fn recorded_failures_keep_structured_recovery_facts() {
         newer: Some(99),
         message: "newer format".into(),
     };
-    let result = serde_json::to_value(
-        CommandFailure::recorded(failure).with_config_set_aside(Some("/config.invalid".into())),
-    )
-    .unwrap();
+    let result = serde_json::to_value(CommandFailure::recorded(failure)).unwrap();
     assert_eq!(
         result,
-        json!({"message":"newer format", "logged":true,
-        "path":"/panes.json", "newer":99, "configQuarantinedTo":"/config.invalid"})
+        json!({"message":"newer format", "logged":true, "path":"/panes.json", "newer":99})
     );
 }
 
