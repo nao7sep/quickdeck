@@ -12,7 +12,7 @@
     "build": "tsc && tsc --noEmit --composite false -p tsconfig.node.json && vite build",
     "tauri": "tauri",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit --composite false -p tsconfig.node.json && tsc --noEmit -p tsconfig.test.json",
-    "test": "npm run typecheck && vitest run && cargo test --manifest-path src-tauri/Cargo.toml",
+    "test": "npm run typecheck && cargo fmt --check --manifest-path src-tauri/Cargo.toml && vitest run && cargo test --manifest-path src-tauri/Cargo.toml",
     "check:release-tag": "node scripts/check-release-tag.mjs",
     "test:coverage": "vitest run --coverage && cargo llvm-cov --manifest-path src-tauri/Cargo.toml --html --output-dir coverage/rust"
   },
